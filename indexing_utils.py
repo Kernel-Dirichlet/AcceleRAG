@@ -167,9 +167,11 @@ def process_corpus(
             try:
                 logging.info(f"Computing {ngram_size}-gram embeddings for {rel_path}")
                 
-                with open(full_path, 'r') as f:
+                with open(full_path, 'r', encoding='utf-8') as f:
                     text = f.read()
                 
+                # Ensure ngram_size is an integer
+                ngram_size = int(ngram_size)
                 ngrams = get_ngrams(text, ngram_size)
                 results = []
                 

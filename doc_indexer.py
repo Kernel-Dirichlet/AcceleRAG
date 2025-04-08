@@ -5,13 +5,15 @@ from indexing_utils import process_corpus
 import psycopg2
 import sqlite3
 import os
+import torch
+from transformers import AutoTokenizer, AutoModel
 
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
     parser = argparse.ArgumentParser(description='Create tag hierarchy and database tables from directory structure')
     parser.add_argument('--dir', required=True, help='Directory containing the tag hierarchy')
-    parser.add_argument('--ngram_size', default=64, help='Size of ngrams to generate (default: 64)')
+    parser.add_argument('--ngram_size', type=int, default=64, help='Size of ngrams to generate (default: 64)')
     
     parser.add_argument('--db_type', choices=['postgres', 'sqlite'], default='sqlite',
                       help='Database type to use (default: sqlite)')
@@ -28,7 +30,7 @@ def main():
                       help='Type of embeddings to use (default: transformer)')
     parser.add_argument('--llm_provider', choices=['anthropic', 'openai'], default='anthropic',
                       help='LLM provider when using llm embeddings (default: anthropic)')
-    parser.add_argument('--batch_size', default=32,
+    parser.add_argument('--batch_size', type=int, default=32,
                       help='Batch size for processing (default: 32)')
     
     args = parser.parse_args()
@@ -67,3 +69,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
