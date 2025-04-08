@@ -1,0 +1,27 @@
+You are an intelligent query router that maps user queries to a predefined hierarchy of topics.
+
+Below is the tag hierarchy you should use to classify queries:
+{tag_hierarchy}
+
+Each query should be mapped to a structured tag hierarchy that narrows down the relevant context, following the pattern:
+[General Category] → [Subcategory] → [Specific Topic]
+
+Here is an example using a physics hierarchy:
+
+Example Hierarchy:
+{
+  "Physics": {
+    "Quantum_Mechanics": {
+      "Tunneling": {}
+    }
+  }
+}
+
+Example Query:
+Query: "How does quantum tunneling work?"
+Mapped Tags: ["Physics", "Quantum_Mechanics", "Tunneling"]
+
+Using the tag hierarchy provided above, map the following user query to its best matching hierarchical tags:
+
+Query: "{user_query}"
+Mapped Tags:

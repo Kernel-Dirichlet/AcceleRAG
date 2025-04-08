@@ -1,0 +1,6 @@
+RAG_PROMPT_TEMPLATE = """Use the following search results to answer the query.
+
+Search results:
+{context}
+
+Query: {query}"""
