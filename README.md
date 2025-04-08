@@ -1,251 +1,242 @@
 # AcceleRAG
 
-A lightweight, flexible, and scalable RAG (Retrieval-Augmented Generation) framework that prioritizes transparency and control over abstraction.
+A high-performance RAG (Retrieval-Augmented Generation) system focused on speed and accuracy. Version 0.1.0
 
 ## Overview
 
-AcceleRAG is designed to provide a straightforward yet powerful approach to RAG, avoiding the pitfalls of over-abstracted frameworks. It focuses on:
+AcceleRAG is designed to provide fast and accurate document retrieval and generation capabilities. It features a modular document chunking system with n-gram based indexing as the default strategy, flexible database support, and advanced embedding models.
 
-- Direct control over the indexing and retrieval pipeline
-- Flexible database integration
-- Transparent embedding computation
-- Hierarchical document organization
-- Hallucination risk assessment
+## Features
 
-## Version 0.1.0
-
-Current features:
-- Document indexing with n-gram based chunking
-- SQLite and PostgreSQL support
+### Current Features (v0.1.0)
+- Modular document chunking with n-gram based indexing as default
+- Support for SQLite and PostgreSQL databases
 - BERT and LLM-based embeddings
 - Tag hierarchy for document organization
-- Hallucination risk evaluation
 - Prompt template management
+- Hallucination evaluation system
 
-Coming soon:
-- Support for unstructured data (PDFs, images, etc.)
+### Upcoming Features
+- Support for unstructured data
 - Additional LLM providers
 - Enhanced metadata support
-- Vector similarity search optimizations
+- Improved performance optimizations
 
 ## Installation
 
+Currently, AcceleRAG is not available on PyPI. To use it, clone the repository and install the dependencies:
+
 ```bash
-pip install accelerag
+git clone https://github.com/yourusername/accelerag.git
+cd accelerag
+pip install -r requirements.txt
 ```
 
 ## Core Components
 
-### 1. Indexing Stage
+### Document Chunking
 
-The indexing stage is the foundation of AcceleRAG's retrieval system. It uses n-grams as the default chunking strategy.
+AcceleRAG provides a modular document chunking system, with n-gram based chunking as the default strategy. The system is designed to be extensible, allowing you to implement custom chunking strategies while maintaining the core functionality.
 
-#### N-gram Configuration
+#### Default N-gram Chunking
 
+The default n-gram based chunking creates overlapping chunks of text, allowing for more precise retrieval. The n-gram size can be configured based on your needs:
+
+| N-gram Size | Use Case | Pros | Cons |
+|-------------|----------|------|------|
+| Small (2-4) | Quick retrieval | Fast processing | Less context |
+| Medium (8-16) | Balanced | Good context | Moderate speed |
+| Large (32+) | Deep context | Rich context | Slower processing |
+
+Example configuration:
 ```python
-# Default n-gram size is 3
+from accelerag import process_corpus
+
 process_corpus(
-    corpus_dir="documents",
-    ngram_size=3,  # Adjustable based on needs
-    batch_size=32
+    corpus_dir="path/to/documents",
+    ngram_size=16,  # Medium size for balanced performance
+    db_type="sqlite",
+    db_params={"dbname": "embeddings.db"}
 )
 ```
 
-#### N-gram Size Tradeoffs
+#### Custom Chunking Strategies
 
-| N-gram Size | Pros | Cons |
-|-------------|------|------|
-| Small (1-3) | - Better for short, precise queries<br>- Lower computational overhead | - May miss context<br>- More chunks to process |
-| Medium (4-6) | - Good balance of context and precision<br>- Works well for most use cases | - Moderate computational cost<br>- May split some concepts |
-| Large (7+) | - Captures complete concepts<br>- Better for long-form queries | - Higher computational cost<br>- May include irrelevant context |
+You can implement custom chunking strategies by extending the base chunker class:
 
-### 2. Database Flexibility
+```python
+from accelerag import BaseChunker
 
-AcceleRAG supports both SQLite and PostgreSQL, allowing you to choose based on your scalability needs.
+class CustomChunker(BaseChunker):
+    def chunk_document(self, text):
+        # Implement your custom chunking logic
+        return chunks
+```
+
+### Database Flexibility
+
+AcceleRAG supports multiple database backends:
 
 ```python
 # SQLite configuration
 db_params = {
-    'dbname': 'embeddings.db'
+    "dbname": "embeddings.db"
 }
 
 # PostgreSQL configuration
 db_params = {
-    'dbname': 'embeddings',
-    'user': 'postgres',
-    'password': 'password',
-    'host': 'localhost',
-    'port': 5432
+    "host": "localhost",
+    "port": 5432,
+    "dbname": "embeddings",
+    "user": "postgres",
+    "password": "your_password"
 }
 ```
 
-#### Metadata Support (Coming Soon)
+### Tag Hierarchy
 
-Future versions will support rich metadata association with chunks:
-- Document source
-- Creation date
-- Author information
-- Custom tags
-- Access permissions
-
-### 3. Tag Hierarchy
-
-Documents must be organized in a hierarchical structure where files are placed at leaf nodes.
+Documents must be organized in a specific directory structure that matches the tag hierarchy:
 
 ```
 documents/
-├── Computer_Science/
-│   ├── AI/
-│   │   ├── Machine_Learning/
-│   │   │   ├── paper1.txt
-│   │   │   └── paper2.txt
-│   │   └── NLP/
-│   │       ├── paper3.txt
-│   │       └── paper4.txt
-│   └── Systems/
-│       ├── Database/
-│       │   └── paper5.txt
-│       └── Distributed/
-│           └── paper6.txt
-└── Mathematics/
-    ├── Algebra/
-    │   └── paper7.txt
-    └── Calculus/
-        └── paper8.txt
+├── cats/
+│   ├── behavior.txt
+│   ├── care.txt
+│   └── facts.txt
+├── dogs/
+│   ├── behavior.txt
+│   ├── care.txt
+│   └── facts.txt
+└── parrots/
+    ├── behavior.txt
+    ├── care.txt
+    └── facts.txt
 ```
 
-### 4. Embedding Models
+### Embedding Models
 
-AcceleRAG supports both traditional models like BERT and modern LLMs for embeddings.
-
-#### BERT-based Embeddings
+AcceleRAG supports multiple embedding models:
 
 ```python
-compute_embeddings(
-    ngrams=chunks,
+# BERT embeddings
+embeddings = compute_embeddings(
+    ngrams=["your text here"],
     embedding_type='transformer',
     model_name='prajjwal1/bert-tiny'
 )
-```
 
-#### LLM-based Embeddings
-
-```python
-compute_embeddings(
-    ngrams=chunks,
+# LLM-based embeddings
+embeddings = compute_embeddings(
+    ngrams=["your text here"],
     embedding_type='llm',
-    llm_provider='anthropic'  # or 'openai'
-)
-```
-
-### 5. Prompt Templates
-
-Manage your RAG prompts through template files:
-
-```txt
-Context: {context}
-
-Question: {query}
-
-Please provide a detailed answer based on the context above.
-```
-
-### 6. Limitations and Design Philosophy
-
-#### RAG Limitations
-
-1. **Context Window Constraints**
-   - Limited by model's context window
-   - Tradeoff between context length and computational cost
-
-2. **Retrieval Quality**
-   - Dependent on chunking strategy
-   - Affected by embedding quality
-   - Limited by database search capabilities
-
-#### Why Not LangChain?
-
-AcceleRAG was created to address several issues with frameworks like LangChain:
-
-1. **Inversion of Control Risks**
-   - Hidden complexity in abstraction layers
-   - Difficult to debug and optimize
-   - Security vulnerabilities in black-box components
-
-2. **Scalability Issues**
-   - Overhead from unnecessary abstractions
-   - Limited control over resource usage
-   - Difficult to customize for specific needs
-
-3. **Transparency**
-   - Direct access to all components
-   - Clear data flow
-   - Explicit error handling
-
-### 7. Hallucination Evaluation
-
-AcceleRAG includes a hallucination risk assessment system:
-
-```python
-chunk_scores, hall_risk = score_chunks(
-    context=retrieved_chunks,
     llm_provider='anthropic'
 )
 ```
 
-The system evaluates:
-- Relevance of retrieved chunks
-- Consistency between chunks
-- Confidence in the answer
-- Potential for hallucination
+### Prompt Templates
 
-## Usage Example
+Manage RAG prompts with customizable templates:
 
 ```python
-from accelerag import process_corpus, fetch_top_k
+from accelerag import PromptTemplate
 
-# Index documents
+template = PromptTemplate(
+    system_prompt="You are a helpful assistant.",
+    user_prompt="Answer the following question: {question}",
+    context_prompt="Use the following context: {context}"
+)
+```
+
+## Limitations of RAG
+
+While RAG systems are powerful, they have inherent limitations:
+
+1. **Context Window**: Limited by the model's context window size
+2. **Retrieval Quality**: Dependent on the quality of the indexed documents
+3. **Latency**: Additional processing time for retrieval and context integration
+4. **Storage Requirements**: Need to store both documents and embeddings
+
+## Comparison with LangChain
+
+AcceleRAG differs from LangChain in several key ways:
+
+1. **Performance Focus**: Optimized for speed and efficiency
+2. **Simplified API**: More straightforward interface
+3. **Flexible Backend**: Support for multiple database systems
+4. **Modular Chunking**: Customizable document processing
+5. **Tag-based Organization**: Hierarchical document structure
+
+## Hallucination Evaluation
+
+AcceleRAG includes a system to evaluate potential hallucinations in generated responses:
+
+```python
+from accelerag import evaluate_hallucination
+
+score = evaluate_hallucination(
+    generated_text="Your generated text",
+    source_chunks=["Relevant source 1", "Relevant source 2"]
+)
+```
+
+## Usage Examples
+
+### Indexing Documents
+
+```python
+from accelerag import process_corpus
+
 process_corpus(
-    corpus_dir="documents",
-    ngram_size=3,
+    corpus_dir="path/to/documents",
+    ngram_size=16,
     db_type="sqlite",
     db_params={"dbname": "embeddings.db"}
 )
+```
 
-# Query documents
+### Querying Documents
+
+```python
+from accelerag import fetch_top_k
+
 results = fetch_top_k(
-    query="What is machine learning?",
+    query="Your question here",
     db_params={"dbname": "embeddings.db"},
     tag_hierarchy=tag_hierarchy,
     k=5
 )
 ```
 
-## License
-
-AcceleRAG is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0). This license ensures:
-
-1. **Free Use for Research and Non-Commercial Purposes**
-   - Free to use, modify, and distribute
-   - Source code must remain open
-   - Modifications must be shared under the same license
-
-2. **Commercial Use Requirements**
-   - Commercial use requires a separate commercial license
-   - Contact the maintainers for commercial licensing options
-   - Commercial licenses include additional support and features
-
-3. **Network Service Requirements**
-   - If you run AcceleRAG as a network service, you must provide source code
-   - Users must be able to access the source code of the running service
-   - Modifications to the service must be shared with users
-
-For more details, see the [LICENSE](LICENSE) file.
-
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request. By contributing, you agree to license your contributions under the same AGPL-3.0 license.
+Contributions are welcome! Please read our contributing guidelines before submitting pull requests.
+
+## License
+
+This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
+
+### Free Use
+- Free for research and non-commercial purposes
+- Modifications must be shared under the same license
+- Source code must be provided with any distributed software
+
+### Commercial Use
+- Requires a separate commercial license
+- Contact the maintainers for licensing options
+- Network service requirements apply
+
+### Network Service Requirements
+If you run AcceleRAG as a network service, you must provide the source code to users.
 
 ## Contact
 
-For commercial licensing inquiries, please contact the maintainers at [contact email]. 
+For commercial licensing inquiries or other questions, please contact:
+- Email: ezw193@gmail.com
+
+## Note on ArXiv Scraper
+
+The arxiv_scraper component is functional but has not been fully tested in production environments. Use with caution and report any issues you encounter.
+
+## Disclaimer
+
+This is version 0.1.0 of AcceleRAG. While it is functional, it is still under active development. Some features may change in future releases. 
