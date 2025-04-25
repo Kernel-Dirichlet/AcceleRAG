@@ -51,53 +51,47 @@ def search_web(query, search_provider='anthropic'):
         
     return chunks
 
-def score_chunks(chunks, llm_provider='anthropic'):
-    """Score relevance of context chunks and estimate hallucination risk"""
-    
-    prompt = f"""Please score each context chunk below on a scale of 1-10 based on relevance to the query.
-    Then estimate the likelihood of hallucination (0-100%) given these context pieces.
-    
-    {chunks}
-    
-    Respond in JSON format:
-    {{
-        "scores": [scores for each chunk],
-        "hallucination_risk": percentage
-    }}
-    """
-    
+def score_response(response, query, llm_provider='anthropic'):
+    """Score the final LLM response for accuracy and relevance"""
     if llm_provider == 'anthropic':
-        api_key = os.getenv('ANTHROPIC_API_KEY')
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY environment variable not set")
-        client = anthropic.Anthropic(api_key=api_key)
-        
+        client = anthropic.Anthropic()
+        prompt = f"""Evaluate the following response to the query. Consider:
+1. Accuracy of information
+2. Relevance to the query
+3. Completeness of the answer
+4. Logical coherence
+
+Query: {query}
+Response: {response}
+
+Provide a score from 0-100 and a brief explanation of the score."""
+
         response = client.messages.create(
-            model="claude-3-sonnet-20240320",
-            max_tokens=500,
-            temperature=0,
+            model="claude-3-7-sonnet-20250219",
+            max_tokens=1000,
             messages=[{"role": "user", "content": prompt}]
         )
-        result = json.loads(response.content[0].text)
-        
-    elif llm_provider == 'openai':
-        api_key = os.getenv('OPENAI_API_KEY')
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY environment variable not set")
-        client = OpenAI(api_key=api_key)
-        
+        return response.content[0].text
+    else:  # openai
+        client = OpenAI()
         response = client.chat.completions.create(
             model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=500,
-            temperature=0
+            messages=[{
+                "role": "user",
+                "content": f"""Evaluate the following response to the query. Consider:
+1. Accuracy of information
+2. Relevance to the query
+3. Completeness of the answer
+4. Logical coherence
+
+Query: {query}
+Response: {response}
+
+Provide a score from 0-100 and a brief explanation of the score."""
+            }],
+            max_tokens=1000
         )
-        result = json.loads(response.choices[0].message.content)
-        
-    else:
-        raise ValueError("llm_provider must be 'anthropic' or 'openai'")
-        
-    return result["scores"], result["hallucination_risk"]
+        return response.choices[0].message.content
 
 def interactive_web_rag(llm_provider='anthropic', score=False):
     """Interactive RAG agent with web search retrieval"""
@@ -124,8 +118,7 @@ def interactive_web_rag(llm_provider='anthropic', score=False):
         context = "\n\n".join(chunks)
         
         if score:
-            chunk_scores, hall_risk = score_chunks(context, llm_provider)
-            score_msg = f"\nChunk Scores: {chunk_scores}\nHallucination Risk: {hall_risk}%"
+            score_msg = score_response(context, query, llm_provider)
             print(score_msg)
             logging.info(f"Query: {query}{score_msg}")
             
@@ -135,20 +128,3 @@ def interactive_web_rag(llm_provider='anthropic', score=False):
                 context=context,
                 query=query
             )
-
-def main():
-    parser = argparse.ArgumentParser(description='Run web search RAG agent')
-    parser.add_argument('--mode', choices=['interactive'], default='interactive',
-                      help='Mode to run the agent in')
-    parser.add_argument('--score', action='store_true',
-                      help='Enable scoring of retrieved chunks')
-    parser.add_argument('--llm_provider', choices=['anthropic', 'openai'], default='anthropic',
-                      help='LLM provider to use (default: anthropic)')
-    
-    args = parser.parse_args()
-    
-    if args.mode == 'interactive':
-        interactive_web_rag(args.llm_provider, args.score)
-
-if __name__ == "__main__":
-    main()

@@ -11,26 +11,56 @@ from transformers import AutoTokenizer, AutoModel
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-    parser = argparse.ArgumentParser(description='Create tag hierarchy and database tables from directory structure')
-    parser.add_argument('--dir', required=True, help='Directory containing the tag hierarchy')
-    parser.add_argument('--ngram_size', type=int, default=64, help='Size of ngrams to generate (default: 64)')
+    parser = argparse.ArgumentParser(description = 'Create tag hierarchy and database tables from directory structure')
+    parser.add_argument('--dir', 
+                        required = True,
+                        help = 'Directory containing the tag hierarchy')
+
+    parser.add_argument('--ngram_size',
+                        type = int,
+                        default = 16,
+                        help = 'Size of ngrams to generate (default: 64)')
     
-    parser.add_argument('--db_type', choices=['postgres', 'sqlite'], default='sqlite',
-                      help='Database type to use (default: sqlite)')
+    parser.add_argument('--db_type',
+                        choices = ['postgres', 'sqlite'],
+                        default = 'sqlite',
+                        help = 'Database type to use (default: sqlite)')
     
-    parser.add_argument('--host', default='localhost', help='PostgreSQL host (default: localhost)')
-    parser.add_argument('--port', default=5432, help='PostgreSQL port (default: 5432)')
-    parser.add_argument('--user', default='postgres', help='PostgreSQL user (default: postgres)')
-    parser.add_argument('--password', default='postgres', help='PostgreSQL password (default: postgres)')
-    parser.add_argument('--dbname', default='postgres', help='Database name (default: postgres)')
+    parser.add_argument('--host', 
+                        default = 'localhost',
+                        help = 'PostgreSQL host (default: localhost)')
+    parser.add_argument('--port', 
+                        default = 5432,
+                        help = 'PostgreSQL port (default: 5432)')
+    parser.add_argument('--user',
+                        default = 'postgres', 
+                        help = 'PostgreSQL user (default: postgres)')
+
+    parser.add_argument('--password',
+                        default = 'postgres',
+                        help = 'PostgreSQL password (default: postgres)')
+
+    parser.add_argument('--dbname',
+                        default = 'postgres',
+                        help = 'Database name (default: postgres)')
     
-    parser.add_argument('--sqlite_dbname', default='embeddings.db', help='SQLite database name (default: embeddings.db)')
+    parser.add_argument('--sqlite_dbname', 
+                        default = 'embeddings.db.sqlite',
+                        help = 'SQLite database name (default: embeddings.db.sqlite)')
     
-    parser.add_argument('--embedding_type', choices=['transformer', 'llm'], default='transformer',
-                      help='Type of embeddings to use (default: transformer)')
-    parser.add_argument('--llm_provider', choices=['anthropic', 'openai'], default='anthropic',
-                      help='LLM provider when using llm embeddings (default: anthropic)')
-    parser.add_argument('--batch_size', type=int, default=32,
+    parser.add_argument('--embedding_type',
+                        choices = ['transformer', 'llm'],
+                        default = 'transformer',
+                        help = 'Type of embeddings to use (default: transformer)')
+
+    parser.add_argument('--llm_provider',
+                        choices = ['anthropic', 'openai'],
+                        default = 'anthropic',
+                        help = 'LLM provider when using llm embeddings (default: anthropic)')
+
+    parser.add_argument('--batch_size', 
+                        type = int,
+                        default = 32,
                       help='Batch size for processing (default: 32)')
     
     args = parser.parse_args()
