@@ -6,6 +6,73 @@ A high-performance RAG (Retrieval-Augmented Generation) framework focused on spe
 
 AcceleRAG is a framework (not a library) designed to provide fast and accurate document retrieval and generation capabilities. It features a modular document chunking system with n-gram based indexing as the default strategy, flexible database support, and advanced embedding models.
 
+## Installation and Setup
+
+### Basic Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/accelerag.git
+cd accelerag
+```
+
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+### API Key Configuration
+
+AcceleRAG supports multiple LLM providers and requires an API key for operation. The API key can be provided in two ways:
+
+1. **File Path**: Pass the path to a text file containing the API key:
+```python
+rag = RAGManager(
+    api_key='path/to/api_key.txt',  # File containing API key
+    llm_provider='anthropic'  # or 'openai'
+)
+```
+
+2. **Environment Variable**: Set the appropriate environment variable:
+```bash
+# For Anthropic
+export ANTHROPIC_API_KEY='your-api-key'
+
+# For OpenAI
+export OPENAI_API_KEY='your-api-key'
+```
+
+### Key Requirements
+
+The following are the core requirements for AcceleRAG (not fully verified):
+
+1. **Python Dependencies**:
+   - Python 3.8+
+   - numpy
+   - pandas
+   - sqlite3
+   - transformers (for TinyBERT)
+   - torch
+   - sentence-transformers
+   - anthropic (for Claude)
+   - openai (for GPT)
+
+2. **System Requirements**:
+   - Minimum 4GB RAM
+   - 2GB free disk space
+   - CPU with AVX2 support (for transformer models)
+
+3. **API Requirements**:
+   - Valid API key for chosen LLM provider
+   - Internet connection for API calls
+   - Sufficient API quota/credits
+
+4. **Database Requirements**:
+   - SQLite 3.24+ (for local storage)
+   - Write permissions in working directory
+
+Note: These requirements are preliminary and may be updated as the framework evolves.
+
 ## Quick Start
 
 ### Using the RAGManager
