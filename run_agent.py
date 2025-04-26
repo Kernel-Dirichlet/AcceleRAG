@@ -10,7 +10,7 @@ from web_search_utils import search_web, score_response, interactive_web_rag
 import sqlite3
 import time
 import numpy as np
-from caching_utils import init_cache, cache_response, get_cached_response, extract_score_from_response
+from caching_utils import  * 
 
 # Set up logging
 logging.basicConfig(
@@ -20,7 +20,8 @@ logging.basicConfig(
 )
 
 def run_db_rag(llm_provider, db_params, score=False, debug=False, top_k=5, grounding='hard', 
-               enable_cache=False, use_cache=False, cache_thresh=0.9, quality_thresh=80.0):
+               enable_cache=False, use_cache=False, cache_thresh=0.9, quality_thresh=80.0,
+               cache_db=None):
     """Interactive RAG agent with database retrieval"""
     
     # Connect to SQLite database
@@ -60,9 +61,16 @@ def run_db_rag(llm_provider, db_params, score=False, debug=False, top_k=5, groun
         # Ensure cache table exists if caching is enabled
         if enable_cache or use_cache:
             try:
-                init_cache(db_path)
-                if debug:
-                    print("Cache table initialized successfully")
+                if cache_db:
+                    if not verify_cache_schema(cache_db):
+                        print(f"Error: External cache database {cache_db} has incorrect schema")
+                        return
+                    if debug:
+                        print(f"Using external cache database: {cache_db}")
+                else:
+                    init_cache(db_path)
+                    if debug:
+                        print("Cache table initialized successfully")
             except Exception as e:
                 print(f"Error initializing cache: {e}")
                 return
@@ -74,7 +82,9 @@ def run_db_rag(llm_provider, db_params, score=False, debug=False, top_k=5, groun
         print(f"Database error: {e}")
         return
     
-    # Load grounding prompts
+    # Load appropriate grounding prompt based on grounding mode
+    # 'soft' uses soft_grounding_prompt.txt which allows general knowledge
+    # 'hard' uses hard_grounding_prompt.txt which strictly uses context
     prompt_path = os.path.join('prompts', f'{grounding}_grounding_prompt.txt')
     try:
         with open(prompt_path, 'r') as f:
@@ -119,7 +129,7 @@ def run_db_rag(llm_provider, db_params, score=False, debug=False, top_k=5, groun
         try:
             # Check cache if enabled
             if use_cache:
-                cached_result = get_cached_response(db_path, query, cache_thresh)
+                cached_result = get_cached_response(db_path, query, cache_thresh, cache_db)
                 if cached_result:
                     answer, similarity = cached_result
                     print(f"\nAnswer (from cache, similarity: {similarity:.2f}):\n{answer}\n")
@@ -145,7 +155,7 @@ def run_db_rag(llm_provider, db_params, score=False, debug=False, top_k=5, groun
             context = "\n\n".join(chunks)
             print(f"\nRetrieved information:\n{context}\n")
                 
-            # Format prompt using template
+            # Format prompt using template with context and query
             prompt = prompt_template.format(context=context, query=query)
                 
             # Send to LLM and get response with retry logic
@@ -191,7 +201,7 @@ def run_db_rag(llm_provider, db_params, score=False, debug=False, top_k=5, groun
                     # Cache response if enabled and quality score meets threshold
                     if enable_cache:
                         try:
-                            cache_response(db_path, query, answer, quality_score, quality_thresh)
+                            cache_response(db_path, query, answer, quality_score, quality_thresh, cache_db)
                             if debug:
                                 if quality_score is not None:
                                     print(f"Response cached with quality score: {quality_score}")
@@ -248,6 +258,8 @@ def main():
                       help='Similarity threshold for cache hits (default: 0.9)')
     parser.add_argument('--quality_thresh', type=float, default=80.0,
                       help='Quality score threshold for caching (default: 80.0)')
+    parser.add_argument('--cache_db', type=str,
+                      help='Path to external cache database file')
     
     args = parser.parse_args()
     
@@ -297,7 +309,7 @@ def main():
         else:  # db mode
             run_db_rag(args.llm_provider, db_params, args.score, args.debug, args.top_k, 
                       args.grounding, args.enable_cache, args.use_cache, args.cache_thresh,
-                      args.quality_thresh)
+                      args.quality_thresh, args.cache_db)
 
 if __name__ == "__main__":
     main()

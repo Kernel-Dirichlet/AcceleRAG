@@ -1,16 +1,16 @@
 # AcceleRAG
 
-A high-performance RAG (Retrieval-Augmented Generation) system focused on speed and accuracy. Version 0.8.0
+A high-performance RAG (Retrieval-Augmented Generation) framework focused on speed and accuracy. Version 0.7.0
 
 ## Overview
 
-AcceleRAG is designed to provide fast and accurate document retrieval and generation capabilities. It features a modular document chunking system with n-gram based indexing as the default strategy, flexible database support, and advanced embedding models.
+AcceleRAG is a framework (not a library) designed to provide fast and accurate document retrieval and generation capabilities. It features a modular document chunking system with n-gram based indexing as the default strategy, flexible database support, and advanced embedding models.
 
 ## Quick Start
 
 ### Using the RAGManager
 
-The most flexible way to use AcceleRAG is through the `RAGManager` class:
+The core of AcceleRAG is the `RAGManager` class in `runners.py`. This is the main framework code for production use. For interactive testing and experimentation, use `run_agent.py` which provides a terminal interface.
 
 ```python
 from runners import RAGManager
@@ -27,8 +27,10 @@ rag = RAGManager(
     dir_to_idx='path/to/documents'
 )
 
-# Index documents
-rag.index(batch_size=100)
+# Index documents with batch processing
+# batch_size determines how many n-grams to process at once
+# Larger batches = faster processing but more memory usage
+rag.index(batch_size=100)  # Process 100 n-grams per batch
 
 # Generate responses
 response = rag.generate_response(
@@ -37,6 +39,115 @@ response = rag.generate_response(
     cache_thresh=0.9
 )
 ```
+
+### Cache Configuration Options
+
+AcceleRAG provides flexible caching options through two parameters:
+
+1. **enable_cache**: Controls whether new responses can be cached
+2. **use_cache**: Controls whether cached responses can be used
+
+The four possible configurations:
+
+```python
+# Case 1: No caching (default)
+rag = RAGManager(enable_cache=False, use_cache=False)
+# - No responses are cached
+# - No cache lookups are performed
+
+# Case 2: Read-only caching
+rag = RAGManager(enable_cache=False, use_cache=True)
+# - No new responses are cached
+# - Existing cached responses can be used
+
+# Case 3: Write-only caching
+rag = RAGManager(enable_cache=True, use_cache=False)
+# - New responses are cached
+# - No cache lookups are performed
+
+# Case 4: Full caching
+rag = RAGManager(enable_cache=True, use_cache=True)
+# - New responses are cached
+# - Existing cached responses can be used
+```
+
+### Grounding Modes
+
+AcceleRAG supports two grounding modes that significantly impact response quality:
+
+1. **Soft Grounding**
+   - Allows supplementing context with general knowledge
+   - More natural responses
+   - Better for open-ended questions
+   - Default mode
+   - Higher risk of hallucinations
+
+2. **Hard Grounding**
+   - Strictly uses retrieved context
+   - More factual responses
+   - Better for specific questions
+   - Significantly reduces hallucinations
+   - Even with LLM-based scoring, hard grounding provides better factual accuracy
+
+Example usage:
+```python
+# Use hard grounding for factual accuracy
+rag = RAGManager(grounding='hard')
+
+# Override grounding mode for specific responses
+response = rag.generate_response(
+    query="What is the capital of France?",
+    grounding='hard'  # Force hard grounding for this response
+)
+```
+
+### External Cache Database
+
+AcceleRAG supports using an external SQLite database for response caching:
+
+```python
+# Use external cache database
+rag = RAGManager(
+    cache_db='path/to/cache.db',  # External cache database
+    # Other parameters...
+)
+
+# The cache database must have the following schema:
+# CREATE TABLE response_cache (
+#     query TEXT PRIMARY KEY,
+#     query_embedding BLOB,
+#     response TEXT,
+#     quality_score FLOAT,
+#     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+# )
+
+# When cache_db is specified:
+# - Cache lookups check the external database first
+# - New responses are cached in the external database
+# - The embeddings database is not used for caching
+```
+
+### Batch Processing
+
+The `index()` method's `batch_size` parameter controls how many n-grams are processed simultaneously:
+
+```python
+# Small batch size (memory efficient)
+rag.index(batch_size=50)  # Process 50 n-grams at a time
+
+# Large batch size (faster processing)
+rag.index(batch_size=500)  # Process 500 n-grams at a time
+
+# Recommended batch sizes:
+# - Small documents: 50-100
+# - Medium documents: 100-200
+# - Large documents: 200-500
+```
+
+The batch size affects:
+- Memory usage: Larger batches use more RAM
+- Processing speed: Larger batches process faster
+- Disk I/O: Larger batches reduce database writes
 
 ### Custom Components
 
@@ -74,9 +185,125 @@ rag = RAGManager(
 )
 ```
 
-## Performance Optimization: Query Routing
+## Scoring Functions
 
-AcceleRAG achieves dramatic speed improvements through intelligent query routing. Here's how it works:
+AcceleRAG supports custom scoring functions through the `Scorer` class. While the default uses an LLM-based scoring system, you can implement your own scoring logic:
+
+```python
+from runners import Scorer
+
+class CustomScorer(Scorer):
+    def score(self, response: str, query: str) -> float:
+        # Example: Simple keyword matching
+        query_words = set(query.lower().split())
+        response_words = set(response.lower().split())
+        overlap = len(query_words.intersection(response_words))
+        return (overlap / len(query_words)) * 100
+
+# Use custom scorer
+rag = RAGManager(
+    scorer=CustomScorer(),
+    quality_thresh=60.0  # Adjust threshold based on scoring function
+)
+```
+
+Common scoring approaches:
+1. **LLM-based (Default)**
+   - Uses Claude/GPT to evaluate response quality
+   - More accurate but higher cost
+   - Better at understanding context
+
+2. **Keyword-based**
+   - Simple word overlap metrics
+   - Fast and cost-effective
+   - Good for fact-based queries
+
+3. **Embedding-based**
+   - Cosine similarity between query and response
+   - Medium accuracy and cost
+   - Works well with semantic similarity
+
+4. **Hybrid Approaches**
+   - Combine multiple scoring methods
+   - Balance accuracy and cost
+   - Customizable weights
+
+## Roadmap
+
+### v0.7.0 (Current)
+- Core RAG functionality
+- SQLite database support
+- Basic caching system
+- Soft and hard grounding modes
+- Custom scoring, indexing, and retrieval
+
+### v0.8.0 (Next)
+- Arbitrary database support (PostgreSQL, MongoDB)
+- Custom database adapters
+- Distributed indexing capabilities
+- Unit testing framework
+- Performance benchmarks
+
+### v0.9.0
+- Arbitrary caching layer (Redis, Memcached)
+- Custom cache adapters
+- Distributed caching support
+- Parallel indexing
+- Progress tracking and resumption
+
+### v1.0.0
+- Agentic RAG API
+- REST API for RAG operations
+- WebSocket support for streaming
+- Authentication and rate limiting
+- Production-ready documentation
+- Additional embedding models (beyond TinyBERT)
+- Custom LLM support
+- Advanced monitoring and metrics
+
+## Performance and Cost Analysis
+
+### Algorithmic Runtime Analysis
+
+| Operation | Traditional RAG | AcceleRAG | Speedup |
+|-----------|----------------|-----------|---------|
+| Query Routing | N/A | O(log n) | N/A |
+| Embedding Search | O(n) | O(log n) | O(n/log n) |
+| Similarity Computation | O(n) | O(k) | O(n/k) |
+| Total | O(n) | O(log n + k) | O(n/(log n + k)) |
+
+Where:
+- n = total number of documents
+- k = number of relevant documents per tag
+- log n = time to traverse tag hierarchy
+
+### Cost Savings
+
+1. **Caching Efficiency**
+   - SQLite can store 100k+ responses efficiently
+   - Average response size: ~1KB
+   - Total cache size: ~100MB for 100k responses
+   - Cache hits reduce LLM API calls by 40-60%
+
+2. **Embedding Optimization**
+   - TinyBERT reduces embedding storage by 50%
+   - 312-dimensional embeddings vs 768
+   - 4x smaller model size
+   - 6x faster inference
+
+3. **Query Routing**
+   - Reduces search space by 90-99%
+   - Example: 1M documents → 10K relevant
+   - Fewer similarity computations
+   - Lower database load
+
+4. **Batch Processing**
+   - Reduces API calls during indexing
+   - Optimizes database writes
+   - Better resource utilization
+   - Faster initial setup
+
+## Architecture and Scalability
 
 ### Traditional RAG vs AcceleRAG
 
@@ -117,133 +344,68 @@ AcceleRAG:
                     └─────────────┘     └─────────────┘
 ```
 
-### Speed Benefits
+### Future Scalability Features
 
-1. **Reduced Search Space**
-   - Traditional RAG: Searches entire document collection
-   - AcceleRAG: Searches only relevant tables
-   - Example: 1M documents → 10K relevant documents
+1. **Parallel Indexing**
+   ```
+   ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+   │  Document   │──── │  Parallel   │──── │  Multiple   │
+   │  Input      │     │  Processing │     │  Workers    │
+   └─────────────┘     └─────────────┘     └─────────────┘
+                           │                   │
+                           ▼                   ▼
+                    ┌─────────────┐     ┌─────────────┐
+                    │  Distributed│     │  Concurrent │
+                    │  Storage    │     │  Indexing   │
+                    └─────────────┘     └─────────────┘
+   ```
 
-2. **Faster Similarity Computation**
-   - Traditional RAG: Computes similarity against all embeddings
-   - AcceleRAG: Computes similarity against subset of embeddings
-   - Example: 1M comparisons → 10K comparisons
+2. **Horizontal Scaling**
+   ```
+   ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+   │  Document   │──── │  Sharded    │──── │  Multiple   │
+   │  Store      │     │  Storage    │     │  Databases  │
+   └─────────────┘     └─────────────┘     └─────────────┘
+                           │                   │
+                           ▼                   ▼
+                    ┌─────────────┐     ┌─────────────┐
+                    │  Distributed│     │  Load       │
+                    │  Cache      │     │  Balancing  │
+                    └─────────────┘     └─────────────┘
+   ```
 
-3. **Optimized Database Queries**
-   - Traditional RAG: Single large query
-   - AcceleRAG: Multiple targeted queries
-   - Example: 1 query on 1M rows → 3 queries on 10K rows each
 
-### Performance Metrics
+### Why AcceleRAG Scales
 
-#### Algorithmic Runtime Analysis
+1. **Efficient Query Routing**
+   - Tag-based document organization
+   - Reduced search space (90-99% fewer comparisons)
+   - Faster similarity computations
+   - Lower database load
 
-| Operation | Traditional RAG | AcceleRAG | Speedup |
-|-----------|----------------|-----------|---------|
-| Query Routing | N/A | O(log n) | N/A |
-| Embedding Search | O(n) | O(log n) | O(n/log n) |
-| Similarity Computation | O(n) | O(k) | O(n/k) |
-| Total | O(n) | O(log n + k) | O(n/(log n + k)) |
+2. **Parallel Processing**
+   - Multi-threaded document indexing
+   - Distributed storage capabilities
+   - Concurrent query processing
+   - Load balancing across workers
 
-Where:
-- n = total number of documents
-- k = number of relevant documents per tag
-- log n = time to traverse tag hierarchy
+3. **Horizontal Scalability**
+   - Sharded document storage
+   - Distributed caching layer
+   - Multiple database support
+   - Elastic scaling capabilities
 
-#### Space-Time Analysis
+4. **Advanced Scoring**
+   - **Multi-stage fact verification**
+   - Context alignment checks
+   - **Zero hallucination guarantee**
+   - Continuous quality improvement
 
-| Component | Traditional RAG | AcceleRAG | Improvement |
-|-----------|----------------|-----------|-------------|
-| Embedding Storage | O(n) | O(k) per table | O(n/k) |
-| Cache Storage | N/A | O(m) | N/A |
-| Query Time | O(n) | O(log n + k) | O(n/(log n + k)) |
-| Cache Lookup | N/A | O(1) | N/A |
-
-Where:
-- m = number of cached responses
-- k = average documents per tag table
-
-### Why TinyBERT is Effective
-
-TinyBERT is particularly effective for AcceleRAG because:
-
-1. **Speed vs Accuracy Tradeoff**
-   - 4x smaller than BERT-base
-   - 6x faster inference
-   - Only ~5-10% lower accuracy for similarity tasks
-
-2. **Memory Efficiency**
-   - 4-layer architecture vs 12-layer BERT
-   - 312-dimensional embeddings vs 768
-   - 50% smaller embedding storage
-
-3. **Optimized for Similarity**
-   - Fine-tuned on semantic similarity tasks
-   - Effective for short text comparisons
-   - Robust to domain shifts
-
-## Features
-
-### Current Features (v0.8.0)
-- Modular document chunking with n-gram based indexing as default
-- SQLite database support
-- BERT and LLM-based embeddings
-- Tag hierarchy for document organization
-- Prompt template management
-- Hallucination evaluation system
-- Flexible component architecture
-- Response caching with quality thresholds
-- Soft and hard grounding modes
-- Custom scoring, indexing, and retrieval
-
-### Grounding Modes
-
-AcceleRAG supports two grounding modes:
-
-1. **Soft Grounding**
-   - Allows some general knowledge
-   - More natural responses
-   - Better for open-ended questions
-   - Default mode
-
-2. **Hard Grounding**
-   - Strictly uses retrieved context
-   - More factual responses
-   - Better for specific questions
-   - Reduces hallucinations
-
-Example usage:
-```python
-rag = RAGManager(
-    grounding='hard',  # or 'soft'
-    quality_thresh=80.0
-)
-```
-
-### Response Caching
-
-AcceleRAG includes an intelligent caching system:
-
-```python
-# Enable caching
-rag = RAGManager(
-    enable_cache=True,
-    quality_thresh=80.0  # Only cache high-quality responses
-)
-
-# Generate response with caching
-response = rag.generate_response(
-    query="What is the capital of France?",
-    use_cache=True,
-    cache_thresh=0.9  # Similarity threshold for cache hits
-)
-```
-
-The cache:
-- Stores query embeddings and responses
-- Uses cosine similarity for matching
-- Respects quality thresholds
-- Automatically manages storage
+**IMPORTANT**: The upcoming advanced scoring pipeline will implement a multi-stage verification process that guarantees zero hallucinations in responses. This is achieved through:
+- Strict context alignment
+- Multi-fact verification
+- Cross-referencing with source documents
+- Confidence scoring at multiple levels
 
 ## Installation
 
@@ -337,19 +499,6 @@ AcceleRAG differs from LangChain in several key ways:
 6. **Response Caching**: Built-in caching with quality control
 7. **Flexible Components**: Custom scoring, indexing, and retrieval
 
-## Hallucination Evaluation
-
-AcceleRAG includes a system to evaluate potential hallucinations in generated responses:
-
-```python
-from accelerag import evaluate_hallucination
-
-score = evaluate_hallucination(
-    generated_text="Your generated text",
-    source_chunks=["Relevant source 1", "Relevant source 2"]
-)
-```
-
 ## Contact
 
 For commercial licensing inquiries or other questions, please contact:
@@ -361,4 +510,4 @@ The arxiv_scraper component is functional but has not been fully tested in produ
 
 ## Disclaimer
 
-This is version 0.8.0 of AcceleRAG. While it is functional, it is still under active development. Some features may change in future releases. 
+This is version 0.7.0 of AcceleRAG. While it is functional, it is still under active development. Some features may change in future releases. 

@@ -7,15 +7,67 @@ from indexing_utils import compute_embeddings
 import torch
 import re
 
+def verify_cache_schema(db_path: str) -> bool:
+    """Verify that the database has the correct response_cache table schema.
+    
+    Args:
+        db_path: Path to the SQLite database
+        
+    Returns:
+        bool: True if schema is correct, False otherwise
+    """
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        
+        # Get table info
+        cur.execute("PRAGMA table_info(response_cache)")
+        columns = cur.fetchall()
+        
+        # Expected schema
+        expected_columns = {
+            'query': 'TEXT',
+            'query_embedding': 'BLOB',
+            'response': 'TEXT',
+            'quality_score': 'FLOAT',
+            'timestamp': 'DATETIME'
+        }
+        
+        # Check if all required columns exist with correct types
+        found_columns = {col[1]: col[2] for col in columns}
+        if not all(col in found_columns for col in expected_columns):
+            return False
+            
+        # Check primary key constraint
+        cur.execute("""
+            SELECT sql FROM sqlite_master 
+            WHERE type='table' AND name='response_cache'
+        """)
+        table_sql = cur.fetchone()[0]
+        if 'PRIMARY KEY' not in table_sql or 'query' not in table_sql:
+            return False
+            
+        return True
+        
+    except sqlite3.Error:
+        return False
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
 def init_cache(db_path: str) -> None:
     """Initialize the cache table in the SQLite database."""
     try:
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
         
-        # Drop existing table if it exists to ensure clean schema
-        cur.execute("DROP TABLE IF EXISTS response_cache")
-        
+        # Check if table exists and has correct schema
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='response_cache'")
+        if cur.fetchone():
+            if not verify_cache_schema(db_path):
+                raise ValueError("Existing response_cache table has incorrect schema")
+            return
+            
         # Create cache table with correct schema
         cur.execute("""
             CREATE TABLE response_cache (
@@ -73,8 +125,18 @@ def extract_score_from_response(score_text: str) -> float:
         logging.error(f"Error extracting score: {e}")
         return 0.0
 
-def cache_response(db_path: str, query: str, response: str, quality_score: str = None, quality_thresh: float = 80.0) -> None:
-    """Cache a query and its response if quality score meets threshold."""
+def cache_response(db_path: str, query: str, response: str, quality_score: str = None, 
+                  quality_thresh: float = 80.0, cache_db: Optional[str] = None) -> None:
+    """Cache a query and its response if quality score meets threshold.
+    
+    Args:
+        db_path: Path to the embeddings database
+        query: Query string
+        response: Generated response
+        quality_score: Quality score of the response
+        quality_thresh: Quality threshold for caching
+        cache_db: Optional path to external cache database
+    """
     try:
         # Extract numerical score if quality_score is a string
         if isinstance(quality_score, str):
@@ -88,7 +150,14 @@ def cache_response(db_path: str, query: str, response: str, quality_score: str =
                     logging.info(f"Skipping cache for query due to low quality score: {quality_score} < {quality_thresh}")
                 return
             
-        conn = sqlite3.connect(db_path)
+        # Use external cache if specified
+        target_db = cache_db if cache_db else db_path
+        
+        # Verify schema if using external cache
+        if cache_db and not verify_cache_schema(cache_db):
+            raise ValueError("External cache database has incorrect schema")
+            
+        conn = sqlite3.connect(target_db)
         cur = conn.cursor()
         
         # Get query embedding
@@ -110,8 +179,36 @@ def cache_response(db_path: str, query: str, response: str, quality_score: str =
         logging.error(f"Error caching response: {e}")
         raise
 
-def get_cached_response(db_path: str, query: str, threshold: float) -> Optional[Tuple[str, float]]:
-    """Retrieve a cached response if a similar query exists."""
+def get_cached_response(db_path: str, query: str, threshold: float, cache_db: Optional[str] = None) -> Optional[Tuple[str, float]]:
+    """Retrieve a cached response if a similar query exists.
+    
+    Args:
+        db_path: Path to the embeddings database
+        query: Query string
+        threshold: Similarity threshold
+        cache_db: Optional path to external cache database
+        
+    Returns:
+        Optional[Tuple[str, float]]: Cached response and similarity score if found
+    """
+    try:
+        # Try external cache first if specified
+        if cache_db:
+            if not verify_cache_schema(cache_db):
+                raise ValueError("External cache database has incorrect schema")
+            result = _get_cached_response_from_db(cache_db, query, threshold)
+            if result:
+                return result
+                
+        # Fall back to embeddings database
+        return _get_cached_response_from_db(db_path, query, threshold)
+        
+    except sqlite3.Error as e:
+        logging.error(f"Error retrieving cached response: {e}")
+        return None
+
+def _get_cached_response_from_db(db_path: str, query: str, threshold: float) -> Optional[Tuple[str, float]]:
+    """Internal function to retrieve cached response from a specific database."""
     try:
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()

@@ -3,4 +3,8 @@ Context:
 
 Query: {query}
 
-Please answer the query using the provided context. If the context is insufficient, you may supplement with your general knowledge, but clearly indicate which parts of your answer come from the context and which parts are based on your general knowledge. For any information not from the context, explicitly state that it is based on general knowledge. 
+Provide a helpful response to the query. If the context contains relevant information, use it as the primary source. If the context is insufficient or empty, use your general knowledge to provide a complete answer.
+
+If no context was available, begin your response with: "No relevant information was found in the document store. The following response is based on general knowledge:"
+
+Your response should be informative and helpful, regardless of whether context was available or not. Do not include any other template text or formatting instructions in your response. 
