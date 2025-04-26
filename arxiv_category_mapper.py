@@ -194,6 +194,13 @@ def suggest_tables_for_query(query, category_code=None):
         suggested_tables.extend(['cs_CL', 'cs_AI'])
     if any(word in query_lower for word in ['logic', 'formal', 'proof']):
         suggested_tables.extend(['math_LO', 'cs_LO'])
+    # Add database-related keywords
+    if any(word in query_lower for word in ['database', 'db', 'sql', 'nosql', 'data storage', 'data management']):
+        suggested_tables.extend(['cs_DB', 'cs_DS', 'cs_DC'])
+    if any(word in query_lower for word in ['distributed', 'parallel', 'scalable']):
+        suggested_tables.extend(['cs_DC', 'cs_DB', 'cs_DS'])
+    if any(word in query_lower for word in ['data structure', 'algorithm', 'efficiency']):
+        suggested_tables.extend(['cs_DS', 'cs_DB', 'cs_DC'])
         
     return list(set(suggested_tables))  # Remove duplicates
 

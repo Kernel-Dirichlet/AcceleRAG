@@ -72,28 +72,16 @@ def fetch_top_k(query, db_params, tag_hierarchy, k=3, debug=False, max_length=51
             if debug:
                 print(f"Connecting to database at: {db_path}")
             
-            if db_path.endswith('.sqlite'):
-                conn = sqlite3.connect(db_path)
-                cur = conn.cursor()
-                
-                # Get all available tables
-                cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-                available_tables = [row[0] for row in cur.fetchall()]
-                # Filter out system tables
-                available_tables = [t for t in available_tables if not t.startswith('sqlite_')]
-                if debug:
-                    print(f"Available tables: {available_tables}")
-            else:
-                conn = psycopg2.connect(**db_params)
-                cur = conn.cursor()
-                
-                # Get all available tables
-                cur.execute("""
-                    SELECT table_name 
-                    FROM information_schema.tables 
-                    WHERE table_schema = 'public'
-                """)
-                available_tables = [row[0] for row in cur.fetchall()]
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            
+            # Get all available tables
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            available_tables = [row[0] for row in cur.fetchall()]
+            # Filter out system tables
+            available_tables = [t for t in available_tables if not t.startswith('sqlite_')]
+            if debug:
+                print(f"Available tables: {available_tables}")
             
             # Find matching tables based on tags
             matching_tables = []
@@ -141,20 +129,12 @@ def fetch_top_k(query, db_params, tag_hierarchy, k=3, debug=False, max_length=51
             queries = []
             params = []
             for table in matching_tables:
-                if db_path.endswith('.sqlite'):
-                    queries.append(f"""
-                        SELECT ngram, filepath, embedding
-                        FROM {table}
-                        ORDER BY id
-                        LIMIT ?
-                    """)
-                else:
-                    queries.append(f"""
-                        SELECT ngram, filepath, embedding
-                        FROM {table}
-                        ORDER BY id
-                        LIMIT %s
-                    """)
+                queries.append(f"""
+                    SELECT ngram, filepath, embedding
+                    FROM {table}
+                    ORDER BY id
+                    LIMIT ?
+                """)
                 params.append(k)
             
             # Execute queries and collect results
@@ -218,10 +198,6 @@ def fetch_top_k(query, db_params, tag_hierarchy, k=3, debug=False, max_length=51
     except sqlite3.Error as e:
         if debug:
             print(f"SQLite error: {str(e)}")
-        return []
-    except psycopg2.Error as e:
-        if debug:
-            print(f"PostgreSQL error: {str(e)}")
         return []
     except Exception as e:
         if debug:

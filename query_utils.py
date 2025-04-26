@@ -71,6 +71,7 @@ def route_query(user_query, tag_hierarchy):
         
         prompt_template = """Given the following ArXiv category hierarchy and user query, identify the most relevant categories to search in.
 The hierarchy contains ArXiv categories like 'cs.AI', 'math.LO', etc.
+For database-related queries, consider categories like 'cs.DB' (Databases), 'cs.DS' (Data Structures), and 'cs.DC' (Distributed Computing).
 Return only the most specific relevant categories as a JSON array of strings.
 
 Tag Hierarchy:
@@ -87,8 +88,9 @@ Return only a JSON array of ArXiv category strings, nothing else."""
         
         prompt_template = """Given the following tag hierarchy and user query, identify the most relevant tags to search in.
 The tag hierarchy is a JSON object where keys are tag names and values are nested tag hierarchies.
+For database-related queries, consider tags related to databases, data structures, and distributed systems.
 Return only the most specific relevant tags as a JSON array of strings, including the full path for nested tags.
-For example, if the tag hierarchy has "animals/cats/facts", return the full path "animals/cats/facts".
+For example, if the tag hierarchy has "Computer Science/Databases/NoSQL", return the full path "Computer Science/Databases/NoSQL".
 
 Tag Hierarchy:
 {tag_hierarchy}

@@ -1,0 +1,6 @@
+Context:
+{context}
+
+Query: {query}
+
+Please answer the query using the provided context. If the context is insufficient, you may supplement with your general knowledge, but clearly indicate which parts of your answer come from the context and which parts are based on your general knowledge. For any information not from the context, explicitly state that it is based on general knowledge. 

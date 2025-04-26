@@ -1,7 +1,6 @@
 import os
 import torch
 from transformers import AutoTokenizer, AutoModel
-import psycopg2
 import sqlite3
 import numpy as np
 from itertools import islice
@@ -31,19 +30,27 @@ def get_ngrams(text, n):
         
     return ngrams
 
-def compute_embeddings(ngrams, model=None, tokenizer=None, device='cuda', embedding_type='transformer', llm_provider='anthropic'):
+def compute_embeddings(ngrams, model=None, tokenizer=None, device='cpu', embedding_type='transformer', llm_provider='anthropic'):
     """Compute embeddings for ngrams using transformers or LLM"""
     if embedding_type == 'transformer':
         if model is None or tokenizer is None:
-            tokenizer = AutoTokenizer.from_pretrained('huawei-noah/TinyBERT_General_4L_312D')
-            model = AutoModel.from_pretrained('huawei-noah/TinyBERT_General_4L_312D').to(device)
+            try:
+                tokenizer = AutoTokenizer.from_pretrained('huawei-noah/TinyBERT_General_4L_312D')
+                model = AutoModel.from_pretrained('huawei-noah/TinyBERT_General_4L_312D').to(device)
+            except Exception as e:
+                logging.error(f"Error loading model: {e}")
+                raise
             
         embeddings = []
         for ngram in ngrams:
-            inputs = tokenizer(ngram, return_tensors='pt').to(device)
-            with torch.no_grad():
-                outputs = model(**inputs)
-            embeddings.append(outputs.last_hidden_state[:,0,:].cpu().numpy())
+            try:
+                inputs = tokenizer(ngram, return_tensors='pt').to(device)
+                with torch.no_grad():
+                    outputs = model(**inputs)
+                embeddings.append(outputs.last_hidden_state[:,0,:].cpu().numpy())
+            except Exception as e:
+                logging.error(f"Error computing embedding: {e}")
+                raise
         return np.vstack(embeddings)
         
     elif embedding_type == 'llm':
@@ -77,20 +84,6 @@ def compute_embeddings(ngrams, model=None, tokenizer=None, device='cuda', embedd
     else:
         raise ValueError("embedding_type must be 'transformer' or 'llm'")
 
-def batch_insert_postgres(conn, table_name, batch_data):
-    """Insert batch of data into postgres"""
-    cur = conn.cursor()
-    
-    for data in batch_data:
-        ngram, embedding, _, filepath = data  # Ignore the idx parameter
-        cur.execute(
-            f"INSERT INTO {table_name} (embedding, ngram, filepath) VALUES (%s, %s, %s)",
-            (embedding.tobytes(), ngram, filepath)
-        )
-    
-    conn.commit()
-    cur.close()
-
 def batch_insert_sqlite(conn, table_name, batch_data):
     """Insert batch of data into sqlite"""
     cur = conn.cursor()
@@ -120,7 +113,7 @@ def get_all_files(directory):
             all_files.append((full_path, rel_path))
     return all_files
 
-def create_embeddings_table(conn, table_name, embedding_type):
+def create_embeddings_table(conn, table_name):
     """Create table for storing embeddings"""
     cur = conn.cursor()
     try:
@@ -128,24 +121,14 @@ def create_embeddings_table(conn, table_name, embedding_type):
         cur.execute(f"DROP TABLE IF EXISTS {table_name}")
         
         # Create table with proper schema
-        if embedding_type == 'BYTEA':  # PostgreSQL
-            cur.execute(f"""
-                CREATE TABLE {table_name} (
-                    id SERIAL PRIMARY KEY,
-                    embedding BYTEA,
-                    ngram TEXT,
-                    filepath TEXT
-                )
-            """)
-        else:  # SQLite
-            cur.execute(f"""
-                CREATE TABLE {table_name} (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    embedding TEXT,
-                    ngram TEXT,
-                    filepath TEXT
-                )
-            """)
+        cur.execute(f"""
+            CREATE TABLE {table_name} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                embedding TEXT,
+                ngram TEXT,
+                filepath TEXT
+            )
+        """)
         conn.commit()
         logging.info(f"Successfully created table: {table_name}")
     except Exception as e:
@@ -178,12 +161,8 @@ def process_corpus(
     tag_hierarchy,
     ngram_size=3,
     batch_size=32,
-    db_type='postgres',
     db_params={
-        'dbname': 'your_db',
-        'user': 'your_user',
-        'password': 'your_password',
-        'host': 'localhost'
+        'dbname': 'your_db'
     },
     embedding_type='transformer',
     llm_provider='anthropic'
@@ -194,24 +173,18 @@ def process_corpus(
     model = AutoModel.from_pretrained('huawei-noah/TinyBERT_General_4L_312D').to(device)
     
     try:
-        if db_type == 'postgres':
-            conn = psycopg2.connect(**db_params)
-            batch_insert = batch_insert_postgres
-            db_embedding_type = 'BYTEA'
-        else:
-            # Ensure SQLite database is created in the correct location
-            db_path = db_params.get('dbname', 'embeddings.db.sqlite')
-            if not os.path.isabs(db_path):
-                db_path = os.path.abspath(db_path)
-            print(f"Creating SQLite database at: {db_path}")
-            
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(db_path), exist_ok=True)
-            
-            conn = sqlite3.connect(db_path)
-            batch_insert = batch_insert_sqlite
-            db_embedding_type = 'TEXT'
-            logging.info(f"Using SQLite database at: {db_path}")
+        # Ensure SQLite database is created in the correct location
+        db_path = db_params.get('dbname', 'embeddings.db.sqlite')
+        if not os.path.isabs(db_path):
+            db_path = os.path.abspath(db_path)
+        print(f"Creating SQLite database at: {db_path}")
+        
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        
+        conn = sqlite3.connect(db_path)
+        batch_insert = batch_insert_sqlite
+        logging.info(f"Using SQLite database at: {db_path}")
 
         all_files = get_all_files(corpus_dir)
         if not all_files:
@@ -226,7 +199,7 @@ def process_corpus(
                 # Sanitize the table name
                 table_name = sanitize_table_name(tag)
                 if table_name not in created_tables:
-                    create_embeddings_table(conn, table_name, db_embedding_type)
+                    create_embeddings_table(conn, table_name)
                     created_tables.add(table_name)
                     logging.info(f"Created table for tag: {table_name} (original: {tag})")
 
@@ -278,16 +251,15 @@ def process_corpus(
         logging.info(f"Successfully processed {completed} files")
         
         # Verify tables were created and populated
-        if db_type == 'sqlite':
-            cur = conn.cursor()
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            tables = cur.fetchall()
-            logging.info(f"Final tables in database: {[t[0] for t in tables]}")
-            for table in tables:
-                cur.execute(f"SELECT COUNT(*) FROM {table[0]}")
-                count = cur.fetchone()[0]
-                logging.info(f"Table {table[0]} has {count} records")
-            cur.close()
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = cur.fetchall()
+        logging.info(f"Final tables in database: {[t[0] for t in tables]}")
+        for table in tables:
+            cur.execute(f"SELECT COUNT(*) FROM {table[0]}")
+            count = cur.fetchone()[0]
+            logging.info(f"Table {table[0]} has {count} records")
+        cur.close()
 
     except Exception as e:
         logging.error(f"Error in process_corpus: {e}")

@@ -1,102 +1,51 @@
 import argparse
+import json
 import logging
-from query_utils import create_tag_hierarchy
-from indexing_utils import process_corpus
-import psycopg2
-import sqlite3
 import os
-import torch
-from transformers import AutoTokenizer, AutoModel
+from indexing_utils import process_corpus
 
 def main():
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-    parser = argparse.ArgumentParser(description = 'Create tag hierarchy and database tables from directory structure')
-    parser.add_argument('--dir', 
-                        required = True,
-                        help = 'Directory containing the tag hierarchy')
-
-    parser.add_argument('--ngram_size',
-                        type = int,
-                        default = 16,
-                        help = 'Size of ngrams to generate (default: 64)')
-    
-    parser.add_argument('--db_type',
-                        choices = ['postgres', 'sqlite'],
-                        default = 'sqlite',
-                        help = 'Database type to use (default: sqlite)')
-    
-    parser.add_argument('--host', 
-                        default = 'localhost',
-                        help = 'PostgreSQL host (default: localhost)')
-    parser.add_argument('--port', 
-                        default = 5432,
-                        help = 'PostgreSQL port (default: 5432)')
-    parser.add_argument('--user',
-                        default = 'postgres', 
-                        help = 'PostgreSQL user (default: postgres)')
-
-    parser.add_argument('--password',
-                        default = 'postgres',
-                        help = 'PostgreSQL password (default: postgres)')
-
-    parser.add_argument('--dbname',
-                        default = 'postgres',
-                        help = 'Database name (default: postgres)')
-    
-    parser.add_argument('--sqlite_dbname', 
-                        default = 'embeddings.db.sqlite',
-                        help = 'SQLite database name (default: embeddings.db.sqlite)')
-    
-    parser.add_argument('--embedding_type',
-                        choices = ['transformer', 'llm'],
-                        default = 'transformer',
-                        help = 'Type of embeddings to use (default: transformer)')
-
-    parser.add_argument('--llm_provider',
-                        choices = ['anthropic', 'openai'],
-                        default = 'anthropic',
-                        help = 'LLM provider when using llm embeddings (default: anthropic)')
-
-    parser.add_argument('--batch_size', 
-                        type = int,
-                        default = 32,
-                      help='Batch size for processing (default: 32)')
+    parser = argparse.ArgumentParser(description='Index documents for AcceleRAG')
+    parser.add_argument('--dir', required=True,
+                      help='Directory containing documents to index')
+    parser.add_argument('--ngram_size', type=int, default=16,
+                      help='Size of n-grams')
+    parser.add_argument('--dbname', 
+                      help='SQLite database name (default: {dir_name}_embeddings.db.sqlite)')
+    parser.add_argument('--embedding_type', default='bert', choices=['bert', 'llm'],
+                      help='Type of embeddings to use')
+    parser.add_argument('--llm_provider', default='anthropic', choices=['anthropic', 'openai'],
+                      help='LLM provider for embeddings')
+    parser.add_argument('--batch_size', type=int, default=100,
+                      help='Batch size for processing')
     
     args = parser.parse_args()
-
-    if args.db_type == 'postgres':
-        db_params = {
-            'dbname': args.dbname,
-            'user': args.user,
-            'password': args.password,
-            'host': args.host,
-            'port': args.port
-        }
-    else:
-        db_params = {
-            'dbname': args.sqlite_dbname
-        }
-
-    logging.info(f"Creating tag hierarchy from directory: {args.dir}")
-    tag_hierarchy = create_tag_hierarchy(args.dir)
-    logging.info("Tag hierarchy created successfully")
-
+    
+    # Generate default database name if not provided
+    if not args.dbname:
+        dir_name = os.path.basename(os.path.normpath(args.dir))
+        args.dbname = f"{dir_name}_embeddings.db.sqlite"
+    
+    # Load tag hierarchy
     try:
-        process_corpus(
-            corpus_dir=args.dir,
-            tag_hierarchy=tag_hierarchy,
-            ngram_size=args.ngram_size,
-            batch_size=args.batch_size,
-            db_type=args.db_type,
-            db_params=db_params,
-            embedding_type=args.embedding_type,
-            llm_provider=args.llm_provider
-        )
-        logging.info("Corpus processing completed successfully")
-    except Exception as e:
-        logging.error(f"Error processing corpus: {e}")
-
+        with open('tag_hierarchy.json', 'r') as f:
+            tag_hierarchy = json.load(f)
+    except FileNotFoundError:
+        logging.error("tag_hierarchy.json not found")
+        return
+    except json.JSONDecodeError:
+        logging.error("Invalid JSON in tag_hierarchy.json")
+        return
+        
+    # Process corpus with SQLite parameters
+    process_corpus(
+        corpus_dir=args.dir,
+        tag_hierarchy=tag_hierarchy,
+        ngram_size=args.ngram_size,
+        batch_size=args.batch_size,
+        db_params={'dbname': args.dbname}
+    )
+    
 if __name__ == "__main__":
     main()
 

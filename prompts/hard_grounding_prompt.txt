@@ -1,0 +1,6 @@
+Context:
+{context}
+
+Query: {query}
+
+Please answer the query based ONLY on the provided context. If the context does not contain sufficient information to answer the query, explicitly state that you cannot answer based on the available context. Do not make up information or use general knowledge. 
