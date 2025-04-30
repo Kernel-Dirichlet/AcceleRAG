@@ -1,0 +1,2066 @@
+Circinus: Efficient Query Planner for Compound ML Serving
+Banruo Liu, Wei-Yu Lin, Minghao Fang, Yihan Jiang, Fan Lai
+University of Illinois Urbana-Champaign
+Abstract
+The rise of compound AI serving—integrating multiple op-
+erators in a pipeline that may span edge and cloud tiers—
+enables end-user applications such as autonomous driving,
+generative AI-powered meeting companions, and immersive
+gaming. Achieving high service goodput—i.e., meeting ser-
+vice level objectives (SLOs) for pipeline latency, accuracy,
+and costs—requires effective planning of operator placement,
+configuration, and resource allocation across infrastructure
+tiers. However, the diverse SLO requirements, varying edge
+capabilities, and high query volumes create an enormous plan-
+ning search space, rendering current solutions fundamentally
+limited for real-time serving and cost-efficient deployments.
+This paper presents Circinus, an SLO-aware query plan-
+ner for large-scale compound AI workloads. Circinus nov-
+elly decomposes multi-query planning and multi-dimensional
+SLO objectives while preserving global decision quality. By
+exploiting plan similarities within and across queries, it sig-
+nificantly reduces search steps. It further improves per-step
+efficiency with a precision-aware plan profiler that incremen-
+tally profiles and strategically applies early stopping based
+on imprecise estimates of plan performance. At scale, Circi-
+nus selects query-plan combinations to maximize global SLO
+goodput. Evaluations in real-world settings show that Circi-
+nus improves service goodput by 3.2-5.0 ×, accelerates query
+planning by 4.2-5.8 ×, achieving query response in seconds,
+while reducing deployment costs by 3.2-4.0 ×over state of
+the arts even in their intended single-tier deployments.
+1 Introduction
+Machine learning (ML) serving is experiencing a paradigm
+shift from deploying monolithic models to integrating multi-
+ple operators across stages and even infrastructure tiers in a
+serving pipeline. These compound AI applications—ranging
+from edge-assisted autonomous driving [103] and live traffic
+analysis [67] to generative AI (GenAI) tasks like OpenAI’s re-
+cent text-to-speech in streaming audio [70], AI companion in
+video chats [15, 108], virtual tour in online shopping [7], and
+immersive gaming [26,30]—combine operators such as audio
+sampler, noise reducer, speech decoder, and GenAI renderer
+to generate final outputs. By distributing operators across
+machines—from end devices and edge servers to public MEC
+and cloud infrastructure [104]—compound AI serving enables
+better efficiency (e.g., by reducing Internet traffic [101]), accu-
+racy (e.g., by adding augmented operators [14]), and privacy
+(e.g., by preprocessing data locally [53]).As with many advances in serving single ML mod-
+els [4,35,58,100], maximizing the number of queries meeting
+their service level objectives (i.e., SLO goodput) is critical for
+both service providers and users. However, as ML applica-
+tions increasingly cater to end users, ensuring SLO adherence
+becomes significantly more complex. This requires planning
+across the entire serving pipeline, including the placement
+of operators (e.g., on user devices or cloud machines), their
+configurations (e.g., video sampling rates), and resource allo-
+cation (e.g., GPU instances). Each of these decisions impacts
+SLO latency, accuracy, and/or deployment costs, presenting
+challenges beyond those of single-model serving.
+First, SLO requirements vary across applications [3,12,15]
+and even among users of the same application (e.g., free vs.
+paid users in online chatbots [9], or differing speaking speeds
+in GenAI video chat [58]). Second, pipelines with identi-
+cal operators can experience performance variations due to
+heterogeneous infrastructure (e.g., differences in end-device
+network bandwidth) and input characteristics (e.g., accuracy
+changes under different background exposures in video feeds).
+Moreover, the resource-intensive nature, high query volumes,
+and runtime dynamics require service providers to efficiently
+schedule numerous pipelines to minimize costs, leading to re-
+source contention throughout infrastructure tiers and potential
+SLO violations (§2).
+Consequently, planning pipelines for many queries with
+diverse SLO requirements, system speeds, and data charac-
+teristics becomes a fundamental challenge in practical com-
+pound AI serving. Unfortunately, recent advances for query
+planning are fundamentally limited, focusing on single mod-
+els [4, 58, 75, 100], single long-running queries [94, 104],
+or homogeneous cloud environments [99]. When applied
+to compound AI queries, they falter amid the overwhelm-
+ing search space of placement, configuration, and resource
+combinations—e.g., thousands of candidate plans in a sin-
+gle GenAI video chat query (§2.2). Planning overheads can
+stretch to tens of minutes, exceeding the lifespan of many
+short-lived queries [15], thus rendering existing designs im-
+practical for real-time serving. Even then, they still incur sig-
+nificant SLO violations and inflated deployment costs (§2.3).
+This paper introduces an efficient query planner for scal-
+able compound ML serving, Circinus (§3). It is designed to
+address the needs of three key stakeholders: (i) high SLO
+attainment and low response time for users, (ii) cost-efficient
+deployment for service providers, and (iii) high resource uti-
+lization for infrastructure providers. It achieves these goalsarXiv:2504.16397v1  [cs.DB]  23 Apr 2025
+via two core principles: (i) effectively decomposing the multi-
+query planning problem into efficient, single-query planning,
+while (ii) globally scheduling query-plan combinations to
+preserve global decision quality under resource contention.
+While identifying an SLO-compliant plan from many can-
+didates can be formulated as a guided search problem (e.g.,
+using Bayesian Optimization to explore and exploit different
+options [104]), this process faces unique challenges due to
+multi-dimensional SLO requirements (e.g., on accuracy, la-
+tency, and cost) and the high, heterogeneous plan profiling
+overhead per search step. For example, profiling a plan that
+uses LLaMA-70B is 11 ×more expensive, in time and cost,
+than that with LLaMA-3B. To reduce per-step overhead, we
+introduce a precision-aware profiler that selectively profiles
+input data, reuses prefix caches from prior profiling runs, and
+applies early stopping without misleading the search process
+(§4.1). To minimize search steps, we develop a Cost-aware
+Multi-objective Bayesian Optimizer (CMBO) that decom-
+poses SLO objectives, maximizing knowledge transfer regard-
+ing each SLO demand across plans within and across queries,
+while accounting for heterogeneous profiling costs (§4.2).
+Maximizing SLO service goodput requires planning at
+scale for many concurrent queries with diverse SLO require-
+ments. Naively planning all queries jointly leads to a combina-
+torial explosion in the search space, while planning them inde-
+pendently ignores resource contention, resulting in SLO viola-
+tions and inefficient resource use (e.g., overloading the cloud
+while underutilizing edge resources). Circinus addresses this
+challenge with a scalable two-stage planning approach that
+maintains global decision quality. In the first stage, the single-
+query planner generates a Pareto-optimal set of candidate
+plans that satisfy each query’s SLOs. In the second stage, go-
+ing beyond selecting the locally optimal plan for each query
+(i.e., the lowest-cost SLO-compliant plan), Circinus selects
+query-plan combinations that maximize SLO goodput (§4.3).
+We implemented a Circinus prototype with Kubernetes-
+compatible APIs [45], ensuring seamless integration with
+existing ML serving systems (§5). We evaluated Circinus
+across realistic edge-cloud infrastructure and end-user appli-
+cations, covering popular speech recognition, video analytics
+tasks, and GenAI tasks such as agentic code generation and
+multi-modal live video captioning (§6).
+Our evaluations demonstrate that Circinus reduces single-
+query planning time by 4.2-5.8 ×compared to state-of-the-art
+solutions [99, 104], enabling automatic planning in seconds
+for practical use. In multi-pipeline deployments, Circinus im-
+proves service goodput by 3.2-5.0 ×and reduces deployment
+costs by 3.2-4.0 ×for cross-tier deployments with only one
+third of the planning budget. Even in single-tier, Circinus
+reduces deployment cost by 5 ×, showing its effectiveness
+across design spaces.
+Overall, we make the following contributions in this paper:
+•We design a novel SLO-aware query planner that enables
+real-time planning for large-scale compound AI queries.
+    …                    …                        …     2                 ViT-L/14                mixed     1                 ViT-L/14                 fp32 
+-CIDEr > 0.1 
+-Latency < 0.3s 
+A. Code Gen. Visual Tracking Speech Recog. 
+Video Q&A Video 
+Sampler Queries 
+Vision 
+Encoder Transcript 
+Extractor Video 
+Input 
+Multimodality 
+Model Configs 
+# Model Precision 
+…                     … 2              Gemma-3                4B 27B 1              Llama-3.2                3B 11B          # Gen Model 
+Edge 
+ MEC 
+ Cloud 
+Streaming 
+Output Configs 
+SizeLive Video Chat Figure 1: As compound AI services increasingly cater to end users,
+their deployment can span multi-tier, heterogeneous infrastructure.
+•We propose a new search mechanism that effectively de-
+composes global planning, leveraging plan similarities to
+search efficiently with imprecise profiling information.
+•We evaluate Circinus in various real-world settings, show-
+ing significant SLO improvements and cost savings.
+2 Background and Motivation
+We begin with an overview of compound AI (§2.1), followed
+by the challenges it faces (§2.2), and conclude with the ineffi-
+ciencies of current advances that motivate our work (§2.3).
+2.1 Compound AI Serving
+Compound AI applications involve multi-stage serving
+pipelines to generate the final output (Figure 1). For example,
+a visual captioning query—whether for offline batch process-
+ing on on-premise videos [39] or live conferencing input
+from end-user devices [15, 108]—requires pipeline operators
+to sample frames from the video, apply color filters, adjust
+image resolution and size, and then select an ML model to
+process the input. Each operator in the pipeline often offers
+multiple configuration options (e.g., video sampling rates or
+compression levels), each with different resource demands,
+processing latencies, and impacts on the accuracy of subse-
+quent operators. As a result, service providers must rely on an
+efficient query planner to search for the optimal (p,c,r)pair:
+(placement, configuration, resource allocation ) of operators
+to meet the user’s SLO requirements for accuracy, latency,
+and/or cost [99, 104].
+If the entire pipeline could be deployed within the same
+infrastructure tier (e.g., in the cloud), deployment is easier, but
+this is increasingly infeasible due to the resource-intensive
+nature of modern AI models and their extensive fan-out to
+support numerous end users [2, 17, 43]. For example, input
+data can be large and live-streamed, such as in autonomous
+driving [91, 93], live virtual tour [7], and AI-driven gam-
+ing [26, 30], leading to substantial Internet traffic, or require
+local data preprocessing due to privacy concerns [14, 46].
+To balance service goodput with deployment costs, service
+providers like Alibaba have already distributed pipeline opera-
+tors [6,60], such as using AI models in the cloud while placing
+filtering modules in edge clusters or even user devices [38].
+2.2 Challenges in Compound AI Serving Deployment
+While optimizing SLO service goodput is a key focus in
+many ML serving advances [75, 100], compound AI serving
+/uni00000013/uni00000011/uni00000013 /uni00000013/uni00000011/uni00000018 /uni00000014/uni00000011/uni00000013
+/uni00000031/uni00000052/uni00000055/uni00000050/uni00000044/uni0000004f/uni0000004c/uni0000005d/uni00000048/uni00000047/uni00000003/uni00000036/uni0000005c/uni00000056/uni00000057/uni00000048/uni00000050/uni00000003/uni00000036/uni00000053/uni00000048/uni00000048/uni00000047/uni00000013/uni00000011/uni00000013/uni00000013/uni00000013/uni00000011/uni00000015/uni00000018/uni00000013/uni00000011/uni00000018/uni00000013/uni00000013/uni00000011/uni0000001a/uni00000018/uni00000014/uni00000011/uni00000013/uni00000013/uni00000026/uni00000027/uni00000029/uni00000003/uni00000024/uni00000046/uni00000055/uni00000052/uni00000056/uni00000056/uni00000003/uni00000027/uni00000048/uni00000059/uni0000004c/uni00000046/uni00000048/uni00000056/uni00000026/uni00000052/uni00000050/uni00000053
+/uni00000031/uni00000048/uni00000057/uni0000005a/uni00000052/uni00000055/uni0000004e(a) Heterogeneous Speed.
+/uni00000014 /uni00000015 /uni00000016 /uni00000017 /uni00000018
+/uni00000036/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000047/uni00000003/uni00000038/uni00000056/uni00000048/uni00000055/uni00000003/uni0000002c/uni00000027/uni00000016/uni00000013/uni00000008/uni00000017/uni00000013/uni00000008/uni00000018/uni00000013/uni00000008/uni00000019/uni00000013/uni00000008/uni00000024/uni00000046/uni00000046/uni00000058/uni00000055/uni00000044/uni00000046/uni0000005c /uni0000002f/uni00000052/uni0000005a/uni00000010/uni0000004f/uni00000052/uni0000005a
+/uni0000002b/uni0000004c/uni0000004a/uni0000004b/uni00000010/uni0000004f/uni00000052/uni0000005a/uni0000002f/uni00000052/uni0000005a/uni00000010/uni0000004b/uni0000004c/uni0000004a/uni0000004b
+/uni0000002b/uni0000004c/uni0000004a/uni0000004b/uni00000010/uni0000004b/uni0000004c/uni0000004a/uni0000004b (b) Heterogeneous Data.
+Figure 2: Edge devices exhibit (a) heterogeneous computational
+and communication speeds and (b) diverse data distributions, lead-
+ing to accuracy variance for the same plan across users. “Low-high”
+refers to using resource-light for operator 1 and resource-intensive
+configurations for operator 2.
+introduces unique systems challenges due to its user-centric
+nature and spans across various stages and infrastructure tiers.
+Diverse SLO Requirements. As ML applications increas-
+ingly serve diverse end users, SLO requirements now vary
+not only across applications but also among users within the
+same application [75]. For instance, speaking and reading
+speeds differ by language and age in live speech recognition
+and video chats [58], while user playstyles and speeds vary
+widely in AI-powered gaming [23, 26].
+Heterogeneous Infrastructure Capabilities. Compound
+AI serving can span heterogeneous infrastructure tiers, fac-
+ing wide variations in network conditions and system perfor-
+mance (e.g., differing capabilities of edge devices and cloud
+machine instances), so even queries with identical SLO re-
+quirements can necessitate distinct execution pipelines. As
+shown in Figure 2(a), our analysis of real-world network band-
+width from 10K end-user devices [52, 64] shows that their
+available bandwidth to the cloud varies by orders of magni-
+tude, as do device compute capabilities.
+Enormous Plan Search Space. Beyond heterogeneous sys-
+tem speeds, input data distribution is often query- and user-
+specific, requiring personalized plans even when targeting
+identical accuracy requirements. For example, in an interac-
+tive movie tour application (a video Q&A task) powered by
+a multimodal serving pipeline [85], Figure 2(b) shows that
+the accuracy of a fixed serving pipeline can vary significantly
+depending on the movie being watched. Importantly, more
+resource-intensive configurations do not consistently yield
+better accuracy, further complicating the planning space.
+The interplay of diverse SLO requirements, system speeds,
+and data characteristics creates an expansive planning search
+space. For a pipeline with Moperators, each offering Ncon-
+figuration options and Kplacement choices, the total number
+of possible pipeline plans grows exponentially to O( KM·NM),
+yielding thousands of possibilities (Figure 3(a)).
+Multi-query at Scale and Dynamics. Worse, practical de-
+ployments require planning and deploying numerous queries
+that share cross-tier infrastructure resources for high resource
+0 20 40 60 80 100
+Accuracy (%)101102103Latency (ms)
+0 1 Cost(a) Vast search space.
+100101102103
+Response Time (s)0.000.250.500.751.00CDF across QueriesVulcan
+VideoStorm (b) Time to first feasible plan.
+Figure 3: Each query can have thousands of plan candidates.
+Existing advances, Vulcan [104] and VideoStorm [99], spend tens
+of seconds to identify the first feasible plan that satisfies SLO.
+0 250 500 750 1000
+Planning Time (s)0.00.20.40.60.81.0Norm. Deploy. CostVideoStorm
+Vulcan
+(a) Planning time to Cost.
+100 200 300 400 500
+Number of Queries100200300400500Service Goodput
+Global Planning
+Local Planning (b) Global planning is needed.
+Figure 4: (a) State-of-the-art query planners suffer from slow re-
+sponse times to find the cost-effective plan, and (b) are insufficient
+for multi-query global planning.
+utilization and SLO goodput [99]. However, burst workloads,
+resource contention, and performance fluctuations (e.g., due
+to network dynamics) can lead to dynamic tensions between
+preserving SLO and lowering deployment costs in the wild.
+2.3 Limitations of Existing Advances
+State-of-the-art ML serving systems have primarily focused
+on optimizing either server-side metrics, such as serving
+throughput [4,39,55], or SLO-aware request scheduling for in-
+dividual ML models [100, 105]. While a few recent advances
+target live ML analytics (e.g., video analytics), they are funda-
+mentally restricted to single, long-running pipelines [94, 104]
+and/or within the cloud [99]. We next show how existing
+advances fall short for compound AI serving.
+Slow Responsiveness and Excessive Costs. Existing ad-
+vances are insufficient even for single-query planning. Fig-
+ure 3(a) shows that a video Q&A query [85] can have thou-
+sands of possible plans with varying performance and costs.
+Due to this explosive search space, state-of-the-art solutions
+like Vulcan [104] and VideoStorm [99] require tens of seconds
+to identify the first plan that satisfies user SLOs on accuracy
+and latency (Figure 3(b)), even when ignoring deployment
+cost. Figure 4(a) further shows that identifying a cost-efficient,
+SLO-compliant plan can take minutes, often exceeding the
+lifespan of short-lived video chat queries [15]. Such slow re-
+sponsiveness is prohibitive in many real-time scenarios [70],
+where changing conditions require swift replanning to sustain
+service. Even for throughput-intensive applications without
+stringent responsiveness constraints, the overhead of profiling
+large numbers of plans imposes significant cost burdens on
+service providers at scale (§6.2).
+Inability for Multi-Query Deployment. Scaling planning
+to deployments with many concurrent queries dramatically
+amplifies the already vast planning complexity. Moreover,
+runtime dynamics within a single query can trigger costly
+system-wide global replanning. As shown in Figure 4(b),
+naively planning each query independently and then packing
+them together can lead to large performance loss compared
+to global multi-query planning. This is due to their resource
+contention, which results in severe SLO violations, alters plan
+latency, and invalidates previously optimal local plans. Alter-
+natively, overprovisioning resources can avoid contention but
+substantially inflates deployment costs.
+3 Circinus Overview
+In this paper, we introduce Circinus, an SLO-aware query
+planner for compound AI serving that enables real-time plan-
+ning for many concurrent queries sharing infrastructure. Circi-
+nus is designed to deliver high SLO attainment and low re-
+sponse latency for users, while ensuring cost-effective deploy-
+ment for service providers and maximizing resource utiliza-
+tion for infrastructure providers.
+Design Space. In practical deployments, users submit
+queries online and completed queries exit the service. For
+each incoming query, Circinus determines the query plan,
+specifying operator placement, configuration, and resource
+allocation. The resource orchestrator (e.g., Kubernetes [45])
+then deploys the plan across machines and potentially tiers.
+Circinus supports a wide range of compound AI applications:
+•Queries with Continuous Interaction : These queries
+involve continuous input streams—such as streaming
+speech recognition [70], GenAI-based video chat [15],
+video conferencing [108], and interactive virtual tours for
+shopping [7]. They require fast and cost-effective query
+planning to enable real-time deployment and responsive-
+ness. While throughput-intensive queries (e.g., batch edge-
+cloud video analytics [39]) are less sensitive to latency,
+they still require cost-efficient planning (e.g., minimizing
+profiling cost) to identify the most effective pipelines.
+•Queries with Ephemeral Interaction : Pipelines handling
+numerous short-lived requests, such as speech recognition
+from many users with brief inputs, aim to maximize over-
+all serving performance. Diverse applications and their
+runtime dynamics—including user-specific SLO varia-
+tions, resource fluctuations, and bursty arrivals—demand
+real-time, cost-efficient (re-)planning for different SLO
+groups [9, 29] and changing environments [13, 47].
+Given the resource-intensive nature of these compound
+AI applications and their high query volumes, Circinus must
+efficiently plan for many queries to maximize SLO service
+goodput. This requires intelligent planning that can collocate
+Multi -Pipeline  
+PlannerMulti -Query Scheduling① 
+③
+④ Query3
+[ p, c, r ]
+…
+[ p, c, r ]Query2
+[ p, c, r ]
+…
+[ p, c, r ]Query1
+[ p, c, r ]
+…
+[ p, c, r ]
+Edge MEC Cloud
+PlacementSingle-Query Searching
+② Search 
+Optimizer History
+SLO ProfilerPlan A
+Plan BFigure 5: Circinus overview for compound AI serving at scale.
+pipelines (e.g., through shared machines or models) while
+accounting for resource contention. To address this complex
+multi-query planning challenge, Circinus decomposes the
+problem into three core system components (Figure 5):
+•SLO Profiler (§4.1): Efficiently profiles the performance
+of each proposed plan (e.g., latency, accuracy) to guide
+the search process.
+•Search Optimizer (§4.2): Minimizes the number of search
+steps (i.e., plans proposed and profiled) to find a set of
+SLO-compliant and Pareto-optimal plans. It optimizes the
+configuration ( c), placement ( p), and resource allocation
+(r) of operators, offering flexibility for global scheduling.
+•Multi-query Scheduler (§4.3): Taking into account the
+resource demands of various queries and their identified
+candidate plans, potentially spanning infrastructure tiers,
+it selects the optimal query-plan combinations to maxi-
+mize service goodput.
+Workflow. Circinus employs a two-stage workflow for high
+efficiency and decision quality (Figure 5). 1When a user sub-
+mits a new query, the Search Optimizer initiates an iterative
+single-query search process to generate (propose) candidate
+plans. 2The SLO Profiler evaluates the candidate’s perfor-
+mance (e.g., accuracy and latency), filtering out infeasible
+plans that fail to meet SLO requirements. 3The Search Opti-
+mizer refines feasible candidates by optimizing their Pareto-
+optimal resource cost. This 2-3loop continues until a prede-
+fined termination condition is met (e.g., response-time limit)
+or the search space is exhausted. 4The resulting candidate
+set is passed to the Multi-query Scheduler, which selects the
+best combination of query plans across all queries to maxi-
+mize service goodput while avoiding SLO violations due to
+resource contention. The finalized deployment plan is then
+executed by the cluster resource orchestrator. If runtime dy-
+100101102103104
+Avg. Number of Search Steps Needed51015Avg. Per-Step Cost (s)Guided Sampling
+Prefix CachingExploiting Plan Sim. Heuristic Algo.
+BetterCircinusVideoStorm Vulcan ExhaustiveFigure 6: Circinus optimizes single-query search by reducing per
+search step cost (§4.1) and the number of search steps (§4.2).
+namics are detected, the resource orchestrator can trigger a
+replanning phase.
+4 Circinus Design
+While decomposing the multi-query planning challenge im-
+proves scalability and adaptability—for example, allowing
+performance fluctuations within a single query pipeline
+to be addressed in isolation without costly system-wide
+replanning—doing so at scale introduces three unique chal-
+lenges in balancing planning efficiency and decision quality:
+•Profiling Efficiency: Evaluating SLO metrics often re-
+quires costly performance profiling (e.g., final model ac-
+curacy on GPUs [104]) for each candidate pipeline pro-
+posed by the Search Optimizer. How can we reduce the
+per-candidate profiling time and the overall monetary cost
+due to high query volumes (§4.1)?
+•Search Efficiency: Each query may yield thousands of
+potential plan candidates with varying performance. How
+can we efficiently identify SLO-compliant candidates to
+avoid excessive time and costs during search (§4.2)?
+•Contention-aware Joint Planning: Independent query
+planning overlooks cross-query resource contention,
+which can lead to cloud overloading while edge resources
+remain underutilized. How to maintain high decision qual-
+ity due to decomposition to maximize goodput (§4.3)?
+As shown in Figure 6, we next describe how Circinus en-
+ables real-time query planning by simultaneously reducing
+the per-step cost and the total number of steps required.
+4.1 SLO Profiler: Trade off Precision and Efficiency
+For each proposed plan—defined by its configuration, place-
+ment, and resource allocation—profiling to identify whether
+it satisfies SLO requirements (e.g., accuracy and latency) is
+critical to guiding the search process. Prior work [94] has
+optimized the profiling process based on two key insights:
+First, a plan’s accuracy is independent of its placement and
+resource allocation. Therefore, accuracy profiling can be effi-
+ciently conducted in the cloud GPUs (e.g., using proxy test
+data or replayed query inputs [99]). Second, a pipeline’s la-
+tency is a combination of per-operator computation latency
+and inter-operator data transfer latency. Since the data gener-
+ated by each operator is invariant to placement and resource
+settings, existing systems and deployments [44,60,104] reuse
+/uni00000013 /uni00000015/uni00000013/uni00000013/uni00000013 /uni00000017/uni00000013/uni00000013/uni00000013
+/uni00000033/uni00000055/uni00000052/uni00000049/uni0000004c/uni0000004f/uni0000004c/uni00000051/uni0000004a/uni00000003/uni00000027/uni00000058/uni00000055/uni00000044/uni00000057/uni0000004c/uni00000052/uni00000051/uni00000003/uni0000000b/uni00000056/uni0000000c/uni00000018/uni00000016/uni00000019/uni0000001a/uni0000001b/uni00000014/uni0000001c/uni00000018/uni00000033/uni00000055/uni00000052/uni00000049/uni0000004c/uni0000004f/uni0000004c/uni00000051/uni0000004a/uni00000003/uni00000024/uni00000046/uni00000046/uni00000003/uni0000000b/uni00000008/uni0000000c/uni0000002a/uni00000055/uni00000052/uni00000058/uni00000051/uni00000047/uni00000003/uni00000037/uni00000055/uni00000058/uni00000057/uni0000004b
+/uni00000035/uni00000058/uni00000051/uni00000010/uni00000014/uni00000035/uni00000058/uni00000051/uni00000010/uni00000015
+/uni00000035/uni00000058/uni00000051/uni00000010/uni00000016(a) Plan profiling is expensive.
+0 200 400 600 800
+Number of Samples02040608099CDF Across Plans (%)Speech Recog.
+Visual Tracking
+Video Chat
+Video Capt.
+Code Gen. (b) T-test can reduce profiling data.
+Figure 7: Insufficient profiling can bias accuracy and misleading
+search. (a) The shaded area shows the [5%, 95%] range of y-axis
+values over 100 runs per x-input with random sampling; each line
+reports a sample run. (b) The number of samples needed to confirm
+the accuracy of a plan with a 99% confidence varies.
+the operator-level latency results from the accuracy profil-
+ing step. They then estimate end-to-end latency by applying
+resource- and input-dependent offsets, such as adjusting data
+transfer duration based on bandwidth and traffic size. Recent
+work [11, 49, 73, 92] validates the effectiveness of this latency
+profiling strategy. As a result, both accuracy and latency pro-
+filing can be consolidated into the accuracy profiling phase.
+However, as ML models and pipelines grow increasingly
+complex, accuracy profiling has become a major bottleneck.
+As shown in Figure 7(a), profiling the accuracy of just a single
+configuration of a speech recognition pipeline (plan), can take
+several minutes—even on high-end A100 GPUs—driving the
+total profiling cost to tens or even hundreds of dollars consid-
+ering thousands of candidate plans per query [28]. Unfortu-
+nately, query accuracy is highly input-dependent and can vary
+across users (§2). Even minor configuration adjustments (e.g.,
+modifying video resolution) can alter the input data, propa-
+gate through the pipeline, and impact the overall accuracy,
+thereby necessitating costly re-profiling.
+Circinus reduces profiling overhead by introducing two
+key techniques: (i) mathematically guided profiling, which
+minimizes the required data volume while preserving profil-
+ing precision; and (ii) a pipeline dependency-aware cache,
+which eliminates redundant profiling by reusing results across
+overlapping pipeline components.
+Guided Search with Imprecise Profiling. Profiling a plan
+on a large dataset Dyields more precise feedback for the
+search process, reducing the number of search steps needed
+and ensuring compliance with SLO requirements. However,
+this precision comes at the cost of increased profiling over-
+head (Figure 7(a)). Unlike prior approaches [39,94,99], which
+rely on randomly sampling a fixed, manually specified number
+of cases (e.g., 500 video frames), Circinus strategically selects
+a subset of profiling cases to ensure the sample mean (accu-
+racy) closely approximates the population mean—preserving
+profiling accuracy while minimizing cost.
+Circinus draws inspiration from importance sampling tech-
+niques in the ML literature [34], which recognize that model
+accuracy often varies across different input distributions. For
+example, a classification model may reliably distinguish be-
+tween humans and cats, yet struggle with finer-grained dis-
+tinctions, such as between long-haired and short-haired cats.
+As shown in Theorem 1, we prove that identifying distinct
+data distributions (strata) allows reducing accuracy variance in
+profiling, thereby lowering the number of samples per stratum
+(profiling costs). Specifically, Circinus applies lightweight,
+one-shot K-Means clustering to the profiling data D, grouping
+it into Kstrata based on input features. When selecting a pro-
+filing case, Circinus first chooses a stratum in a round-robin
+manner and then randomly samples a case from that stratum.
+Theorem 1 proves that our guided profiling design achieves
+the same mean of random sampling with lower variance. We
+leave the detailed proof in Appendix C.
+Theorem 1. Suppose profiling data Dis stratified into K
+strata, where each stratum Dkfollows a distribution with
+mean µk, variance σ2
+k, and weight (probability) pk. When sam-
+pling Ndata points from D, the variance of random sampling
+is given by:
+Σ2
+0=1
+N 
+K
+∑
+k=1pkσ2
+k+K
+∑
+k=1pk(µk−K
+∑
+j=1pjµj)2!
+while that of stratified sampling is: Σ2
+1=1
+N 
+∑K
+k=1pkσ2
+k
+.
+Circinus further extends guided profiling by introducing an
+early stopping mechanism, yet without misleading the search
+process. The core insight is that profiling should terminate
+as soon as we are sufficiently confident that a candidate plan
+either satisfies or violates the accuracy SLO (i.e., determining
+the value of 1(acc≤accslo)), rather than waiting to obtain
+the exact accuracy. However, as shown in Figure 7(b), the
+number of profiling cases required to reach this confidence
+threshold varies depending on the query’s SLO requirement
+and the actual accuracy of the plan. To address this, Circinus
+adopts a two-sided t-test [32, 107] to dynamically estimate
+runtime confidence based on the sample mean and variance.
+Specifically, it computes the probability that the population
+accuracy equals the SLO threshold and terminates profiling
+once the confidence level reaches 99% (by default).
+Dependency-aware Caching. Planning often iterates over
+many candidate plans, introducing opportunities for incre-
+mental profiling. Specifically, modifying the configuration
+of downstream operators does not affect the output of up-
+stream stages. Circinus leverages this insight to introduce
+dependency-aware caching: the SLO Profiler tracks oper-
+ator dependencies and selectively caches intermediate out-
+puts, particularly those from expensive GPU stages, for reuse.
+When profiling a new plan, it performs prefix matching against
+cached operator outputs, allowing it to skip redundant pro-
+filing for shared upstream subgraphs and thereby reducing
+profiling cost. This memory footprint is small, only 60-80
+MB per query for the code generation task and about 500 MB
+for the visual tracking task (§6.1). Importantly, this cachingis query-specific and stateless: it is discarded right after the
+planning session concludes, introducing negligible overhead.
+4.2 Cost-aware Search Optimizer: Leverage Similarities
+Even with efficient per-plan profiling, identifying candi-
+date plans that satisfy multi-dimensional SLOs—such as
+latency, accuracy, and cost—remains a formidable chal-
+lenge due to the vast search space (§2). Existing ad-
+vances [94, 104] encode SLOs into a composite utility
+function (e.g., util=|plan_latency −target _latency |+α·
+|plan_accuracy −target _accuracy |) and applies greedy op-
+timization (e.g., hill-climbing [99]). However, tuning such
+functions (e.g., selecting α) requires substantial engineering
+effort across applications, queries, and even individual users.
+Worse, optimizing for composite utility often introduces bias
+toward one dimension, resulting in SLO violations—such as
+favoring a plan that violates accuracy targets but far under-
+cuts the latency demand—despite achieving high utility (§6.2).
+Moreover, different candidate plans can incur different search-
+ing costs (e.g., profiling LLaMA-70B is far more expensive
+than LLaMA-3B). All these make even single-query planning
+intractable—let alone scaling to multi-query scenarios.
+Circinus introduces a cost-aware search optimizer to mini-
+mize the number of search steps, thus planning costs, based
+on two key insights. First, reducing resource allocation to indi-
+vidual operators increases latency but does not affect pipeline
+accuracy. By tentatively assuming resource over-provisioning
+(e.g., dedicating a GPU to the query), we can defer fine-
+grained resource allocation to the multi-query scheduling
+phase (§4.3). This separation significantly shrinks the search
+space while preserving search quality: over-provisioned plans
+form a candidate superset that includes the globally optimal
+plan, allowing the scheduler to later trim excess resource al-
+locations. Second, instead of treating each candidate plan
+independently, we can leverage similarities among plans to
+prioritize those with higher potential. However, identifying
+such similarities is non-trivial: pipelines often involve various
+operators with diverse configurations, making it difficult to
+define contextual similarity within or across operators.
+Leveraging Intra-query Contextual Information. Iden-
+tifying high-potential plans without an explicit performance
+model can be formulated as a Bayesian Optimization (BO)
+problem. The BO framework iteratively proposes new can-
+didates, observes their performance, and refines its acquisi-
+tion function to guide subsequent exploration [78]. Circinus
+extends this approach by introducing a cost-aware multi-
+objective Bayesian optimizer (CMBO) tailored for multi-
+dimensional objectives (e.g., latency, accuracy). Our design
+removes the need for user-defined weights (e.g., αin com-
+posite utility) on individual SLO requirements and enables
+the search process to account for the heterogeneous searching
+(profiling) cost of each plan.
+Formally, our CMBO optimizer models the accuracy and
+latency of a plan, p, using two separate latent BO models: fa
+Figure 8: The prediction accuracy of fl. Left: CMBO are able to
+accurately predict latency while normal BO introduces significant
+error. Right: Circinus utilizes history model to achieve warm start,
+and switches back to CMBO model when it matures.
+predicts the accuracy of a plan given its configuration, while
+flpredicts the latency of the plan. Circinus proposes new
+plans that maximize the acquisition function (utility) U:
+U(p) =Pr[fa(p)≥Aslo]·Pr[f′
+l(p)≤Lslo]×1
+C(f′
+l(p))
+where Prrepresents the probability estimated by the latent
+BO models, updated over steps, and Crepresents the profiling
+cost of p, estimated using its predicted latency from BO model
+fl, as the plan with high latency will incur longer profiling
+(§4.1). Intuitively, our design prioritizes plans that maximize
+the probability of meeting SLO requirements (via the proba-
+bility terms) while also minimizing the profiling cost (via the
+inverse profiling cost term). We take this product form as it
+smooths the probability distribution across BO models, which
+often assume that the acquisition function follows normal
+distributions [25, 78].
+In each searching step, the plan with the highest utility is
+proposed and sent to the SLO Profiler, where its profiling
+results serve as feedback to update our BO model. Figure 8
+left illustrates the effectiveness of our BO design. Our CMBO
+optimizer is lightweight, requiring 40 milliseconds (§6.3) per
+proposal step (§5), reducing the search step to converge to the
+optimal to about 15 steps (Figure 6).
+Leveraging Inter-query Contextual Information. By de-
+composing individual SLO requirements, our CMBO design
+opens up more opportunities to leverage contextual similar-
+ity across past queries to warm-start the search space—e.g.,
+reusing the latency model fLfrom one query and the accu-
+racy model fAfrom another—rather than relying on random
+exploration during the cold-start phase of a new query. Identi-
+fying similar past queries, however, is non-trivial. Relying on
+application-level information (e.g., data distributions) is often
+impractical, as it requires tailoring how different data features
+and query-specific characteristics (e.g., query prompts) are
+embedded and then combined.
+Instead of collecting additional query information, Circi-
+nus focuses on the performance gap between the profiled
+result and the predictions from the BO model. A smaller gap
+indicates that the BO model fits the current query better. By
+accumulating these gaps over time, Circinus quantifies the
+contextual similarity between the new query and prior ones.Algorithm 1: Circinus Single-Query Search.
+1:Function SingleQuerySearch (Aslo, Lslo, dataset D):
+2: plans←[]
+3: while current_time < response_time_requirement do
+/*CMBO models of similar history queries vote for
+a new proposal if the new CMBO is immature. */
+4: plan←Propose (C,Aslo,Lslo,fA,fL)
+5: ifGuidedProfile (plan,D, Aslo, fA, fL)then
+/* If the plan is SLO-compliant, then generate
+its Pareto-optimal variants. */
+6: plans +=ParetoOptimize (plan ,Lslo)
+/* Update the CMBO model with profiling
+feedback. */
+7: ContextualUpdate ( plans ,fA,fL)
+8: return plans
+9:Function Propose (Cr, Aslo, Lslo, fA, fL):
+/* When the CMBO model of that query matures, it
+proposes the plan with the highest utility. */
+10: ifgap is smaller than history gap then
+11: c0←argmax (Cr,x: utility (x,Aslo,Lslo,fA,fL))
+12: else
+13: c0←history _propose (Cr,Aslo,Lslo)
+14: return c0
+15:Function ParetoOptimize (c, p, L slo):
+/* Multi-dimensional binary search to tighten resource
+usage until the latency SLO is violated. */
+16: r←over_provisioned (c)
+17: candidates ←binary _search (c,p,r,Lslo)
+18: return candidates
+19:Function ContextualUpdate (plans, f A, fL):
+20: fA,fL←f it_new_points (plans .acc,plans .lat)
+21: update _history _gap(plans .acc,plans .lat)
+Algorithm 1 summarizes the whole procedure of single-
+query search. With this similarity measurement, rather than
+starting with an untrained CMBO model, Circinus uses the
+CMBO models of the top-K most similar historical queries
+to warm-start the search for new queries (Line 10-Line 14).
+During each step, similar queries vote on the plans most likely
+to meet the SLO requirements of the new query, with votes
+weighted by our aforementioned similarity scores. Circinus
+then profiles the plan with the highest vote count, using the
+results to update its acquisition model and refine the accu-
+mulated performance gaps with other queries, thus revising
+the set of top-K similar queries (Line 3-Line 8). As shown in
+Figure 8 right, when the CMBO model matures, i.e., when its
+prediction gap to the profiled results becomes smaller than
+that of the top-K similar queries, Circinus transitions out of
+the warm-up phase, ensuring the search increasingly focuses
+on the new query’s unique context (Line 11).
+Our evaluations across various queries show that this search
+warm-up substantially speeds up the planning (§6.3).
+Achieving Resource Pareto Optimality. While our CMBO
+optimizer efficiently identifies plans that satisfy SLO require-
+ments, these plans may not lie on the cost-optimal Pareto
+frontier preferred by service providers. For instance, a plan
+may deliver low latency but overconsume compute resources.
+To address this, Circinus augments the CMBO search with a
+greedy post-processing step to reduce resource costs (Line 16-
+Line 18). Leveraging the insight that decreasing resource allo-
+cation increases latency without impacting accuracy, Circinus
+applies a multi-dimensional binary tree search to iteratively re-
+duce operator-level resource allocation. The search halts once
+further reductions would risk violating the latency constraint.
+This process can yield multiple low-cost, SLO-compliant
+plans. The final selection is deferred to the multi-pipeline
+planner (§4.3), which chooses query-plan combinations that
+collectively maximize system goodput.
+4.3 Multi-Query Planner: Optimize SLO Goodput
+Compound AI applications are inherently resource-intensive,
+requiring service providers to support many queries on shared
+infrastructure to remain cost-efficient. Circinus decomposes
+the expensive global planning problem, wherein the most
+cost-effective plan for each query may result in globally sub-
+optimal outcomes (§2.3). In fact, even a relaxed formulation
+of this multi-query scheduling problem—where the best plan
+for each query is predetermined—remains NP-hard, as it re-
+sembles a variant of the facility placement problem [87].
+Next, we address two related deployment objectives: (i)
+How to maximize the SLO service goodput under resource
+constraints (e.g., in private clusters)? and (ii) how to minimize
+total deployment costs for service providers (e.g., in public
+clouds) when serving all coexisting queries?
+Maximizing SLO Service Goodput. In resource-
+constrained environments, it is often infeasible to serve
+all queries concurrently, so maximizing SLO goodput
+becomes critical. To preserve high-quality planning decisions
+due to decomposition, Circinus goes beyond selecting the
+locally optimal plan for each query (i.e., the lowest-cost
+SLO-compliant plan). Instead, it leverages the full set
+of Pareto-optimal plans identified by the single-query
+planner. These candidates span different resource footprints
+and infrastructure tiers while meeting SLO requirements,
+allowing Circinus to globally select query-plan combinations.
+However, selecting query-plan combinations is non-trivial.
+A straightforward approach might involve formulating this as
+an integer linear programming (ILP) problem: deciding which
+query to serve, which plan to use from the available options,
+and on which machine, with the objective of maximizing total
+SLO goodput under per-tier resource constraints. We attached
+our detailed ILP formulation in Appendix B. However, for
+Nqueries, each with Pfeasible plans, if there are Tinfras-
+tructure tiers and each tier consists of Mmachines, this ILP
+formulation leads to O(N·P·T·M)binary variables. This
+results in an intractably large search space.
+Circinus leverages a greedy heuristic to efficiently scale
+multi-query planning. For each plan i, characterized by its ag-gregate cross-tier resource demand criand its corresponding
+query SLO benefit wi, Circinus ranks all plans across queries
+based on their benefit-to-resource ratio (i.e., wi/cri). The plan-
+ner then iteratively allocates resources to the highest-ranked
+plans, adding a plan to the allocation if its corresponding
+query has not yet been accommodated. This process contin-
+ues until available resources are exhausted.
+Minimizing Total Deployment Costs. Unlike the previous
+setup with limited resources, service providers may rely on
+public clouds with elastic resource scaling to serve all queries,
+where minimizing deployment costs becomes the key. To
+address this, our planner extends the previous greedy solution
+by modifying the sorting criteria. Instead of prioritizing based
+on the benefit-to-resource ratio, plans are ranked and selected
+based on their SLO benefit-to-monetary cost ratio.
+Our greedy heuristic is flexible and can incorporate various
+practical considerations. For instance, service providers can
+dynamically assign higher weights to queries as their pending
+time increases to prevent starvation and ensure fairness.
+Our empirical evaluations demonstrate that Circinus
+achieves near-optimal scheduling performance while main-
+taining scalability, even in large-scale deployments (§6.2).
+Online Adaptation. In real-world deployments, both query
+input distributions and system environments may drift over
+time (e.g., changing lighting conditions or network condi-
+tions in GenAI video chat [15]), leading to SLO violations.
+Building on existing infrastructure support for pipeline mi-
+gration [27, 45, 104], the core challenge becomes how to ef-
+ficiently replan in the wild. When triggered by the service
+monitor [27] or user intervention, Circinus reuses the pre-
+viously learnt CMBO model to accelerate convergence to a
+new plan. This warm-start approach leverages the model’s
+accumulated contextual knowledge, allowing it to quickly cor-
+rect stale estimations and adapt to the new environment. Our
+evaluations demonstrate that Circinus responds to runtime
+dynamics in seconds, ensuring smooth service (§6.4).
+5 Implementation
+We implemented a system prototype of Circinus using about
+1,300 lines of Python. As shown in Figure 9, Circinus is
+compatible with Kubernetes [45] and LangChain [54].
+Circinus Runtime. Circinus provides simple APIs for users
+to specify their SLO requirement (Figure 9). Our current
+implementation uses Kubernetes to manage the cluster. We
+leverage Linux cgroups, virtualization technologies NVIDIA
+MPS [69], and AMD MxGPU [8] to enforce performance iso-
+lation, thus avoiding performance degradation from resource
+contention. Our Kubernetes implementation supports dis-
+tributing operators across machines, connected via gRPC [33],
+and the controller dynamically manages their deployment
+based on user-defined configurations. Our Kubernetes sup-
+port can streamline last-hop management, such as integration
+with Cloud IoT platforms. Our implementation supports port-
+Task Model Families Search Space Description
+Speech Recognition (SR) Wave2Vec [10], Hubert [40] ∼6.4K Converts live human speech into text.
+Live Video Chat (LVC) InternVL2 [16], Gemma3 [1] ∼7K Video conversation with multimodal models.
+Visual Tracking (VT) YOLO [74], ResNet [36] ∼6.5K Object detection and tracking from edge camera.
+Dense Video Captioning (DVC) Whisper [71], T5 [72], Vid2Seq [97] ∼23K Segments and geneartes captions for a video.
+Agentic Code Generation (ACG) QWen [95], Llama [22], DeepSeek [19] ∼1K Code generation via two agents.
+Table 1: Tasks used in evaluations, details and datasets in Appendix A.
+1{// Query example
+2 "stages": [["Retrieve", "edge"],
+3 ["Detect", "cloud"],["Track", "cloud"]]
+4 "config": { " detection_model ": "yolov8s.pt","
+resolution": [720 , 720] ,} ...}
+5// API example
+6pub async fn submit(query: Json <Request >,
+7 device_pool: & mut DevicePool , controller: & mut
+Controller) -> Result <HttpResponse , Error > {
+8 // Get workers from device pool based on the query
+9 let workers = device_pool. take_from_stages (query.
+stages)?;
+10 // Establish gRPC connections among workers
+11 let channels = gRPC::join_all (workers.iter ()
+12 .map(w w.connect ())). await .map_err(error)?;
+13 // Submit worker task to the controller
+14 controller.add_task(channels , query.config)?;
+15 HttpResponse::Ok ().text("Task submitted!") }
+Figure 9: An example of Circinus API for visual tracking task.
+ing to the Cloud IoT platform for easing last-hop management.
+Following existing advances [27, 104], we maintain standby
+machines to minimize latency.
+Fault Tolerance. To ensure reliability, Circinus periodically
+and asynchronously records profiled configurations to a check-
+point file. In case of failure, Circinus can resume execution
+from the last saved state, reducing redundant profiling efforts.
+For backend fault tolerance, we rely on cluster management
+tools such as Kubernetes to handle failures.
+6 Evaluation
+We evaluate Circinus on four realistic applications, spanning
+traditional ML and GenAI applications. Our key findings are:
+•Circinus achieves over 3.2-5.0 ×better service goodput,
+and reduces the deployment cost by 3.2-4.0 ×(§6.2).
+•Circinus accelerates single-query planning by 4.2-5.8 ×,
+achieving sub-second responsiveness (§6.2).
+•For multiple-query planning, Circinus can effectively
+scale to thousands of queries while preserving global plan-
+ning performance to ILP solution(§6.2-§6.3).
+•Circinus achieves superior performance across a wide
+range of settings and effectively reacts to dynamics (§6.4).
+6.1 Experiment Setup
+Experimental setup. Circinus is designed to support large-
+scale deployments involving potentially millions of end users.
+Deploying at such a scale would be prohibitively expensive
+and impractical for ensuring experimental reproducibility. Fol-
+lowing state-of-the-art solutions [94, 104], we deploy a small-
+scale three-tier infrastructure consisting of cloud resources
+on Google Cloud Platform (GCP) with 4 A100 GPUs, edge
+clusters with 4 V100 GPUs, and 8 local edge devices usingcommodity GPUs (RTX 1080Ti, 2080Ti, 3090).
+We further consider large-scale scenarios using traces col-
+lected from the above practical deployment (e.g., plan latency
+and accuracy), simulating 64 cloud-based A100 GPUs and
+64 edge-based V100 GPUs, where we use realistic, heteroge-
+neous on-device computation and network speeds to simulate
+mobile devices [52].
+We detail our setup in Appendix A.
+Datasets and Queries. We evaluate Circinus using five
+popular applications with real-world workloads (Table 1).
+Real-time applications like Live Speech Recognition, Video
+Question Answering, and Visual Tracking are desiring fast
+responsiveness, thus being latency-critical . While Agentic
+Code Generation and Dense Video Captioning are batch ap-
+plications targeting the most cost-effective plans, thus being
+throughput-critical . We use realistic datasets with diverse
+input distributions and cover widely used model families.
+Following recent advances in SLO-aware model serv-
+ing [75, 99, 100], we identify Pareto-optimal trade-offs be-
+tween query quality and latency, and then sample from a
+uniform distribution to derive specific SLO requirements of
+each query (e.g., A video chat query might be "track user’s
+body movements while performing push-ups, provide instant
+corrective feedback on muscle engagement") We define accu-
+racy and latency requirements as 85%, 1.5 ×of the sampled
+points, respectively. We also evaluate the performance under
+different SLO requirements (§6.4). User query arrivals follow
+Microsoft’s ML-serving traces [90], scaled proportionally to
+our setup’s total resource capacity. Detailed knob configura-
+tions for each application are provided in Appendix A.
+Baselines. State-of-the-art methods are limited to single-
+tier and/or single-query scenarios. We extend them to support
+multi-tier, multi-query settings, creating stronger baselines:
+•Vulcan [104]: A state-of-the-art query planner designed
+for cross-tier, single-query live ML analytics. It encodes
+operator placement and configuration search into an ag-
+gregate utility function to find high-utility plans.
+•VideoStorm [99]: A multi-query planner for cloud-only
+query configurations, using a hill-climbing method.
+We augment Vulcan with our multi-query planner to sup-
+port many queries, and extend VideoStorm to support cross-
+tier planning by incorporating placement search into its hill-
+climbing method, alongside our multi-pipeline planner. Our
+results are consistent with those reported in baselines.
+Metrics. We aim to improve the following metrics:
+Circinu s Vulcan Videostorm Vulcan (15s) VideoStorm (15s) Circinu s (ILP)
+(a) Live Video Chat (small scale) (b) Live Video Chat (large scale) (c) Speech Recognition (large scale)
+ILP does not finish
+Figure 10: In resource-constrained deployments, Circinus improves service goodput across scales and applications, achieving performance
+close to the ILP optimal. It outperforms baselines that require 3 ×longer response times—15 seconds render real-time service impractical.
+•Low response time : the time required to generate the first
+feasible query plan that satisfies the user’s SLO require-
+ments, ensuring better service responsiveness;
+•Low profiling cost : the monetary cost used in profiling;
+•High SLO service goodput : the number of queries meeting
+SLO requirements under limited resource capacities.
+•Low resource costs : the deployment costs to sustain all
+queries (e.g., in public clouds with scaling capabilities).
+We report the mean values over five runs per experiment.
+6.2 End to End Performance
+We first evaluate Circinus in online multi-query settings.
+Forlatency-critical queries, we set a response time require-
+ment of 5 seconds, a popular user interaction constraint [75].
+The planning process terminates once this deadline is reached.
+For comparison, we also report baseline performance under a
+relaxed 15-second timeout. For throughput-critical queries,
+where the key concern is the trade-off between monetary pro-
+filing cost and deployment quality, we report performance
+under a 10 (A100) GPU-hour budget (about $37 in GCP)
+per query. We later present an ablation study under different
+response time and profiling cost budgets (§6.4).
+Circinus improves SLO service goodput. In resource-
+constrained deployment, Figure 10 shows that, over a 60-
+minute service window, Circinus achieves 15-40 ×higher
+average service goodput compared to Vulcan and VideoStorm
+in both small- and large-scale deployments. Circinus’s im-
+provements are consistent across tasks and sustained over
+time. Even when compared to Vulcan (15s) and VideoStorm
+(15s), Circinus still improves average SLO goodput by 3.2-
+5.0×, respectively. Note that 15 seconds have rendered many
+real-time services impractical [75].
+Importantly, Circinus achieves performance comparable to
+ILP-based scheduling decisions, demonstrating the effective-
+ness of our greedy heuristic in approximating optimal schedul-
+ing. However, the ILP solver lacks scalability for large-scale
+deployments, while Circinus scheduling algorithm scales sub-
+linearly (experiment included in Appendix F), enabling con-
+sistent improvements in large-scale deployments.
+/uni00000013 /uni00000015/uni00000013 /uni00000017/uni00000013 /uni00000019/uni00000013
+/uni00000037/uni0000004c/uni00000050/uni00000048/uni00000003/uni0000000b/uni00000050/uni0000004c/uni00000051/uni00000058/uni00000057/uni00000048/uni00000056/uni0000000c/uni00000013/uni00000014/uni00000015/uni00000016/uni00000017/uni00000018/uni00000031/uni00000052/uni00000055/uni00000050/uni00000011/uni00000003/uni00000027/uni00000048/uni00000053/uni0000004f/uni00000052/uni0000005c/uni00000011/uni00000003/uni00000026/uni00000052/uni00000056/uni00000057/uni00000056Circinus(a) Visual Tracking
+/uni00000013 /uni00000015/uni00000013 /uni00000017/uni00000013 /uni00000019/uni00000013
+/uni00000037/uni0000004c/uni00000050/uni00000048/uni00000003/uni0000000b/uni00000050/uni0000004c/uni00000051/uni00000058/uni00000057/uni00000048/uni00000056/uni0000000c/uni00000013/uni00000014/uni00000015/uni00000016/uni00000017/uni00000018/uni00000031/uni00000052/uni00000055/uni00000050/uni00000011/uni00000003/uni00000027/uni00000048/uni00000053/uni0000004f/uni00000052/uni0000005c/uni00000011/uni00000003/uni00000026/uni00000052/uni00000056/uni00000057/uni00000056/uni00000039/uni00000036/uni00000057/uni00000052/uni00000055/uni00000050/uni00000003/uni0000000b/uni00000014/uni00000018/uni00000056/uni0000000c /uni00000039/uni00000058/uni0000004f/uni00000046/uni00000044/uni00000051/uni00000003/uni0000000b/uni00000014/uni00000018/uni00000056/uni0000000c (b) Speech Recognition
+Figure 11: In cost-constrained deployment, Circinus reduces re-
+source monetary costs in supporting all queries.
+Speech Reco. L. Video Chat Visual Tracking010203040Median Resp. Time (s)Circinus
+VulcanVideoStorm
+Figure 12: Circinus improves query responsiveness in single-query
+planning. Error bars show 25% - 75% percentile.
+Circinus reduces deployment costs. We next evaluate the
+resource-abundant deployment scenario (e.g., utilizing cloud
+scaling services). We use the price on Google Cloud Platform
+as the monetary cost. For latency-critical tasks, we report
+the real-time normalized monetary cost over 60 minutes; for
+throughput-critical tasks, we report the unit (per hour) deploy-
+ment cost for a single query pipeline. Figure 11 shows that
+Circinus reduces the monetary cost for serving all queries by
+3.1-4×compared to baselines. Figure 13 shows that Circinus
+finds 2-5 ×cheaper deployment plan in time.
+Circinus improves both response time and profiling cost.
+Figure 12 shows Circinus identifies the first SLO-compliant
+plan in 3-5 seconds, 4-20 ×faster than Vulcan and 6-40 ×
+faster than VideoStorm. This fast responsiveness is important
+for user engagement in real-time services [90]. Moreover,
+Circinus spends 3 ×less time finding a comparable plan (Fig-
+ure 13) for throughput-critical queries, meaning substantial
+planning cost savings considering high query volumes.
+0.0 2.5 5.0 7.5 10.0
+Planning Time (GPU Hours)0.00.20.40.60.81.0Normalized CostVulcan
+VideoStorm
+Circinus(a) Dense Video Captioning
+0.0 2.5 5.0 7.5 10.0
+Planning Time (GPU Hours)0.00.20.40.60.81.0Normalized CostVulcan
+VideoStorm
+Circinus (b) Agentic Code Generation
+Figure 13: Circinus reduces planning (profiling) costs for
+throughput-critical applications, in A100 GPU hours.
+Visual Track. A. Code Gen.0246Improvement Factor
+3.0
+5.61.8
+4.71.8
+4.51.7
+4.2Circinus
+w/o SLO Profiler
+w/o Search Opti.
+w/o Multi. Sche.
+(a) End-to-end Perf. Breakdown.
+SR VT VQA DVC ACG135Planning Time (s)Other
+Search TimeProfiling Time
+0246
+Planning Time (hr) (b) Planning Runtime Breakdown.
+Figure 14: Performance breakdown of Circinus.
+6.3 Performance Breakdown
+Breakdown by System Components. We analyze the ef-
+fect of our design by comparing the improvement factor
+of Circinus’s each component: (i) Circinus w/o SLO Pro-
+filer: removes SLO Profiler , using fixed sampling without
+prefix cache, (ii) Circinus w/o Search Optimizer : removes
+history warm start and CMBO, using BO in Figure 8 left,
+and (iii) Circinus w/o Multi-query Planner : uses Yarn [83]
+scheduling (admits queries in a first-come-first-served fash-
+ion) across multiple queries, using their locally optimal plans.
+Here, we use VideoStorm-based local planning as the 1 ×
+baseline, with the same planning time budgets. As shown in
+Figure 14(a), Circinus outperforms all ablations, and the full
+design achieves the best performance, validating that each
+component meaningfully contributes to the overall system.
+Breakdown by Planning Runtime. We further decompose
+the time budget in a single-query planning, primarily con-
+sisting of three aspects: (i) Profiling Time : Time spent in the
+SLO Profiler, including pipeline inference and inter-stage data
+transfer; (ii) Search Time : Time spent in the Search Optimizer,
+including CMBO updates and utility evaluations; and (iii)
+Other : Miscellaneous system overhead, such as setting up
+connections within the Kubernetes backend. This includes
+time to spin up pre-warmed containers.
+Figure 14(b) shows that for latency-critical tasks, profiling
+dominates the time budget, accounting for over 80% of the
+total overhead. For throughput-critical tasks, profiling con-
+sumes over 99% of the planning time. These results reinforce
+the importance of Circinus’s design goal: minimizing profil-
+ing time. They also highlight the efficiency of our lightweight
+0.25 0.5 1 2 4 816
+Relative Query Arriv. Rate110100Service Goodput
+Circinus
+Vulcan (15s)
+VStorm (15s)(a) Impact of system loads.
+2.5 5.0 15.0 30.0 60.0
+Planning Time Limit (s)01020304050Service Goodput
+Circinus
+VulcanVideoStorm (b) Impact of planning time budget.
+0 100 200 300
+Planning Time (Second)0.00.20.40.60.81.0Norm. Deploy. Costw/o Transfer
+TF size=1
+TF size=10
+TF size=100
+(c) Impact of Transfer size.
+Easy Medium Hard
+Difficulty02468Improv. Factor
+5.0
+3.9
+5.32.0
+0.7
+0.81.0
+1.0
+1.0Circinus
+Vulcan (15s)VStorm (15s) (d) Impact of SLO Requirements.
+Figure 15: Circinus’s performance in a wide range of settings.
+CMBO, which requires only 40-100 ms per iteration, leaving
+the majority of the budget available for intensive profiling.
+6.4 Ablation Study
+Impact of System Loads. We next study the impact of sys-
+tem loads on Circinus performance. We deploy a small-scale
+visual tracking task and report the service goodput. We define
+the relative system load (query rate) of 1 as the arrival rate
+where a new query arrives once the previous one finishes, fully
+utilizing the cluster. A rate above 1 implies queuing (over-
+load), while below 1 indicates underutilization. Figure 15(a)
+shows that (i) Circinus consistently achieves higher goodput
+compared with baseline; and (ii) as the relative rate exceeds 1,
+Circinus’s improvement margin narrows due to resource satu-
+ration, with goodput capped by available resource capacity.
+Instead, baselines partially catch up by preferentially serving
+simpler queries that require fewer resources.
+Impact of Planning Time Limits. We evaluate Circinus’s
+performance under varying planning time budgets (i.e., the re-
+sponsive requirement for real-time tasks) using the live video
+chat task. Figure 15(b) shows that: (i) Circinus consistently
+outperforms all baselines across different planning time bud-
+gets; and (ii) Circinus achieves comparable performance to
+Vulcan and VideoStorm with nearly 10 ×less search time.
+Note that the performance gap narrows as the planning time
+increases because Circinus already identifies near-optimal
+plans early, and additional search yields only marginal gains.
+Impact of History Size. We evaluate how the number of
+historical queries used in transfer warm start (§4.2) affects
+performance. Figure 15(c) compares settings with no transfer
+and with 1, 10, and 100 historical models. Increasing the num-
+ber of models generally improves search speed by enabling
+0 25 50 75 100
+Planning Time (s)0.00.20.40.60.81.0Norm. Deploy. CostVulcan
+VideoStorm
+Circinus(a) Single Tier.
+1 10 100 1000
+Planning Time (s)0.00.20.40.60.81.0Norm. Deploy. CostCircinus
+Vulcan
+VideoStorm (b) Four Tiers.
+Figure 16: Circinus outperforms baselines across different tiers
+SLO Violation
+(a) Latency Drift.
+SLO Violation (b) Accuracy Drift.
+Figure 17: Circinus handles runtime dynamics efficiently.
+better similarity-based warm start. However, using too many
+(e.g., 100) introduces early-stage overhead, as Circinus must
+evaluate and select the most relevant histories, and perform
+hundreds of CMBO predictions. Our results show that using
+around 10 historical models strikes a good balance between
+efficiency and overhead, and we use this setting as the default.
+Impact of SLO requirements. Figure 15(d) shows Circi-
+nus’s service goodput improvement over Vulcan (15s) and
+VideoStorm (15s) under varying latency SLO requirements,
+categorized as easy, medium, and hard. We define these SLOs
+as 2.0×, 1.5×, and 1.1 ×the Pareto distribution mean, respec-
+tively. The medium setup is used in all other experiments. We
+evaluate Circinus on a large-scale Speech Recognition task
+and observe that: (i) Circinus consistently achieves 2.5-5.0 ×
+higher goodput compared to the 15s-baseline versions, across
+all SLO levels. (ii) Circinus also maintains its advantage under
+varying accuracy SLOs, more details in Appendix F.
+Circinus across Different Tiers. Circinus’s design gener-
+alizes to various deployment setups, including a single-tier
+setup (cloud-only, which corresponds to the design space of
+vanilla VideoStorm) and a four-tier setup (inserting an inter-
+mediate tier between edge and local clusters using NVIDIA
+T4 GPUs, mimicking a near-edge compute layer). It is worth
+noting that in the single-tier setup, VideoStorm slightly outper-
+forms Vulcan, consistent with their design goals: VideoStorm
+is optimized for cloud-only deployments, while Vulcan is
+tailored for edge-cloud collaboration.
+Handling Runtime Dynamics. We evaluate Circinus’s abil-
+ity to handle runtime dynamics. We run a Video Chat task in
+a scenario where (i) the network outage drops the bandwidth
+between the edge and the cloud to 0.2 Gbps at 26s. Circinuseagerly reacts to the change and quickly finds a new plan
+that satisfies the SLO requirements within 5 seconds, (ii) and
+as the lighting condition of the video input changes, causing
+the accuracy (CIDEr score) to drops to 0.017 at 30s. Circinus
+quickly identifies a new plan that meets the SLO requirements
+within 5 seconds. We inject the faults multiple times, with
+the timeline shown in Figure 17, proving Circinus can handle
+both latency and accuracy drifts effectively.
+7 Related Work
+ML Inference Optimization. Optimizing ML inference ef-
+ficiency has gained significant attention recently. Existing ad-
+vances span model parallelism [55, 62], quantization [20, 57],
+memory efficiency [51], and scheduling [76,98] for in-cluster
+resource-constrained model serving [79]. However, these ef-
+forts primarily target the serving of single ML models, or
+query pipelines in the cloud [99]. Extending these ML serving
+efforts toward the edge will only grow more important (e.g.,
+distributing data preprocessing closer to the edge [14]). Circi-
+nus complements these advancements by providing multi-tier
+support (§5).
+Edge-cloud AI Serving. Recent studies have explored mov-
+ing computation to the edge to improve efficiency and pri-
+vacy [46, 53], particularly in video analytics [13]. For in-
+stance, Chameleon [44] exploits spatiotemporal correlations
+in video streams to achieve optimal resource-accuracy trade-
+offs. EFL [102] partitions video clips and then dynami-
+cally assigns these partitions to edge servers. Similarly, Jelly-
+Bean [94] and Vulcan [104] optimize the placement and exe-
+cution of cost-efficient pipeline operators across infrastructure
+tiers but are restricted to handling single queries. In contrast,
+Circinus serves for generic, compound AI workloads where
+multiple queries share infrastructure resources, outperforming
+existing advances (§6).
+Efficient Configuration Search. Efficient configuration
+search has been extensively studied in the system domain,
+such as database [82], cloud hardware [5, 84], or ML
+hyper-parameter tuning [78]. Selecta [48] applies collabo-
+rative filtering to identify optimal cloud machine configura-
+tions. VideoStorm [99] searches query configurations and
+resource demands in cloud environments. Many learned algo-
+rithms have been used to facilitate the search process, such as
+Bayesian optimization [5, 77, 104], greedy hill climbing [99],
+and multi-armed bandit [37]. We proposes a new cost-aware
+multi-dimensional Bayesian optimizer [25] to tackle the con-
+siderably large search space for many queries.
+8 Conclusion
+This paper presents Circinus, a novel SLO-aware query plan-
+ner for large-scale compound AI serving deployment. By
+introducing a two-stage planning framework and leveraging
+plan similarity with precision-aware profiling, Circinus effi-
+ciently determines operator placements, configurations, and
+resource allocations for many queries with diverse SLO re-
+quirements, system, and data characteristics. Our evaluations
+using real-world workloads show that Circinus improves ser-
+vice goodput by 3.2-5.0 ×and reduces deployment costs by
+3.2-4.0 ×, enabling real-time compound AI deployments.
+References
+[1]Gemma 3. Gemma 3 technical report. arXiv preprint
+arXiv:2503.19786 , 2025.
+[2]A16Z. The top 100 gen ai consumer apps. A16Z , 2025.
+[3]Neil Agarwal, Rui Pan, Francis Y Yan, and Ravi
+Netravali. Tarzan: Passively-learned real-time rate
+control for video conferencing. arXiv preprint
+arXiv:2410.03339 , 2024.
+[4]Amey Agrawal, Nitin Kedia, Ashish Panwar, Jayashree
+Mohan, Nipun Kwatra, Bhargav Gulavani, Alexey
+Tumanov, and Ramachandran Ramjee. Taming
+Throughput-Latency tradeoff in LLM inference with
+Sarathi-Serve. In OSDI , 2024.
+[5]Omid Alipourfard, Hongqiang Harry Liu, Jianshu
+Chen, Shivaram Venkataraman, Minlan Yu, and Ming
+Zhang. CherryPick: Adaptively unearthing the best
+cloud configurations for big data analytics. In NSDI ,
+2017.
+[6]Keivan Alizadeh, Iman Mirzadeh, Dmitry Belenko,
+S. Karen Khatamifard, Minsik Cho, Carlo C Del
+Mundo, Mohammad Rastegari, and Mehrdad Fara-
+jtabar. Llm in a flash: Efficient large language model
+inference with limited memory. In ACL, 2024.
+[7]Amazon’s generative ai-powered shopping assistant.
+https://www.aboutamazon.com/news/retail/
+how-to-use-amazon-rufus , 2024.
+[8]Amd reveals world’s first hardware-virtualized
+gpu product line. https://ir.amd.com/
+news-events/press-releases/detail/663/
+amd-reveals-worlds-first-hardware-virtualized-gpu-product-line .
+[9]Apidog. Chatgpt free vs paid: What’s the difference?
+Apidog , 2023.
+[10] Alexei Baevski, Yuhao Zhou, Abdelrahman Mohamed,
+and Michael Auli. wav2vec 2.0: A framework for
+self-supervised learning of speech representations.
+Advances in neural information processing systems ,
+33:12449–12460, 2020.
+[11] Jehyeon Bang, Yujeong Choi, Myeongwoo Kim,
+Yongdeok Kim, and Minsoo Rhu. vtrain: A simulation
+framework for evaluating cost-effective and compute-
+optimal large language model training, 2023.[12] Marcus Basalla, Johannes Schneider, Martin Luksik,
+Roope Jaakonmäki, and Jan V om Brocke. On la-
+tency of e-commerce platforms. Journal of Organiza-
+tional Computing and Electronic Commerce , 31(1):1–
+17, 2021.
+[13] Romil Bhardwaj, Zhengxu Xia, Ganesh Anantha-
+narayanan, Junchen Jiang, Yuanchao Shu, Nikolaos
+Karianakis, Kevin Hsieh, Paramvir Bahl, and Ion Sto-
+ica. Ekya: Continuous learning of video analytics
+models on edge compute servers. In 19th USENIX
+Symposium on Networked Systems Design and Imple-
+mentation (NSDI 22) , pages 119–135, 2022.
+[14] Dongqi Cai, Shangguang Wang, Chen Peng, Zeling
+Zhang, and Mengwei Xu. Recall: Empowering mul-
+timodal embedding for edge devices. In arXiv:
+2409.15342 , 2024.
+[15] Chatgpt can now see, hear, and
+speak. https://openai.com/index/
+chatgpt-can-now-see-hear-and-speak/ .
+[16] Zhe Chen, Jiannan Wu, Wenhai Wang, Weijie Su,
+Guo Chen, Sen Xing, Muyan Zhong, Qinglong Zhang,
+Xizhou Zhu, Lewei Lu, et al. Internvl: Scaling up vi-
+sion foundation models and aligning for generic visual-
+linguistic tasks. In Proceedings of the IEEE/CVF Con-
+ference on Computer Vision and Pattern Recognition ,
+pages 24185–24198, 2024.
+[17] Cropink. 30+ deepseek statistics: How this ai model is
+changing the game. Cropink , 2025.
+[18] Dancetrack. https://paperswithcode.com/
+dataset/dancetrack , 2020.
+[19] DeepSeek. Deepseek-coder: When the large language
+model meets programming – the rise of code intelli-
+gence. arXiv preprint arXiv:2401.14196 , 2024.
+[20] Tim Dettmers, Mike Lewis, Younes Belkada, and Luke
+Zettlemoyer. Llm.int8(): 8-bit matrix multiplication
+for transformers at scale. In NeurIPS , 2022.
+[21] DS-1000. Ds-1000: A natural and reliable bench-
+mark for data science code generation. arXiv preprint
+arXiv:2211.11501 , 2022.
+[22] Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey,
+Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman,
+Akhil Mathur, Alan Schelten, Amy Yang, Angela Fan,
+et al. The llama 3 herd of models. arXiv preprint
+arXiv:2407.21783 , 2024.
+[23] Matthew W. G. Dye, Shawn C. Green, and Daphné
+Bavelier. Increasing speed of processing with action
+video games. Current Directions in Psychological
+Science , 2009.
+[24] Flores machine translation benchmark. https:
+//huggingface.co/datasets/google/fleurs ,
+2022.
+[25] Jacob R. Gardner, Matt J. Kusner, Zhixiang (Eddie)
+Xu, Kilian Q. Weinberger, and John P. Cunningham.
+Bayesian optimization with inequality constraints. In
+ICML , 2014.
+[26] The evolution of play: From live
+to living games. https://cloud.
+google.com/blog/products/gaming/
+generative-ai-fuels-next-gen-living-games ,
+2024.
+[27] Iot platform product architecture on
+google cloud. https://cloud.google.
+com/architecture/connected-devices/
+iot-platform-product-architecture .
+[28] Google cloud: Gpu pricing. https://cloud.google.
+com/compute/gpus-pricing?hl=en .
+[29] Gemini api pricing. https://cloud.google.com/
+gemini-api/pricing .
+[30] Genie 2: A large-scale foundation world model.
+https://deepmind.google/discover/blog/
+genie-2-a-large-scale-foundation-world-model/ ,
+2024.
+[31] Gmot-40(jì mò-40). https://spritea.github.io/
+GMOT40/ , 2021.
+[32] W. S. Gosset. The probable error of a mean.
+Biometrika , 6(1):1–25, 1908.
+[33] gRPC Authors. gRPC: A High Performance, Open
+Source Universal RPC Framework. https://grpc.
+io/.
+[34] Naiqing Guan and Nick Koudas. Fila: Online audit-
+ing of machine learning model accuracy under finite
+labelling budget. In SIGMOD , 2022.
+[35] Arpan Gujarati, Reza Karimi, Safya Alzayat, Wei Hao,
+Antoine Kaufmann, Ymir Vigfusson, and Jonathan
+Mace. Serving DNNs like clockwork: Performance
+predictability from the bottom up. In OSDI , 2020.
+[36] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian
+Sun. Deep residual learning for image recognition,
+2015.
+[37] Daniel N Hill, Houssam Nassif, Yi Liu, Anand Iyer,
+and SVN Vishwanathan. An efficient bandit algorithm
+for realtime multivariate optimization. In Proceedings
+of the 23rd ACM SIGKDD International Conference on
+Knowledge Discovery and Data Mining , pages 1813–
+1821, 2017.[38] Honeywell. Honeywell Forge: Enterprise
+Performance Management for Industrials.
+https://www.honeywell.com/us/en/solutions/
+honeywell-forge , 2024.
+[39] Kevin Hsieh, Ganesh Ananthanarayanan, Peter Bodik,
+Shivaram Venkataraman, Paramvir Bahl, Matthai Phili-
+pose, Phillip B. Gibbons, and Onur Mutlu. Focus:
+Querying large video datasets with low latency and
+low cost. In OSDI , 2018.
+[40] Wei-Ning Hsu, Benjamin Bolte, Yao-Hung Hubert
+Tsai, Kushal Lakhotia, Ruslan Salakhutdinov, and Ab-
+delrahman Mohamed. Hubert: Self-supervised speech
+representation learning by masked prediction of hidden
+units. IEEE/ACM transactions on audio, speech, and
+language processing , 29:3451–3460, 2021.
+[41] Gabriel Huang, Bo Pang, Zhenhai Zhu, Clara Rivera,
+and Radu Soricut. Multimodal pretraining for dense
+video captioning. In AACL-IJCNLP 2020 , 2020.
+[42] HumanEval. Evaluating large language models trained
+on code. arXiv preprint arXiv:2107.03374 , 2021.
+[43] Invgate. Chatgpt facts and statistics you need to know
+in 2025. Invgate , 2025.
+[44] Junchen Jiang, Ganesh Ananthanarayanan, Peter
+Bodik, Siddhartha Sen, and Ion Stoica. Chameleon:
+scalable adaptation of video analytics. In Proceedings
+of the 2018 conference of the ACM special interest
+group on data communication , pages 253–266, 2018.
+[45] Kubernetes: Production-grade container scheduling
+and management. https://kubernetes.io/ .
+[46] Peter Kairouz, H. Brendan McMahan, Brendan Avent,
+Aurélien Bellet, Mehdi Bennis, Arjun Nitin Bhagoji,
+Kallista Bonawitz, Zachary Charles, Graham Cor-
+mode, Rachel Cummings, Rafael G. L. DOliveira,
+Hubert Eichner, Salim El Rouayheb, David Evans,
+Josh Gardner, Zachary Garrett, Adrià Gascón, Badih
+Ghazi, Phillip B. Gibbons, Marco Gruteser, Zaid Har-
+chaoui, Chaoyang He, Lie He, Zhouyuan Huo, Ben
+Hutchinson, Justin Hsu, Martin Jaggi, Tara Javidi,
+Gauri Joshi, Mikhail Khodak, Jakub Koneeny, Alek-
+sandra Korolova, Farinaz Koushanfar, Sanmi Koyejo,
+Tancrède Lepoint, Yang Liu, Prateek Mittal, Mehryar
+Mohri, Richard Nock, Ayfer Özgür, Rasmus Pagh,
+Mariana Raykova, Hang Qi, Daniel Ramage, Ramesh
+Raskar, Dawn Song, Weikang Song, Sebastian U. Stich,
+Ziteng Sun, Ananda Theertha Suresh, Florian Tramèr,
+Praneeth Vepakomma, Jianyu Wang, Li Xiong, Zheng
+Xu, Qiang Yang, Felix X. Yu, Han Yu, and Sen Zhao.
+Advances and open problems in federated learning. In
+arXiv: 1912.04977 , 2021.
+[47] Mehrdad Khani, Ganesh Ananthanarayanan, Kevin
+Hsieh, Junchen Jiang, Ravi Netravali, Yuanchao Shu,
+Mohammad Alizadeh, and Victor Bahl. {RECL}: Re-
+sponsive {Resource-Efficient }continuous learning for
+video analytics. In 20th USENIX Symposium on Net-
+worked Systems Design and Implementation (NSDI
+23), pages 917–932, 2023.
+[48] Ana Klimovic, Heiner Litz, and Christos Kozyrakis.
+Selecta: heterogeneous cloud storage configuration for
+data analytics. In ATC, 2018.
+[49] Ferdi Kossmann, Ziniu Wu, Alex Turk, Nesime Tatbul,
+Lei Cao, and Samuel Madden. Cascadeserve: Unlock-
+ing model cascades for inference serving, 2024.
+[50] Ranjay Krishna, Kenji Hata, Frederic Ren, Li Fei-Fei,
+and Juan Carlos Niebles. Dense-captioning events
+in videos. In International Conference on Computer
+Vision (ICCV) , 2017.
+[51] Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying
+Sheng, Lianmin Zheng, Cody Hao Yu, Joseph E. Gon-
+zalez, Hao Zhang, and Ion Stoica. Efficient memory
+management for large language model serving with
+pagedattention. In SOSP , 2023.
+[52] Fan Lai, Yinwei Dai, Sanjay S. Singapuram, Jiachen
+Liu, Xiangfeng Zhu, Harsha V . Madhyastha, and
+Mosharaf Chowdhury. FedScale: Benchmarking
+model and system performance of federated learning at
+scale. In International Conference on Machine Learn-
+ing (ICML) , 2022.
+[53] Fan Lai, Xiangfeng Zhu, Harsha V . Madhyastha, and
+Mosharaf Chowdhury. Oort: Efficient federated learn-
+ing via guided participant selection. In OSDI , 2021.
+[54] Langchain. https://www.langchain.com/ .
+[55] Zhuohan Li, Lianmin Zheng, Yinmin Zhong, Vincent
+Liu, Ying Sheng, Xin Jin, Yanping Huang, Zhifeng
+Chen, Hao Zhang, Joseph E. Gonzalez, and Ion Sto-
+ica. AlpaServe: Statistical multiplexing with model
+parallelism for deep learning serving. In OSDI , 2023.
+[56] Librispeech. https://huggingface.co/datasets/
+openslr/librispeech_asr , 2021.
+[57] Ji Lin, Jiaming Tang, Haotian Tang, Shang Yang,
+Wei-Ming Chen, Wei-Chen Wang, Guangxuan Xiao,
+Xingyu Dang, Chuang Gan, and Song Han. Awq:
+Activation-aware weight quantization for llm compres-
+sion and acceleration. In MLSys , 2024.
+[58] Jiachen Liu, Zhiyu Wu, Jae-Won Chung, Fan Lai,
+Myungjin Lee, and Mosharaf Chowdhury. Andes:Defining and enhancing quality-of-experience in llm-
+based text streaming services. In arXiv: 2404.16283 ,
+2024.
+[59] Ted-lium corpus. https://huggingface.co/
+datasets/LIUM/tedlium , 2022.
+[60] Chengfei Lv, Chaoyue Niu, Renjie Gu, Xiaotang Jiang,
+Zhaode Wang, Bin Liu, Ziqi Wu, Qiulin Yao, Con-
+gyu Huang, Panos Huang, Tao Huang, Hui Shu, Jinde
+Song, Bin Zou, Peng Lan, Guohuan Xu, Fei Wu, Shao-
+jie Tang, Fan Wu, and Guihai Chen. Walle: An End-
+to-End, General-Purpose, and Large-Scale production
+system for Device-Cloud collaborative machine learn-
+ing. In OSDI , 2022.
+[61] MBPP. Program synthesis with large language models.
+arXiv preprint arXiv:2108.07732 , 2021.
+[62] Yixuan Mei, Yonghao Zhuang, Xupeng Miao,
+Juncheng Yang, Zhihao Jia, and Rashmi Vinayak.
+Helix: Distributed serving of large language models
+via max-flow on heterogeneous gpus. In ASPLOS ,
+2025.
+[63] Minds-14. https://huggingface.co/datasets/
+PolyAI/minds14 , 2022.
+[64] Mobiperf: Measuring network performance on mobile
+platforms. https://www.measurementlab.net/
+tests/mobiperf/ .
+[65] Mot17 challenge. https://motchallenge.net/
+data/MOT17/ , 2017.
+[66] Mot20 challenge. https://motchallenge.net/
+data/MOT20/ , 2020.
+[67] Microsoft rocket for live video analytics.
+https://www.microsoft.com/en-us/research/
+project/live-video-analytics/ , 2020.
+[68] Next-qa: Next phase of question-answering to explain-
+ing temporal actions. https://doc-doc.github.
+io/docs/nextqa.html , 2021.
+[69] Nvidia multi-process service. https://docs.
+nvidia.com/deploy/mps/index.html#/ .
+[70] Openai: Introducing next-generation audio mod-
+els in the api. https://openai.com/index/
+introducing-our-next-generation-audio-models/ .
+[71] Alec Radford, Jong Wook Kim, Tao Xu, Greg Brock-
+man, Christine McLeavey, and Ilya Sutskever. Robust
+speech recognition via large-scale weak supervision. In
+International conference on machine learning , pages
+28492–28518. PMLR, 2023.
+[72] Colin Raffel, Noam Shazeer, Adam Roberts, Katherine
+Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei
+Li, and Peter J Liu. Exploring the limits of transfer
+learning with a unified text-to-text transformer. Journal
+of machine learning research , 21(140):1–67, 2020.
+[73] Saeed Rashidi, Srinivas Sridharan, Sudarshan Srini-
+vasan, and Tushar Krishna. Astra-sim: Enabling sw/hw
+co-design exploration for distributed dl training plat-
+forms. In ISPASS , 2020.
+[74] J Redmon. You only look once: Unified, real-time ob-
+ject detection. In Proceedings of the IEEE conference
+on computer vision and pattern recognition , 2016.
+[75] Francisco Romero, Qian Li, Neeraja J. Yadwadkar, and
+Christos Kozyrakis. INFaaS: Automated model-less
+inference serving. In ATC, 2021.
+[76] Ying Sheng, Shiyi Cao, Dacheng Li, Banghua Zhu,
+Zhuohan Li, Danyang Zhuo, Joseph E. Gonzalez, and
+Ion Stoica. Fairness in serving large language models.
+InOSDI , 2024.
+[77] Jasper Snoek, Hugo Larochelle, and Ryan P Adams.
+Practical bayesian optimization of machine learning
+algorithms. Advances in neural information processing
+systems , 25, 2012.
+[78] Jasper Snoek, Oren Rippel, Kevin Swersky, Ryan
+Kiros, Nadathur Satish, Narayanan Sundaram, Md.
+Mostofa Ali Patwary, Prabhat, and Ryan P. Adams.
+Scalable bayesian optimization using deep neural net-
+works. In ICML , 2015.
+[79] Yixin Song, Zeyu Mi, Haotong Xie, and Haibo Chen.
+Powerinfer: Fast large language model serving with a
+consumer-grade gpu. In SOSP , 2024.
+[80] Sportsmot: A large multi-object tracking dataset in
+multiple sports scenes. https://paperswithcode.
+com/dataset/sportsmot , 2020.
+[81] Sutd-trafficqa (singapore university of technology
+and design - traffic question answering). https://
+paperswithcode.com/dataset/trafficqa , 2019.
+[82] Dana Van Aken, Andrew Pavlo, Geoffrey J. Gordon,
+and Bohan Zhang. Automatic database management
+system tuning through large-scale machine learning.
+InSIGMOD , 2017.
+[83] Vinod Kumar Vavilapalli, Arun C. Murthy, Chris Dou-
+glas, Sharad Agarwal, Mahadev Konar, Robert Evans,
+Thomas Graves, Jason Lowe, Hitesh Shah, Siddharth
+Seth, Bikas Saha, Carlo Curino, Owen O’Malley, San-
+jay Radia, Benjamin Reed, and Eric Baldeschwieler.
+Apache hadoop yarn: yet another resource negotiator.
+InSoCC , 2013.[84] Shivaram Venkataraman, Zongheng Yang, Michael
+Franklin, Benjamin Recht, and Ion Stoica. Ernest: Effi-
+cient performance prediction for Large-Scale advanced
+analytics. In NSDI , 2016.
+[85] lmms-lab/videomme. https://huggingface.co/
+datasets/lmms-lab/Video-MME , 2019.
+[86] Visdrone-dataset. https://github.com/VisDrone/
+VisDrone-Dataset , 2023.
+[87] Raajay Viswanathan, Ganesh Ananthanarayanan, and
+Aditya Akella. CLARINET: WAN-Aware optimization
+for analytics queries. In OSDI , 2016.
+[88] V oices obscured in complex environmental settings
+(voices). https://iqtlabs.github.io/voices/ ,
+2019.
+[89] V oxpopuli. https://huggingface.co/datasets/
+facebook/voxpopuli , 2022.
+[90] Jaylen Wang, Daniel S. Berger, Fiodar Kazhami-
+aka, Celine Irvene, Chaojie Zhang, Esha Choukse,
+Kali Frost, Rodrigo Fonseca, Brijesh Warrier, Chetan
+Bansal, Jonathan Stern, Ricardo Bianchini, and Ak-
+shitha Sriraman. Designing cloud servers for lower
+carbon. In ISCA , 2024.
+[91] Wenhai Wang, Jiangwei Xie, ChuanYang Hu, Haom-
+ing Zou, Jianan Fan, Wenwen Tong, Yang Wen, Silei
+Wu, Hanming Deng, Zhiqi Li, Hao Tian, Lewei Lu,
+Xizhou Zhu, Xiaogang Wang, Yu Qiao, and Jifeng Dai.
+Drivemlm: Aligning multi-modal large language mod-
+els with behavioral planning states for autonomous
+driving. In Arxiv: 2312.09245 , 2023.
+[92] Xizheng Wang, Qingxu Li, Yichi Xu, Gang Lu, Dan Li,
+Li Chen, Heyang Zhou, Linkang Zheng, Sen Zhang,
+Yikai Zhu, Yang Liu, Pengcheng Zhang, Kun Qian,
+Kunling He, Jiaqi Gao, Ennan Zhai, Dennis Cai, and
+Binzhang Fu. Simai: Unifying architecture design
+and performance tunning for large-scale large lan-
+guage model training with scalability and precision.
+InProceedings of the 25th USENIX Symposium on
+Networked Systems Design and Implementation (NSDI
+’25). USENIX, 2025.
+[93] Yuxi Wei, Zi Wang, Yifan Lu, Chenxin Xu, Changx-
+ing Liu, Hao Zhao, Siheng Chen, and Yanfeng Wang.
+Editable scene simulation for autonomous driving via
+collaborative llm-agents. In CVPR , 2024.
+[94] Yongji Wu, Matthew Lentz, Danyang Zhuo, and Yao
+Lu. Serving and optimizing machine learning work-
+flows on heterogeneous infrastructures. arXiv preprint
+arXiv:2205.04713 , 2022.
+[95] An Yang, Baosong Yang, Binyuan Hui, Bo Zheng,
+Bowen Yu, Chang Zhou, Chengpeng Li, Chengyuan
+Li, Dayiheng Liu, Fei Huang, Guanting Dong, Haoran
+Wei, Huan Lin, Jialong Tang, Jialin Wang, Jian Yang,
+Jianhong Tu, Jianwei Zhang, Jianxin Ma, Jin Xu, Jin-
+gren Zhou, Jinze Bai, Jinzheng He, Junyang Lin, Kai
+Dang, Keming Lu, Keqin Chen, Kexin Yang, Mei Li,
+Mingfeng Xue, Na Ni, Pei Zhang, Peng Wang, Ru Peng,
+Rui Men, Ruize Gao, Runji Lin, Shijie Wang, Shuai
+Bai, Sinan Tan, Tianhang Zhu, Tianhao Li, Tianyu
+Liu, Wenbin Ge, Xiaodong Deng, Xiaohuan Zhou,
+Xingzhang Ren, Xinyu Zhang, Xipin Wei, Xuancheng
+Ren, Yang Fan, Yang Yao, Yichang Zhang, Yu Wan,
+Yunfei Chu, Yuqiong Liu, Zeyu Cui, Zhenru Zhang, and
+Zhihao Fan. Qwen2 technical report. arXiv preprint
+arXiv:2407.10671 , 2024.
+[96] Antoine Yang, Arsha Nagrani, Ivan Laptev, Josef Sivic,
+and Cordelia Schmid. Vidchapters-7m: Video chapters
+at scale. In NeurIPS , 2023.
+[97] Antoine Yang, Arsha Nagrani, Paul Hongsuck Seo,
+Antoine Miech, Jordi Pont-Tuset, Ivan Laptev, Josef
+Sivic, and Cordelia Schmid. Vid2seq: Large-scale
+pretraining of a visual language model for dense video
+captioning. In CVPR , 2023.
+[98] Gyeong-In Yu, Joo Seong Jeong, Geon-Woo Kim, Soo-
+jeong Kim, and Byung-Gon Chun. Orca: A distributed
+serving system for Transformer-Based generative mod-
+els. In OSDI , 2022.
+[99] Haoyu Zhang, Ganesh Ananthanarayanan, Peter Bodik,
+Matthai Philipose, Paramvir Bahl, and Michael J Freed-
+man. Live video analytics at scale with approximation
+and{Delay-Tolerance }. In14th USENIX Symposium
+on Networked Systems Design and Implementation
+(NSDI 17) , pages 377–392, 2017.
+[100] Hong Zhang, Yupeng Tang, Anurag Khandelwal, and
+Ion Stoica. {SHEPHERD }: Serving {DNNs}in the
+wild. In 20th USENIX Symposium on Networked Sys-
+tems Design and Implementation (NSDI 23) , pages
+787–808, 2023.
+[101] Li Zhang, Zhe Fu, Boqing Shi, Xiang Li, Rujin Lai,
+Chenyang Yang, Ao Zhou, Xiao Ma, Shangguang
+Wang, and Mengwei Xu. More is different: Proto-
+typing and analyzing a new form of edge server with
+massive mobile SoCs. In ATC, 2024.
+[102] Wuyang Zhang, Zhezhi He, Luyang Liu, Zhenhua Jia,
+Yunxin Liu, Marco Gruteser, Dipankar Raychaudhuri,
+and Yanyong Zhang. Elf: Accelerate high-resolution
+mobile deep vision with content-aware parallel offload-
+ing. In MobiCom , 2021.[103] Xumiao Zhang, Anlan Zhang, Jiachen Sun, Xiao Zhu,
+Y . Ethan Guo, Feng Qian, and Z. Morley Mao. Emp:
+edge-assisted multi-vehicle perception. In MobiCom ,
+2021.
+[104] Yiwen Zhang, Xumiao Zhang, Ganesh Anantha-
+narayanan, Anand Iyer, Yuanchao Shu, Victor Bahl,
+Z Morley Mao, and Mosharaf Chowdhury. Vulcan:
+Automatic query planning for live {ML}analytics. In
+21st USENIX Symposium on Networked Systems De-
+sign and Implementation (NSDI 24) , pages 1385–1402,
+2024.
+[105] Yinmin Zhong, Shengyu Liu, Junda Chen, Jianbo Hu,
+Yibo Zhu, Xuanzhe Liu, Xin Jin, and Hao Zhang. Dist-
+Serve: Disaggregating prefill and decoding for goodput-
+optimized large language model serving. In OSDI ,
+2024.
+[106] Luowei Zhou, Chenliang Xu, and Jason J Corso. To-
+wards automatic learning of procedures from web in-
+structional videos. In AAAI Conference on Artificial
+Intelligence , 2018.
+[107] Zhi-Jian Zhou, Jie Ni, Jia-He Yao, and Wei Gao. On
+the exploration of local significant differences for two-
+sample test. In NeurIPS , 2024.
+[108] Zoom: Ai companion 2.0. https://news.zoom.us/
+ai-companion-2-0-launch/ , 2024.
+A Evaluation Setup
+A.1 Tasks
+•Visual Tracking : Given a video clip, the system tracks the
+object of interest. We use MOT17, MOT20, GMOT-40,
+DanceTrack, SportsMOT and VisDrone [18, 31, 65, 66,
+80, 86] datasets. The pipeline consists of a sampler, an
+augmenter, a detector, and a tracker.
+•Speech Recognition : Converts live human speech with
+background noise into text. We use FLoRes, VOiCES,
+MInDS-14, LibriSpeech, TED-LIUM and V oxPopuli [24,
+56, 59, 63, 88, 89] datasets. The pipeline consists of a
+sampler, a denoiser, an encoder, and a decoder.
+•Video Question Answering : Given a video clip and a multi-
+choice question, the system generates an answer. We use
+NExT-QA, SUTD-TrafficQA and Video-MME [68, 81,
+85] datasets. The pipeline consists of a sampler, an image
+processor, and a multi-modality model.
+•Video Captioning : Given a video clip, the system tempo-
+rally segments it into chapters. We use VidChapters-7M,
+Video Timeline Tags (ViTT), YouCook2 and ActivityNet
+[41,50,96,106] datasets. The pipeline consists of an ASR
+extractor, a video sampler, a vision backbone and a pre-
+trained Vid2Seq [97] model.
+•Agentic Code Generation : Given a natural language de-
+scription of a task, the system generates a program. We
+use HumanEval, MBPP, and DS-1000 [21,42,61] datasets.
+The pipeline consists of a analyzer and a code generator.
+The datasets’ realistic raw lifespan and data distribution
+are used, with queries lasting from a few to tens of minutes.
+A.2 Cluster Setup
+•One-tier setup: It only consists of the cloud tier, with
+A100 80 GB GPUs.
+•Three-tier setup: It consists of an edge tier, MEC tier,
+and cloud tier. We use a real edge device (§6.1, V100
+GPU as MEC tier and A100 GPU as cloud tier.
+•Four-tier setup: It consists of an edge tier, a near-edge
+tier, an MEC tier, and a cloud tier. We use a real edge
+device, T4 GPU as near-edge tier, V100 GPU as MEC
+tier, and A100 GPU as cloud tier.
+For pure CPU stages, we assume it enjoys isolated 32 vCPU
+with 128GB DRAM. For the GPU stage, we assume each
+GPU comes with 8 vCPU cores and 32GB DRAM.
+We set the bandwidth between the device and MEC cluster
+to 50 Mbps, mimicking WIFI upload speed, between the edge
+cluster and the cloud cluster to 400 Mbps, mimicking WAN
+speed. For bandwidth within the cluster, we set it to 3 Gbps to
+mimic RDMA network, and we set bandwidth within a node
+to be 25 Gbps to mimic NVLink speed. It should be noted
+that the latency is mainly contributed by WIFI and WAN,
+the in-cluster setting contributes little to the e2e latency. Weassume the device is dedicated to the user and thus free, and
+the other two tiers are shared. We follow the Google Cloud
+pricing for the cost of each tier.
+A.3 Knobs
+•Speech Recognition
+Input Sample Rate: 10k,12k,14k,16k
+Denoiser Frequency Mask Width: 0,50,100,200
+Inference Model: wav2vec-base ,
+wav2vec-large-10m , wav2vec-base-960h ,
+hubert-large ,hubert-xlarge
+•Visual Tracking
+Input Frame Size: 1280×1280 ,640×640,416×416
+Detection Model: YOLOv8x ,YOLOv8n ,YOLOv8s ,
+YOLOv8m
+ReID Model: ResNet152 ,ResNet101 ,ResNet50 ,
+ResNet18 ,MobileNet
+•Video Question Answering
+Number of Frames: 2,4,6,8,10
+Image Resolution: 256,448,896
+Multi-Modality Model: InternVL-1B ,
+InternVL-2B ,InternVL-4B ,InternVL-8B
+•Video Captioning
+Input Sample Rate: 0.5,1.0,1.5,2.0
+Image Resolution: 224,446
+Vision Encoder: ViT-L-14-336 (fp32 ,mixed ),
+ViT-B-16-SigLIP (fp32 ,fp16-i18n-256 ),
+convnext_large_d (fp16 )
+Transcript Extractor: Whisper-large-v2 ,
+Whisper-medium ,Whisper-small
+Vid2Seq Checkpoint: – HowTo100M +
+VidChapters-7M
+–HowTo100M + VidChapters-7M +
+YouCook2
+–HowTo100M + VidChapters-7M + ViTT
+A.4 Addtional Notes
+To ensure fair comparsion, we set the number of samples w/o
+guided sampling to be the P99 number derived from t-test, in
+Figure 7(b). Here we report the number used in evaluation:
+SR:356, VT:353, LVC:688, DVC:365, ACG:252.
+Given that t-test requires normal distribution, we set the
+minimum number of sample in guided sample to be 50, in
+order to have a sample size to use central limit theorem.
+B ILP Formulation
+B.1 Unlimited Resource
+In this scenario, we assume that the resource is unlimited on
+every tier. Our aims is to accomodate all the pipelines with
+minimum cost. We define the monetary cost of tier masGm.
+As the resource cost on each tier may incur fragmentation,
+this is a variant to the bin-packing problem. Assume we use
+KmGPU on tier m, our goal is to minimize the monetary cost
+$=∑Km∗Gm.
+Since bin-packing problem itself is NP-hard, our problem
+is also NP-hard. We formulate a linear programming problem
+and solve it using simplex algorithm. We first consider the
+case where m=1.
+minimize :N
+∑
+s=1G1∗zs (1)
+s.t.∑
+i,jxi j∗yi jk∗ci
+j[1]≤T1∗zk,∀k∈[1,K](2)
+|Ci|
+∑
+j=1xi j=1,∀i∈[1,N] (3)
+N
+∑
+k=1yi jk=1,∀i∈[1,N],j∈[1,|Ci|], (4)
+xi j∈ {0,1},yi jk∈ {0,1},zk∈ {0,1} (5)
+Where xi jis a binary variable indicating whether we use
+the placement choice cjfor query Qi.yi jkis a binary variable
+indicating whether the placement choice cjforQiis placed
+onkth GPU. zkis a binary variable indicating whether the
+kth GPU is used, assume we use at most KGPU(this can be
+estimated and usually lower than N, assuming each pipeline
+enjoys its own GPU). Tis the resource capacity for a single
+GPU.
+Here (2) is the objective function, (3) is the resource con-
+straint on every GPU (4) is the constraint ensures only one
+placement is selected per query, (5) is the constraint ensures
+we choose a GPU for the placement.
+The formulation is similar when considering mtiers.minimize :m
+∑
+t=1K
+∑
+s=1Gt∗zm
+s (6)
+s.t.∑
+i,jxi j∗ym
+i jk∗ci
+j[m]≤Tm∗zm
+k,∀m∈[1,M],k∈[1,K]
+(7)
+|Ci|
+∑
+j=1xi j=1,∀i∈[1,N] (8)
+N
+∑
+k=1ym
+i jk=1,∀i∈[1,N],j∈[1,|Ci|],m∈[1,M]
+(9)
+xi j∈ {0,1},yi jk∈ {0,1},zk∈ {0,1} (10)
+There are O(N∗M∗|C|∗K)binary variables and O(N∗
+M∗|C|+M∗K)constrains.
+B.2 Limited Resource
+When the resource is limited, our goal would be accommo-
+dating as many queries as possible. We assume there are Lm
+GPUs available on tier m, each with capacity Tm. We also
+assume the weight of query QiisWi.
+We first consider the case m=1.
+maximize :N
+∑
+s=1Ws∗hs (11)
+s.t.∑
+i,jhi∗xi j∗yi jk∗ci
+j[1]≤T1,∀k∈[1,L1](12)
+|Ci|
+∑
+j=1xi j=hi,∀i∈[1,N] (13)
+N
+∑
+k=1yi jk=hi,∀i∈[1,N],j∈[1,|Ci|], (14)
+hi∈ {0,1},xi j∈ {0,1},yi jk∈ {0,1} (15)
+The notation is similar to the unlimited resource case. The
+difference is that we introduce a binary variable hiindicating
+whether we decide to admit the query Qi. We don’t use zk
+here as we assume all GPU is put in use.
+(12) is the resource constraint on every GPU; here we
+enforce that only L1GPUs can be used. Other constraints are
+similar to the unlimited resource case.
+The formulation is similar when considering mtiers.
+maximize :N
+∑
+s=1Ws∗hs (16)
+s.t.∑
+i,jhi∗xi j∗ym
+i jk∗ci
+j[m]≤Tm,∀m∈[1,M],k∈[1,Lm]
+(17)
+|Ci|
+∑
+j=1xi j=hi,∀i∈[1,N] (18)
+N
+∑
+k=1ym
+i jk=hi,∀i∈[1,N],j∈[1,|Ci|],m∈[1,M]
+(19)
+hi∈ {0,1},xi j∈ {0,1},yi jk∈ {0,1} (20)
+There are O(N∗M∗|C|∗L)binary variables and O(N∗
+M∗|C|+M∗L)constrains.
+C Guided Sampling
+C.1 Proof of Theorem 1
+We first prove the case when strata has equal weight, then
+expand it to common cases.
+C.1.1 K Strata Equal Weight
+LetD1,D2,..., DKbeKprobability distributions with means
+µ1,µ2,..., µKand variances σ2
+1,σ2
+2,...,σ2
+K, respectively. We
+aim to draw a total of Nsamples, where Nis an integer divisi-
+ble by K. Let the sequence of drawn samples be s1,s2,..., sN.
+The sample mean is defined as ¯S=1
+N∑N
+i=1si.
+Strategy A: Random Sampling
+Each sample sifori=1,..., Nis drawn independently. For
+each individual draw i, the sample sioriginates from distribu-
+tionDkwith probability p=1/Kfork=1,..., K.
+Strategy B: Stratified Sampling
+The total sample of size Nis constructed such that exactly
+N/Ksamples are drawn independently from each distribution
+Dkfork=1,..., K.
+The goal is to compute the expected value, E[¯S], and the
+variance, Var(¯S), of the sample mean for both Strategy A and
+Strategy B. Let ¯SAdenote the sample mean under Strategy A
+and ¯SBdenote the sample mean under Strategy B.
+Let¯µ=1
+K∑K
+k=1µkbe the average of the distribution means.
+The expected value and variance for the sample mean under
+each strategy are derived as follows:
+Strategy A The expected value of the sample mean is:
+E[¯SA] =¯µ=1
+KK
+∑
+k=1µkThe variance of the sample mean is:
+Var(¯SA) =∑K
+k=1σ2
+k
+NK+∑K
+k=1(µk−¯µ)2
+NK
+Strategy B The expected value of the sample mean is:
+E[¯SB] =¯µ=1
+KK
+∑
+k=1µk
+The variance of the sample mean is:
+Var(¯SB) =1
+N2K
+∑
+k=1N
+Kσ2
+k
+=1
+NKK
+∑
+k=1σ2
+k
+C.1.2 Unequal Weight
+Nmust be large enough such that N pkis an integer for all
+k. This means Nmust be a multiple of the least common
+multiple (LCM) of the denominators of the probabilities pk
+(when written as fractions in lowest terms).
+Strategy A: Random Sampling
+Each sample si(i=1,..., N) is drawn independently. For
+each draw i, the sample sicomes from distribution Dkwith
+probability pk.pkhas a sum equal to 1.
+The expected value of the sample mean is:
+E[¯SA] =K
+∑
+k=1pkµk=µp
+The variance of the sample mean is:
+Var(¯SA) =1
+N 
+K
+∑
+k=1pkσ2
+k+K
+∑
+k=1pk(µk−µp)2!
+=∑K
+k=1pkσ2
+k
+N+∑K
+k=1pk(µk−µp)2
+N
+Strategy B: Stratified Sampling
+Draw exactly Nk=N pksamples from each distribution Dk.
+The expected value of the sample mean is:
+Var(¯SB) =N
+N2K
+∑
+k=1pkσ2
+k=∑K
+k=1pkσ2
+k
+N
+C.2 Assumptions in Real Implementation
+Here we assume a user input xis deterministically mapped to
+an output(accuracy) yby the pipeline function f, dataset Dis
+large enough to be considered infinite.
+We stratify the dataset in a way that the strata have equal
+size and a small LCM to ensure stratified sampling converges
+over a discrete number of samples.
+It should be noted that we can still apply the central limit
+theorem over each strata, thus we can still trust the result from
+the two-sided t-test, which requires normality.
+0 50 100
+Search Step0.00.51.01.5Pred. Error (SSRE)Continuous
+DiscreteFigure 18: Encoding configuration into discrete one-hot features
+sometimes outperforms encoding configuration into continuous
+variables for BO models in our task.
+D Latency Estimation
+It should be noted that the latency of a pipeline typically de-
+pends on the input length and output length (LLM decoding)
+or neither of them (streaming). Here, we assume the latency
+in SLO is in a normalized form that makes sense in its specific
+setup. It should be noted that our method is general and can
+be applied to any latency model.
+When running the accuracy profiling, Circinus already
+records the input length and output length of each query, data
+movement between operators, and the computation time of
+each operator on a cloud A100 GPU. We use this information
+to build a latency model for each pipeline.
+To be more specific, the latency of a query pipeline is the
+longest path in its computation graph, which is usually a DAG.
+We can calculate the latency of each operator and the data
+movement between operators. The latency of an operator
+is the sum of the computation time and the data movement
+time. We calculate the data movement time be Tdata=L
+B+T0,
+where Lis the data length and Bis the bandwidth, with term
+T0to account for the latency of the network. The computation
+time is the sum of the computation time of each operator. The
+latency of a pipeline is the longest path in the DAG.
+To estimate the computation time for an operator over dif-
+ferent GPU, we leverage the state of the art simulator. One
+rationale behind this is that, with fixed input distribution and
+input length, it is possible to estimate the computation time
+of an operator on different GPU.
+Resource Reduction For a non-batching task (i.e. tradi-
+tional CNN), a 25% resource means that certain task is only
+allocated with 25% of the FLOPS, which can be simulated.
+For batching task, (i.e. LLM), a 25% resource means that the
+task is batched with request from other user in a batch size of
+4, and the LLM still enjoys 100% of the FLOPS and memory
+due to practice consideration.
+E Discussion
+Discrete and Continuous Variables in BO Our compara-
+tive experiments indicate that using discrete one-hot vectors
+to encode configuration features can sometimes accelerate
+the convergence of BO and reduce inference latency, thereby
+enhancing overall performance.
+Easy Medium Hard
+Difficulty0246Improv. Factor
+3.7
+3.5
+3.72.6
+1.6
+2.21.0
+1.0
+1.0Circinus
+Vulcan (15s)VStorm (15s)(a) Accuracy SLO Requirements
+101102103104105106
+Number of Queries104
+103
+102
+101
+100101102Schedule Time (ms)
+Circinus(Small)
+Yarn (Small)
+Circinus (Large)
+Yarn (Large) (b) Scheduling Scalability
+F Additional Evaluation Results
+Accuracy SLO requirements. Figure 19(a) reports Circi-
+nus’s service goodput improvement factor over Vulcan, Vul-
+can (15s), VideoStorm (15s) under easy, medium, and hard
+SLO requirements, where we set the accuracy requirements to
+0.7,0.8,0.9that of Pareto points, respectively. The medium
+setup is what we used in other experiments. Fo speech recog-
+nition task. We notice that (i) Circinus consistently achieves
+1.5-3.5 ×higher goodput than Vulcan and Videostorm’s 15
+version;
+Scheduling Scalibility. Figure 19(b) compares the schedul-
+ing time between Circinus multi-scheduling and the Yarn
+scheduling with linear time complexity, which admits queries
+in a first-come-first-served fashion. The result shows that
+Circinus achieves similar time cost, and linearly scales up
+with the number of queries, in small and large cluster setups,
+respectively.
+Small Scale Limited Resource
+/uni00000013 /uni00000016/uni00000013 /uni00000019/uni00000013
+/uni00000037/uni0000004c/uni00000050/uni00000048/uni00000003/uni0000000b/uni00000050/uni0000004c/uni00000051/uni00000058/uni00000057/uni00000048/uni00000056/uni0000000c/uni00000013/uni00000015/uni00000018/uni00000018/uni00000013/uni0000001a/uni00000018/uni00000014/uni00000013/uni00000013/uni00000014/uni00000015/uni00000018/uni00000014/uni00000018/uni00000013/uni00000014/uni0000001a/uni00000018/uni00000036/uni00000048/uni00000055/uni00000059/uni0000004c/uni00000046/uni00000048/uni00000003/uni0000002a/uni00000052/uni00000052/uni00000047/uni00000053/uni00000058/uni00000057Circinus
+/uni00000039/uni0000004c/uni00000047/uni00000048/uni00000052/uni00000036/uni00000057/uni00000052/uni00000055/uni00000050/uni00000039/uni0000004c/uni00000047/uni00000048/uni00000052/uni00000036/uni00000057/uni00000052/uni00000055/uni00000050/uni00000003/uni0000000b/uni00000014/uni00000018/uni00000056/uni0000000c
+/uni00000039/uni00000058/uni0000004f/uni00000046/uni00000044/uni00000051/uni00000039/uni00000058/uni0000004f/uni00000046/uni00000044/uni00000051/uni00000003/uni0000000b/uni00000014/uni00000018/uni00000056/uni0000000c
+Circinus /uni0000000b/uni0000002c/uni0000002f/uni00000033/uni0000000cFigure 19: Speech Recognition (small)
+/uni00000013 /uni00000016/uni00000013 /uni00000019/uni00000013
+/uni00000037/uni0000004c/uni00000050/uni00000048/uni00000003/uni0000000b/uni00000050/uni0000004c/uni00000051/uni00000058/uni00000057/uni00000048/uni00000056/uni0000000c/uni00000013/uni00000015/uni00000013/uni00000017/uni00000013/uni00000019/uni00000013/uni0000001b/uni00000013/uni00000014/uni00000013/uni00000013/uni00000036/uni00000048/uni00000055/uni00000059/uni0000004c/uni00000046/uni00000048/uni00000003/uni0000002a/uni00000052/uni00000052/uni00000047/uni00000053/uni00000058/uni00000057Circinus
+/uni00000039/uni0000004c/uni00000047/uni00000048/uni00000052/uni00000036/uni00000057/uni00000052/uni00000055/uni00000050/uni00000039/uni0000004c/uni00000047/uni00000048/uni00000052/uni00000036/uni00000057/uni00000052/uni00000055/uni00000050/uni00000003/uni0000000b/uni00000014/uni00000018/uni00000056/uni0000000c
+/uni00000039/uni00000058/uni0000004f/uni00000046/uni00000044/uni00000051/uni00000039/uni00000058/uni0000004f/uni00000046/uni00000044/uni00000051/uni00000003/uni0000000b/uni00000014/uni00000018/uni00000056/uni0000000c
+Circinus (ILP)
+Figure 20: Visual Tracking (small)
+Large Scale Limited Resource
+/uni00000013 /uni00000016/uni00000013 /uni00000019/uni00000013
+/uni00000037/uni0000004c/uni00000050/uni00000048/uni00000003/uni0000000b/uni00000050/uni0000004c/uni00000051/uni00000058/uni00000057/uni00000048/uni00000056/uni0000000c/uni00000013/uni00000015/uni00000013/uni00000013/uni00000017/uni00000013/uni00000013/uni00000019/uni00000013/uni00000013/uni0000001b/uni00000013/uni00000013/uni00000014/uni00000013/uni00000013/uni00000013/uni00000014/uni00000015/uni00000013/uni00000013/uni00000014/uni00000017/uni00000013/uni00000013/uni00000014/uni00000019/uni00000013/uni00000013/uni00000036/uni00000048/uni00000055/uni00000059/uni0000004c/uni00000046/uni00000048/uni00000003/uni0000002a/uni00000052/uni00000052/uni00000047/uni00000053/uni00000058/uni00000057Circinus
+/uni00000039/uni0000004c/uni00000047/uni00000048/uni00000052/uni00000036/uni00000057/uni00000052/uni00000055/uni00000050/uni00000039/uni0000004c/uni00000047/uni00000048/uni00000052/uni00000036/uni00000057/uni00000052/uni00000055/uni00000050/uni00000003/uni0000000b/uni00000014/uni00000018/uni00000056/uni0000000c
+/uni00000039/uni00000058/uni0000004f/uni00000046/uni00000044/uni00000051/uni00000039/uni00000058/uni0000004f/uni00000046/uni00000044/uni00000051/uni00000003/uni0000000b/uni00000014/uni00000018/uni00000056/uni0000000c
+Figure 21: Visual Tracking (large)Unlimited Resource Deployment Cost
+/uni00000013 /uni00000015/uni00000013/uni00000013 /uni00000017/uni00000013/uni00000013 /uni00000019/uni00000013/uni00000013
+/uni00000037/uni0000004c/uni00000050/uni00000048/uni00000003/uni0000000b/uni00000050/uni0000004c/uni00000051/uni00000058/uni00000057/uni00000048/uni00000056/uni0000000c/uni00000013/uni00000014/uni00000015/uni00000016/uni00000017/uni00000031/uni00000052/uni00000055/uni00000050/uni00000044/uni0000004f/uni0000004c/uni0000005d/uni00000048/uni00000047/uni00000003/uni00000026/uni00000052/uni00000056/uni00000057Circinus /uni00000039/uni0000004c/uni00000047/uni00000048/uni00000052/uni00000036/uni00000057/uni00000052/uni00000055/uni00000050/uni00000003/uni0000000b/uni00000014/uni00000018/uni00000056/uni0000000c /uni00000039/uni00000058/uni0000004f/uni00000046/uni00000044/uni00000051/uni00000003/uni0000000b/uni00000014/uni00000018/uni00000056/uni0000000c
+Figure 22: Live Video Chat (unlimited)

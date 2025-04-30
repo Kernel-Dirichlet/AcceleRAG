@@ -1,0 +1,491 @@
+arXiv:2504.15715v1  [cs.DB]  22 Apr 2025Assessing FAIRness of the
+Digital Shadow Reference Model
+Johannes Theissen-Lipp
+Chair of Databases and Information Systems
+RWTH Aachen University
+Aachen, Germany
+theissen-lipp@dbis.rwth-aachen.de
+ORCID: 0000-0002-2639-1949
+Abstract —Models play a critical role in managing the vast
+amounts of data and increasing complexity found in the IoT,
+IIoT, and IoP domains. The Digital Shadow Reference Model,
+which serves as a foundational metadata schema for linking d ata
+and metadata in these environments, is an example of such a
+model. Ensuring FAIRness (adherence to the FAIR Principles ) is
+critical because it improves data ﬁndability, accessibili ty, interop-
+erability, and reusability, facilitating efﬁcient data ma nagement
+and integration across systems.
+This paper presents an evaluation of the FAIRness of the
+Digital Shadow Reference Model using a structured evaluati on
+framework based on the FAIR Data Principles. Using the conce pt
+of FAIR Implementation Proﬁles (FIPs), supplemented by a mi ni-
+questionnaire, we systematically evaluate the model’s adh erence
+to these principles. Our analysis identiﬁes key strengths, including
+the model’s metadata schema that supports rich description s and
+authentication techniques, and highlights areas for impro vement,
+such as the need for globally unique identiﬁers and conseque nt
+support for different Web standards. The results provide ac -
+tionable insights for improving the FAIRness of the model an d
+promoting better data management and reuse. This research
+contributes to the ﬁeld by providing a detailed assessment o f
+the Digital Shadow Reference Model and recommending next
+steps to improve its FAIRness and usability.
+Index Terms —FAIR Data Principles, FAIRness, Internet of
+Production, Reference Model, Digital Shadow
+I. I NTRODUCTION
+In today’s interconnected world, effective data managemen t
+is critical, especially in the areas of Internet of Things (I oT),
+Industrial Internet of Things (IIoT), and emerging Interne t
+of Production (IoP) [1], [2]. These ﬁelds generate massive
+amounts of data that must be efﬁciently captured, stored,
+processed, and shared to realize their full potential [3]. W ithout
+robust data management strategies, organizations face cha l-
+lenges such as data silos, inefﬁcient operations, and limit ed
+interoperability, all of which can hinder innovation and sc al-
+ability. As a result, ensuring that data systems are designe d
+to support effective communication and (re)usability acro ss
+multiple parties is essential to succeed [4], [5].
+One way to address data management challenges is through
+the use of reference models [6]. Reference models serve as
+standardized frameworks that provide structure and a commo n
+Funded by the Deutsche Forschungsgemeinschaft (DFG, Germa n Research
+Foundation) under Germany’s Excellence Strategy – EXC-202 3 Internet of
+Production – 390621612.understanding among various stakeholders, including deve l-
+opers, data providers, data consumers, and decision makers .
+These models facilitate communication by providing clear
+guidelines and common terminology, reducing misunderstan d-
+ings, and promoting collaboration. The Digital Shadow Ref-
+erence Model [7], [8] is an example of such a framework,
+focusing on the representation and use of Digital Twins or
+Shadows of physical assets in a structured and consistent
+manner. By deﬁning key concepts, interactions, and data ﬂow s,
+it supports the efﬁcient and systematic use of digital asset s.
+However, ensuring the proper (re)use of data and services
+within such frameworks imposes additional requirements. T he
+FAIR Data Principles [9] – Findability, Accessibility, Int er-
+operability and Reusability – promise to address these issu es.
+These principles aim to improve the usability of data by othe rs,
+whether human or machine, and provide a foundation for
+efﬁcient data sharing and integration. By aligning with the se
+principles, data systems become more discoverable, access ible,
+and compatible, enabling greater value to be extracted from the
+data. Achieving high FAIRness is critical to ensuring that the
+Digital Shadow Reference Model not only serves its immediat e
+purpose, but also facilitates the broader goal of making dig ital
+artifacts more reusable by diverse stakeholders.
+This paper aims to assess the FAIRness of the Digital
+Shadow Reference Model by systematically evaluating its
+alignment with the FAIR Data Principles. Through this anal-
+ysis, the paper identiﬁes key beneﬁts of the model in en-
+abling effective data management and highlights existing g aps
+where improvements are needed. Finally, the paper provides
+actionable recommendations for evolving the Digital Shado w
+Reference Model to achieve greater FAIRness. These improve -
+ments aim to make the model and its associated artifacts more
+reusable, thereby promoting greater interoperability and utility
+in IoT, IIoT, and IoP systems.
+II. B ACKGROUND
+A. The Digital Shadow Reference Model
+TheDigital Shadow Reference Model [7], [8] was developed
+within the Cluster of Excellence Internet of Production1and
+provides a structured approach to representing Digital Twi ns
+1https://iop.rwth-aachen.de
+©2025 IEEE. Personal use of this material is permitted. Perm ission from IEEE must be obtained for all other uses, in any cu rrent or future media, including
+reprinting/republishing this material for advertising or promotional purposes, creating new collective works, for r esale or redistribution to servers or lists, or
+reuse of any copyrighted component of this work in other work s.
+or Shadows of physical assets. While these two concepts (twi n
+vs. shadow) are often used interchangeably, a key differenc e is
+that Digital Twins typically include a feedback loop to the r eal
+world (i.e., actuators or control mechanisms), while Digit al
+Shadows do not, but instead focus more deeply on deriving
+insights. Digital Shadows can serve as digital counterpart s
+that reﬂect the states, behaviors, and attributes of real-w orld
+entities, enabling real-time monitoring, decision making , and
+analysis. By providing a standardized framework, the Digit al
+Shadow Reference Model helps ensure consistency in the way
+data about physical assets is collected, stored, and shared
+among stakeholders. This model is particularly important i n
+the IoT, IIoT, and IoP context [1], where seamless communi-
+cation and interoperability across heterogeneous systems and
+participants is critical.
+The model deﬁnes key components and interactions that
+are helpful for the creation and utilization of digital shad ows.
+These include data sources (e.g., sensors), data integrati on
+pipelines, and interfaces for data consumers (e.g., analyt ics
+systems or other Digital Twins/Shadows). By aligning these
+elements, the Digital Shadow Reference Model provides a
+foundation for interoperable digital ecosystems.
+B. The FAIR Principles
+The FAIR Data Principles [9] - Findability, Accessibility,
+Interoperability, and Reusability - were introduced to imp rove
+the management and use of digital assets2. These principles
+aim to ensure that data is:
+1)Findable : Easily discoverable through standardized
+identiﬁers and rich metadata.
+2)Accessible : Available through well-deﬁned access pro-
+tocols that maintain data integrity and security.
+3)Interoperable : Compatible with other data and systems
+via shared standards and formats.
+4)Reusable : Well-described and licensed to enable broad
+reuse across contexts.
+Meeting these principles enhances the usability of data for
+both humans and machines, and promotes seamless integratio n
+and collaboration. The FAIR Principles are widely recogniz ed
+as best practices in data management [10], [11] and are
+increasingly being adopted across industries and dataspac es
+[12]–[14].
+In parallel with initiatives around FAIR Digital Objects [15]
+as driver for efﬁcient data exchange3, there exist efforts to ac-
+celerate broad community convergence on FAIR implementa-
+tion options. One of these efforts are Reusable FAIR Implemen-
+tation Proﬁles (FIP) [16], which include a mini-questionnaire
+for creating an own FAIR implementation proﬁle. In this
+paper, we utilize this mini-questionnaire for evaluating t he
+FAIRness of the Digital Shadow Reference Model by adding
+an evaluation column ranging from --to++(see Table II.
+2See https://www.go-fair.org/fair-principles/ for a hand y overview.
+3Notable drivers are the FDO Forum and the
+German Federal Printing Ofﬁce.C. Why Align Reference Models with FAIR Principles?
+Integrating the FAIR Principles into reference models, suc h
+as the Digital Shadow Reference Model, is beneﬁcial to
+addressing key challenges in modern data ecosystems. Thus
+alignment ensures that the artifacts managed within the mod el
+- such as data, metadata, and services - become more FAIR
+and thus are more easily discoverable, accessible, and reus able.
+This is especially important in typical IoT / IIoT / IoP domai ns
+where large volumes of data are generated and shared among
+multiple stakeholders.
+Compliance with the FAIR Principles promotes interoper-
+ability, enabling digital assets to function seamlessly ac ross
+different systems and organizations. It also ensures that t hese
+assets can be effectively reused in different contexts, max i-
+mizing their value. For the Digital Shadow Reference Model,
+adopting the FAIR Principles not only improves its practica l
+utility, but also enhances its scalability and relevance in a data-
+driven worldwide production lab.
+III. M ETHODOLOGY
+Evaluating the FAIRness of the Digital Shadow Reference
+Model requires a structured assessment framework based on
+the four pillars of the FAIR Data Principles: Findability,
+Accessibility, Interoperability, and Reusability. To thi s end, the
+concept of FAIR Implementation Proﬁles (FIPs) [16] provides
+a robust foundation for this evaluation. The FIP framework,
+supplemented by a mini-questionnaire4and a best practice
+guide5, systematically breaks down each FAIR principle into
+speciﬁc criteria.
+This mini-questionnaire consists of 21 focused questions
+designed to measure compliance with the FAIR Principles. Us -
+ing this framework, we systematically assess the FAIRness o f
+the Digital Shadow Reference Model, identifying its streng ths
+and weaknesses through detailed responses to each criterio n.
+Table I shows the complete list of FIP mini-questionnaire
+questions that serve as our evaluation criteria.
+Data for the assessment is gathered from descriptions of
+the model, its usage within the Internet of Production project
+(use case interviews), documentation, general references on the
+Digital Shadow Reference Model, and literature on the FAIR
+Principles and related best practices. Note that some of the se
+resources are still only available internally in the said pr oject
+and have not yet been published for the scientiﬁc public. The se
+sources provide the necessary context and insight to assess the
+alignment of the model with the FAIR Principles.
+The evaluation procedure is conducted in three stages:
+•Mapping the Model to FAIR Principles : The compo-
+nents, processes, and outputs of the Digital Shadow Ref-
+erence Model are systematically mapped to the criteria
+outlined in the assessment framework.
+•Scoring : Each criterion is scored based on qualitative or
+quantitative metrics, such as the presence or absence of
+4https://bit.ly/yourFIP
+5https://www.go-fair.org/how-to-go-fair/fair-impleme ntation-proﬁle/
+2
+©2025 IEEE. Personal use of this material is permitted. Perm ission from IEEE must be obtained for all other uses, in any cu rrent or future media, including
+reprinting/republishing this material for advertising or promotional purposes, creating new collective works, for r esale or redistribution to servers or lists, or
+reuse of any copyrighted component of this work in other work s.
+TABLE I: Assessment criteria for FAIR principles from the FI P mini-questionnaire6derived from [16].
+FAIR Principle No. Question
+F1 #1 What globally unique, persistent, resolvable identiﬁers d o you use for metadata records?
+F1 #2 What globally unique, persistent, resolvable identiﬁers d o you use for datasets?
+F2 #3 Which metadata schemas do you use for ﬁndability?
+F3 #4 What is the technology that links the persistent identiﬁers of your data to the metadata description?
+F4 #5 In which search engines are your metadata records indexed?
+F4 #6 In which search engines are your datasets indexed?
+A1.1 #7 Which standardized communication protocol do you use for me tadata records?
+A1.1 #8 Which standardized communication protocol do you use for da tasets?
+A1.2 #9 Which authentication & authorisation technique do you use f or metadata records?
+A1.2 #10 Which authentication & authorisation technique do you use f or datasets?
+A2 #11 Which metadata longevity plan do you use?
+I1 #12 Which knowledge representation languages (allowing machi ne interoperation) do you use for metadata records?
+I1 #13 Which knowledge representation languages (allowing machi ne interoperation) do you use for datasets?
+I2 #14 Which structured vocabularies do you use to annotate your me tadata records?
+I2 #15 Which structured vocabularies do you use to encode your data sets?
+I3 #16 Which models, schema(s) do you use for your metadata records ?
+I3 #17 Which models, schema(s) do you use for your datasets?
+R1.1 #18 Which usage license do you use for your metadata records?
+R1.1 #19 Which usage license do you use for your datasets?
+R1.2 #20 Which metadata schemas do you use for describing the provena nce of your metadata records?
+R1.2 #21 Which metadata schemas do you use for describing the provena nce of your datasets?
+speciﬁc features and the degree of alignment with the
+FAIR Principles.
+•Analysis : The results are synthesized to identify patterns,
+including areas of strength and opportunities for improve-
+ment.
+While the framework provides a comprehensive approach to
+assessing FAIRness, three limitations should be noted. Som e
+aspects of the evaluation are inherently qualitative and ma y
+involve subjective judgment. This is due to the openness of
+the questions in the used questionnaire, and implies that th e
+a repetition of the study might lead to slight differences in
+some aspects. Such nuances however would not affect the
+derived recommendations and future directions. Additiona lly,
+please note that the scope of the assessment is speciﬁc to
+the Digital Shadow Reference Model and may not take into
+account external factors affecting its FAIRness. As the FAI R
+Principles or the Digital Shadow Reference Model evolve, th e
+relevance of some of the criteria may change, necessitating
+periodic updates to the contributions in this paper.
+IV. R ESULTS AND ANALYSIS
+The results of our FAIRness evaluation of the Digital
+Shadow Reference Model are summarized in Table II. The
+ﬁrst table column refers to the questions from the FIP mini-
+questionnaire shown in Table I. The second column gives the
+answers to these questions from the perspective of the Digit al
+Shadow Reference Model, and the third column indicates a
+rough measure derived from these answers. Note that the last
+column does not represent a quantitative metric but rather
+represents a better illustration.
+The areas of strength are the answers to questions #3, #4
+and #10, which address the ﬁndability andaccessibility areas
+of the FAIR Principles. These were evaluated with a (+)
+6https://www.go-fair.org/how-to-go-fair/fair-impleme ntation-proﬁle/score, because the Digital Shadow Reference Model itself
+is a metadata schema, it includes custom properties such as
+data traces ordigital/physical assets for linking between data
+and metadata, and it supports authentication and authoriza tion
+techniques such as HTTPS, FTPS or Git credentials.
+Neutral(o) scores were assigned to multiple answers,
+because the Digital Shadow Reference Model’s degree of
+alignment with the FAIR Principles are limited. These inclu de
+the support of basic HTTP URIs as dataset identiﬁers (#2)
+and a project-internal tool for indexing datasets (#6) from
+theﬁndable area. From the accessible area, multiple answers
+had a neutral score: The limited support for standardized
+communication protocols for data and metadata (#7 and #8),
+and the support for authentication and authorization techn iques
+through project-internal repositories only. In the interoperabil-
+ityarea, a neutral score was achieved because it supports
+schemas for metadata records (#16) but only via UML and
+custom cross-references. In the reusability area, two neutral
+scores were achieved for supporting provenance informatio n
+for both data and metadata (#20 and #21), but only with
+custom ﬁelds.
+The main weaknesses are as follows. No globally unique,
+persistent, resolvable identiﬁers are used for metadata re cords
+(#1), and metadata records are not indexed (#5) in search
+engines. Longevity is only ensured by tracking some assets
+with Git, but no explicit longevity plan is present (#11). Wi th
+regards to interoperability , neither machine-readable knowl-
+edge representation languages nor structured vocabularie s are
+used for data or metadata (#12 to #15). The only available
+dataset schema (#17) is a hierarchical structure based on
+the project structure. A proper usage of licenses for data or
+metadata assets is not covered (#18 and #19).
+In summary, the results of the evaluation show varying
+degrees of alignment between the Digital Shadow Reference
+3
+©2025 IEEE. Personal use of this material is permitted. Perm ission from IEEE must be obtained for all other uses, in any cu rrent or future media, including
+reprinting/republishing this material for advertising or promotional purposes, creating new collective works, for r esale or redistribution to servers or lists, or
+reuse of any copyrighted component of this work in other work s.
+TABLE II: FAIRness assessment of the Digital Shadow Referen ce Model using the questions from Table I.
+FIP Question Digital Shadow Reference Model Answer Evaluation (--/-/o/+/++)
+#1 None --
+#2 HTTP URIs/URLs o
+#3 This model is a metadata schema itself (no taxonomy or PIDs us ed) +
+#4 Included custom properties such as data trace ordigital/physical asset +
+#5 None --
+#6 Project-internal tools like Dataset Finder o
+#7 HTTP REST or manual ﬁle transfer o
+#8 Protocols such as HTTP / FTP / Git linked in a lightweight mann er o
+#9 Project-internal repositories o
+#10 HTTPS / FTPS / Git with credentials +
+#11 No explicit plan. Some assets are tracked with Git -
+#12 Loosely structured UML or JSON -
+#13 Free choice; no constraints or suggestions -
+#14 None –
+#15 DCAT derivative with uncontrolled entries -
+#16 UML and custom cross-references o
+#17 Hierarchical references (project structure) -
+#18 Not covered --
+#19 Not covered --
+#20 Custom provenance information o
+#21 Custom ﬁelds based on data management plans o
+Model and the FAIR Principles. Strengths were identiﬁed in
+the areas of ﬁndability and accessibility, with positive sc ores
+reﬂecting the model’s use of custom properties for linking d ata
+and metadata, and its support for authentication and autho-
+rization mechanisms. However, the assessment also identiﬁ ed
+several aspects with neutral scores, including basic recor d
+identiﬁers, limited indexing tools, and limited support fo r
+standardized protocols, schemas, and provenance informat ion.
+These results suggest that while the model includes some
+FAIR-aligned features, many are only partially realized or
+implemented in a project-speciﬁc manner.
+A more detailed analysis reveals notable gaps that hinder th e
+model’s broader FAIRness. Key weaknesses include the lack
+of globally unique, resolvable identiﬁers, inadequate ind exing
+of metadata, and insufﬁcient planning for asset longevity.
+Interoperability is constrained by the lack of machine-rea dable
+languages, structured vocabularies, and robust schemas fo r
+datasets, while data reusability is limited by the lack of ex plicit
+licensing and alignment with domain standards. These gaps
+underscore critical areas where the model could evolve to
+achieve a better FAIRness.
+V. R ECOMMENDATIONS AND FUTURE DIRECTIONS
+To improve the FAIRness of the Digital Shadow Reference
+Model, several targeted improvements are recommended. Fir st,
+the adoption of globally unique and resolvable identiﬁers,
+such as Digital Object Identiﬁers (DOIs) or PIDs, would
+greatly improve the ﬁndability of data and metadata. The
+implementation of standardized metadata schemas, using We b
+standards such as RDF or JSON-LD, could ensure broader
+interoperability and better alignment with the FAIR Princi ples.
+Indexing metadata in (public) search engines and registrie s
+would facilitate greater accessibility. In addition, the a dop-
+tion of standardized communication protocols and structur ed
+vocabularies or ontologies, along with formalized licensi ng ofdata and metadata assets, would enhance both accessibility and
+reusability. Together, these measures aim to bridge existi ng
+gaps and support making the model more FAIR-compliant.
+One step forward would be to release an updated version of
+the Digital Shadow Reference Model that explicitly address es
+the identiﬁed gaps. This new version should prioritize feat ures
+such as globally unique identiﬁers, formalized vocabulari es,
+and metadata schemas that conform to Web standards such as
+RDF or JSON-LD. Collaborative workshops or focus groups
+could engage stakeholders to validate these updates and ens ure
+alignment with industry and academic needs. These steps mus t
+continuously consider practical feasibility of any propos ed
+improvement. To measure progress, periodic re-evaluation s
+using the FAIR evaluation framework are essential to provid e
+transparency and drive iterative improvements. Future eff orts
+could also include the development of implementation guide -
+lines for practitioners and case studies that demonstrate t he
+impact of the improved model on real-world IoT, IIoT, and
+IoP applications. These steps would not only improve FAIR
+compliance, but also position the model as a benchmark for
+similar frameworks.
+VI. C ONCLUSION
+This paper assessed the FAIRness of the Digital Shadow
+Reference Model, a key framework for managing and inte-
+grating data in IoT, IIoT, and IoP systems. Using a structure d
+assessment based on the FAIR Data Principles and FAIR Im-
+plementation Proﬁles, we identiﬁed areas of strength, such as
+metadata linking and support for authentication mechanism s,
+as well as signiﬁcant gaps, including the lack of globally
+unique identiﬁers, limited use of standardized protocols, and
+insufﬁcient metadata indexing.
+To address these gaps, we proposed recommendations, in-
+cluding the adoption of machine-readable metadata schemas ,
+4
+©2025 IEEE. Personal use of this material is permitted. Perm ission from IEEE must be obtained for all other uses, in any cu rrent or future media, including
+reprinting/republishing this material for advertising or promotional purposes, creating new collective works, for r esale or redistribution to servers or lists, or
+reuse of any copyrighted component of this work in other work s.
+standardized vocabularies, public metadata indexing, and for-
+mal licensing practices. By implementing these improvemen ts
+and iteratively evolving the model, the Digital Shadow Refe r-
+ence Model can better align with the FAIR Principles, increa s-
+ing its utility and impact across diverse digital ecosystem s.
+This work lays a foundation for future efforts to integrate
+the FAIR Principles into reference models to promote more
+efﬁcient, collaborative, and sustainable data practices.
+ACKNOWLEDGMENT
+Funded by the Deutsche Forschungsgemeinschaft (DFG,
+German Research Foundation) under Germany’s Excellence
+Strategy – EXC-2023 Internet of Production – 390621612.
+During the preparation of this work, we used DeepL and
+OpenAI’s GPT-4o to improve the writing, make suggestions,
+and for rephrasing. After using these solutions, we careful ly
+reviewed and edited the content as needed. The author takes
+full responsibility for the content of this article.
+REFERENCES
+[1] J. Pennekamp, R. Glebke, M. Henze, T. Meisen, C. Quix, R. H ai,
+L. Gleim, P. Niemietz, M. Rudack, S. Knape, A. Epple, D. Traut h,
+U. Vroomen, T. Bergs, C. Brecher, A. Buhrig-Polaczek, M. Jar ke,
+and K. Wehrle, “Towards an Infrastructure Enabling the Inte rnet of
+Production,” in 2019 IEEE International Conference on Industrial Cyber
+Physical Systems (ICPS) . IEEE, 2019, pp. 31–37.
+[2] P. Brauner, M. Dalibor, M. Jarke, I. Kunze, I. Koren, G. La kemeyer,
+M. Liebenberg, J. Michael, J. Pennekamp, C. Quix et al. , “A computer
+science perspective on digital transformation in producti on,” ACM
+Transactions on Internet of Things , vol. 3, no. 2, pp. 1–32, 2022.
+[3] T. Brockhoff, M. Heithoff, I. Koren, J. Michael, J. Pfeif fer, B. Rumpe,
+M. S. Uysal, W. M. Van Der Aalst, and A. Wortmann, “Process pre dic-
+tion with digital twins,” in 2021 ACM/IEEE International Conference
+on Model Driven Engineering Languages and Systems Companio n
+(MODELS-C) . IEEE, 2021, pp. 182–187.
+[4] J. Theissen-Lipp, M. Kocher, C. Lange, S. Decker, A. Paul us, A. Pomp,
+and E. Curry, “Semantics in dataspaces: Origin and future di rections,” in
+Companion Proceedings of the ACM Web Conference 2023 , ser. WWW
+’23 Companion. New York, NY , USA: Association for Computing
+Machinery, 2023, p. 1504–1507.
+[5] M. Behery, P. Brauner, H. A. Zhou, M. S. Uysal, V . Samsonov ,
+M. Bellgardt, F. Brillowski, T. Brockhoff, A. F. Ghahfarokh i, L. Gleim
+et al. , “Actionable artiﬁcial intelligence for the future of prod uction,”
+Internet of Production: Fundamentals, Methods and Applica tions , pp.
+91–136, 2023.
+[6] S. Bader, J. Pullmann, C. Mader, S. Tramp, C. Quix, A. M¨ ul ler,
+H. Aky¨ urek, M. B¨ ockmann, B. Imbusch, J. Theissen-Lipp, S. Geisler,
+and C. Lange, “The International Data Spaces Information Mo del - An
+Ontology for Sovereign Exchange of Digital Content,” in Proceedings
+of the 19th International Semantic Web Conference . Cham: Springer
+International Publishing, 2020, pp. 176–192.
+[7] F. Becker, P. Bibow, M. Dalibor, A. Gannouni, V . Hahn, C. H opmann,
+M. Jarke, I. Koren, M. Kr¨ oger, J. Lipp, J. Maibaum, J. Michae l,
+B. Rumpe, P. Sapel, N. Sch¨ afer, G. J. Schmitz, G. Schuh, and A . Wort-
+mann, “A Conceptual Model for Digital Shadows in Industry an d Its
+Application,” in Conceptual Modeling , ser. Lecture Notes in Computer
+Science, A. Ghose, J. Horkoff, V . E. Silva Souza, J. Parsons, and
+J. Evermann, Eds. Cham: Springer International Publishing , 2021, vol.
+13011, pp. 271–281.
+[8] J. Michael, I. Koren, I. Dimitriadis, J. Fulterer, A. Gan nouni, M. Hei-
+thoff, A. Hermann, K. Hornberg, M. Kr¨ oger, P. Sapel, N. Sch¨ afer,
+J. Theissen-Lipp, S. Decker, C. Hopmann, M. Jarke, B. Rumpe, R. H.
+Schmitt, and G. Schuh, “A Digital Shadow Reference Model for World-
+wide Production Labs,” in Internet of Production , ser. Interdisciplinary
+Excellence Accelerator Series, C. Brecher, G. Schuh, W. van der
+Aalst, M. Jarke, F. T. Piller, and M. Padberg, Eds. Cham: Spri nger
+International Publishing, 2023, pp. 1–29.[9] M. D. Wilkinson, M. Dumontier, I. J. Aalbersberg, G. Appl eton, M. Ax-
+tonet al. , “The FAIR guiding principles for scientiﬁc data managemen t
+and stewardship,” Scientiﬁc Data , vol. 3, no. 1, Mar. 2016.
+[10] M. Hauff, L. M. Comet, P. Moosmann, C. Lange, I. Chrysaki s, and
+J. Theissen-Lipp, “FAIRness in Dataspaces: The Role of Sema ntics
+for Data Management,” in The Second International Workshop on
+Semantics in Dataspaces, co-located with the Extended Sema ntic Web
+Conference, May 26–27, 2024, Hersonissos, Greece . CEUR-WS, 06
+2024. [Online]. Available: https://ceur-ws.org/V ol-370 5/paper01.pdf
+[11] B. T. Arnold, J. Theissen-Lipp, D. Collarana, C. Lange, S. Geisler,
+E. Curry, and S. Decker, “Towards Enabling FAIR Dataspaces U sing
+Large Language Models,” in The Second International Workshop on
+Semantics in Dataspaces, co-located with the Extended Sema ntic Web
+Conference, May 26–27, 2024, Hersonissos, Greece . CEUR-WS, 06
+2024. [Online]. Available: https://ceur-ws.org/V ol-370 5/short09.pdf
+[12] M. Franklin, A. Halevy, and D. Maier, “From databases to dataspaces:
+a new abstraction for information management,” ACM Sigmod Record ,
+vol. 34, no. 4, pp. 27–33, 2005.
+[13] B. Otto, M. ten Hompel, and S. Wrobel, “International da ta spaces,” in
+Digital Transformation . Berlin, Heidelberg: Springer Berlin Heidelberg,
+2019, pp. 109–128.
+[14] R. A. Deshmukh, D. Collarana, J. Gelhaar, J. Theissen-L ipp, C. Lange,
+B. T. Arnold, E. Curry, and S. Decker, “Challenges and Opport unities
+for Enabling the Next Generation of Cross-Domain Dataspace s,” in
+The Second International Workshop on Semantics in Dataspac es,
+co-located with the Extended Semantic Web Conference, May 2 6–27,
+2024, Hersonissos, Greece . CEUR-WS, 06 2024. [Online]. Available:
+https://ceur-ws.org/V ol-3705/short12.pdf
+[15] T. P. S. Luiz Olavo Bonino da Silva Santos, Giancarlo Gui zzardi, “FAIR
+Digital Object Framework Documentation,” GO FAIR Internat ional
+Support and Coordination Ofﬁce, FAIR Working Draft, 2022. [ Online].
+Available: https://fairdigitalobjectframework.org/
+[16] E. Schultes, B. Magagna, K. M. Hettne, R. Pergl, M. Such´ anek, and
+T. Kuhn, Reusable FAIR Implementation Proﬁles as Accelerators of FA IR
+Convergence . Springer International Publishing, 2020, p. 138–147.
+[Online]. Available: http://dx.doi.org/10.1007/978-3- 030-65847-2 13
+5

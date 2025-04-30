@@ -1,0 +1,1034 @@
+OptimAI: Optimization from Natural Language
+Using LLM-Powered AI Agents
+Raghav Thind
+Department of Computer Science
+University of Maryland at College Park
+rthind@terpmail.umd.eduYouran Sun
+Department of Mathematics
+University of Maryland at College Park
+syouran0508@gmail.com
+Ling Liang
+Department of Mathematics
+University of Maryland at College Park
+liang.ling@u.nus.eduHaizhao Yang∗
+Department of Mathematics
+Department of Computer Science
+University of Maryland at College Park
+hzyang@umd.edu
+Abstract
+Optimization plays a vital role in scientific research and practical applica-
+tions, but formulating a concrete optimization problem described in natural
+language into a mathematical form and selecting a suitable solver to solve the
+problem requires substantial domain expertise. We introduce OptimAI , a
+framework for solving Optimization problems described in natural language
+by leveraging LLM-powered AIagents, achieving superior performance over
+current state-of-the-art methods. Our framework is built upon four key
+roles: (1) a formulator that translates natural language problem descrip-
+tions into precise mathematical formulations; (2) a plannerthat constructs
+a high-level solution strategy prior to execution; and (3) a coderand a
+code critic capable of interacting with the environment and reflecting on
+outcomes to refine future actions. Ablation studies confirm that all roles
+are essential; removing the planner or code critic results in 5.8×and3.1×
+drops in productivity, respectively. Furthermore, we introduce UCB-based
+debug scheduling to dynamically switch between alternative plans, yielding
+an additional 3.3×productivity gain. Our design emphasizes multi-agent
+collaboration, allowing us to conveniently explore the synergistic effect of
+combining diverse models within a unified system. Our approach attains
+88.1% accuracy on the NLP4LP dataset and 71.2% on the Optibench (non-
+linear w/o table) subset, reducing error rates by 58% and 50% respectively
+over prior best results.
+1 Introduction
+Optimization plays a foundational role across a broad spectrum of scientific and engineering
+disciplines, serving as a core framework for decision-making, resource allocation, system
+design and beyond [ 1]. In recent years, its importance has grown even more pronounced
+with the rise of data-driven methodologies. Modern machine learning, in particular, is
+fundamentally built on solving large-scale optimization problems. Training a model typically
+involves minimizing a loss function, often over high-dimensional, nonconvex landscapes, and
+∗Corresponding author.
+Preprint. Under review.arXiv:2504.16918v1  [cs.CL]  23 Apr 2025
+tasks such as hyperparameter tuning, model selection, and policy learning in reinforcement
+learning are likewise formalized as optimization problems [2, 3].
+Despite the centrality of optimization, a persistent challenge remains: real-world problems
+are not presented in mathematical terms. Translating and solving a practical objective (e.g.,
+minimizing delivery time, balancing risk and return, or scheduling limited resources) into a
+well-posed mathematical formulation requires substantial domain expertise and familiarity
+with optimization modeling and related solvers. Moreover, an optimization problem can
+often be formulated in multiple ways and be solved by different solvers. However, the choice
+of formulation and solver can significantly influence both the efficiency and tractability of the
+solution process. This brings a significant barrier for non-experts and limits the accessibility
+of optimization technologies in many applied settings. Efforts to automate the modeling and
+finding optimal solutions of optimization problems from natural language or structured data
+have the potential to dramatically broaden the impact of optimization. By enabling users to
+describe problems in intuitive terms while leveraging algorithms that can infer and construct
+corresponding mathematical formulations, such automated systems can lower the entry
+barrier and democratize access to powerful optimization tools. This direction is particularly
+timely given recent advances in natural language processing and symbolic reasoning, which
+offer promising tools for bridging the gap between informal problem descriptions and formal
+optimization models.
+Large Language Models (LLMs) have emerged as powerful tools for interacting with complex
+tasksthroughnaturallanguage, offeringauser-friendlyinterfaceandsignificantcomputational
+capabilities. Their accessibility and capacity to generate structured solutions position them as
+promising agents for assisting in the formulation and solution of optimization problems. This
+work aims to reduce the barrier of translating real-world problems into formal mathematical
+models, support users in solving these problems, and investigate the extent to which LLMs
+can reason about optimization. Recent studies have demonstrated that LLMs exhibit a
+nontrivial degree of mathematical [ 4,5], coding [ 6], and logical [ 7] reasoning abilities. Our
+study contributes to this growing body of research by evaluating the reasoning capabilities
+of LLMs in the context of optimization tasks. Table 1 summarizes existing works, including
+the datasets they propose, the size of each dataset, and the types of optimization problems
+they support. For a detailed discussion of related work, we refer the reader to Section 2.
+Table 1: Previous work on using LLMs for optimization.
+Work Dataset Proposed Size Problem Type(s)
+NL4Opt Competition [8] NL4Opt 289 LP
+Chain-of-Experts (CoE) [9] ComplexOR 37 LP, MILP
+OptiMUS [10, 11, 12] NLP4LP 67 LP, MILP
+OptiBench [13] OptiBench 605 LP, NLP, MILP, MINLP
+OR-LLM-Agent[14] OR-LLM-Agent 83 LP, MILP
+In some cases, the proposed datasets are given a specific name, so the dataset name is listed in a
+separate column. Abbreviations in the Problem Type(s) column: LP - Linear Programming, NLP -
+Nonlinear Programming, MI - Mixed-Integer.
+We introduce OptimAI, a framework for solving Optimization problems described in natural
+language by leveraging LLM-powered AI agents. OptimAI comprises four stages (see
+Figure 1), each handled by a specialized agent: the Formulator translates a natural-language
+problem into a mathematical formulation; the Planner proposes solution strategies; the
+Coder generates executable solver code; and the Code Critic performs reflective debugging.
+OptimAI offers several key advantages. First, it adopts a plan-before-code strategy,
+generating multiple solution plans before initiating actual code generation. Second, we
+introduce UCB-based debug scheduling to switch between alternative plans during
+debugging dynamically, enabling adaptive plan selection based on observed feedback. Third,
+it naturally supports multi-agent collaboration , allowing different roles to be handled by
+distinct LLMs best suited for each task. Together with well-designed prompts, these design
+choices contribute to OptimAI’s superior performance over prior methods. Table 2 compares
+the functional capabilities of OptimAI and prior methods.
+2
+Table 2: Comparison of Functional Capabilities between OptimAI and Prior Methods.
+Functional Capabilities OptiMUS OptiBench OptimAI
+Natural language input ✗ ✓ ✓
+Planning before coding ✗ ✗ ✓
+Switching between plans ✗ ✗ ✓
+Code generation ✓ ✓ ✓
+Distinct LLM collaboration ✗ ✗ ✓
+Comprehensive experiments show that our approach consistently outperforms state-of-the-art
+methods on standard benchmark datasets. Specifically, compared to the previous best
+approach, we reduce the error rate on NLP4LP by 58%, and on the four Optibench subsets
+(Linear w/o Table, Linear w/ Table, Nonlinear w/o Table, and Nonlinear w/ Table) by
+17%, 20%, 50%, and 24%, respectively. Ablation studies confirm that all roles are essential;
+removingtheplannerorcodecriticresultsin 5.8×and3.1×dropsinproductivity, respectively.
+Furthermore, UCB-based debug scheduling yields an additional 3.3×productivity gain.
+Moreover, OptimAI is broadly applicable. Beyond standard mathematical programming, it
+also handles NP-hard combinatorial optimization problems, demonstrating strong generality.
+2 Related Work
+The application of LLMs to complex computational tasks has received growing attention
+in recent years. Our work lies at the intersection of three emerging research directions:
+leveraging LLMs for solving optimization problems, enhancing their reasoning capabilities,
+and enabling multi-agent collaboration for coordinated problem solving. In this section, we
+review recent advances in each of these areas, which collectively motivate our integration
+of these components into a unified framework for solving optimization tasks expressed in
+natural language.
+2.1 LLM for Optimization
+Recent work has explored the use of LLMs to model, interpret, and solve optimization
+problems directly from natural language descriptions, enabling new interfaces between
+human intent and mathematical problem solving. Approaches range from prompting LLMs
+with structured problem templates to integrating them with external solvers for tasks such
+as (mixed-integer) linear and nonlinear programming problems.
+NL4Opt [ 8] introduced the Natural Language for Optimization competition, which com-
+prised two sub-tasks: (1) recognition of optimization problem entities and (2) generation of
+mathematical formulations. Notably, GPT-3.5 outperformed the competition winner in both
+tasks. However, ChatGPT exhibited common errors such as incorrect constraint coefficients,
+redundant constraints, and omitted variables. These findings highlight both the potential
+and limitations of LLMs in optimization, suggesting promising directions for future research
+in applying LLMs to operations research and mathematical programming.
+OptiMUS [ 10,11,12] is a series of studies that LLMs to solve Linear Programming (LP)
+and Mixed Integer Linear Programming (MILP) problems directly from natural language
+descriptions. As part of this effort, the authors introduced the NLP4LP dataset, which
+comprises a diverse collection of LP and MILP problems curated from academic textbooks
+and lecture materials. This dataset serves as a benchmark for evaluating the ability of LLMs
+to interpret and formulate optimization problems in formal mathematical terms.
+OptiBench [ 13] is a comprehensive benchmark designed to evaluate the proficiency of
+LLMs in tackling optimization modeling problems, with a focus on linear and mixed-
+integer programming tasks. The benchmark encompasses a diverse set of problem instances,
+includingreal-world-inspiredscenariosfromdomainssuchaslogistics, scheduling, andresource
+allocation, alongsidetheircorrespondingmathematicalformulationsandsolutions. In[ 13], the
+authorsintroduceReSocratic, aninnovativedatasynthesismethodthatgenerateshigh-quality
+synthetic optimization problems to augment training datasets. By leveraging ReSocratic,
+3
+the authors demonstrate that training LLMs with synthetic data significantly enhances their
+ability to interpret natural language descriptions, formulate accurate mathematical models,
+and produce optimal solutions, thereby improving performance on complex optimization
+tasks. OptiBench thus serves as one of the state-of-the-art tools for researchers aiming to
+advance the integration of NLP and optimization.
+In addition to the aforementioned work, [ 15] explores the application of LLMs to solve robust
+optimization (RO) and adaptive robust optimization (ARO) problems. The Chain-of-Experts
+framework [ 9] investigates the use of LLMs for solving a wide range of operations research
+(OR) problems. The paper also introduces the ComplexOR dataset and propose a multi-agent
+collaboration system called Chain-of-Experts, where different LLM contexts act as experts in
+a collaborative framework. However, it is crucial to note that their "experts" are variations
+of the same LLM model in different contexts, rather than a true multi-agent system. In
+contrast, OR-LLM-Agent [ 14] is an AI agent designed to offer an end-to-end solution for
+OR optimization problems. This work also presents a dataset containing natural language
+descriptions of 83 real-world OR problems, facilitating the development and evaluation of
+LLM-based solutions for practical optimization tasks.
+2.2 Reasoning in LLM
+Recent advancements in AI reasoning are shifting from System 1 (fast, intuitive thinking)
+to System 2 (slow, deliberate thinking), as comprehensively reviewed by [ 16]. A prevalent
+approach in this context involves leveraging reward models and Monte Carlo Tree Search
+(MCTS) to backtrack the solution process, using the problem and its answer to guide the
+exploration, which is then integrated into reinforcement learning (RL). The most closely
+related works to this paper are those that apply LLMs to solve mathematical problems
+[17, 4, 5] and coding problems [6, 18].
+2.3 Multi-Agent Collaboration
+A substantial body of research has focused on multi-agent collaboration using LLMs. Com-
+prehensive reviews of this area can be found in [ 19,20]. In these studies, multiple LLMs are
+often integrated to tackle a diverse range of tasks, including reasoning [ 21], planning [ 22],
+coding [23], financial marketing [ 24,25], education [ 26,27], and scientific research [ 28,29]. In
+many of these works, LLMs are assigned distinct roles to handle different facets of a problem.
+However, some approaches adopt a framework in which agents perform nearly identical tasks,
+with the final results being aggregated in the end [ 30]. This approach, while effective, should
+be viewed more as an ensemble method rather than true multi-agent collaboration.
+Beyond static role assignment, several studies aim to evolve more dynamic roles and inter-
+actions among agents, emphasizing the potential for agents to adapt and specialize over
+time [31,32,33]. Notably, [ 33] proposed a scaling law for LLM-based multi-agent systems,
+suggesting that such systems may exhibit predictable behavior as they grow in size and
+complexity. Furthermore, more advanced works explore the use of data generated by multi-
+agent systems for reinforcement learning, which holds promise for enhancing the capabilities
+of LLMs in cooperative tasks [ 34,35,36]. This direction represents an exciting avenue for
+future research and development in LLM-based multi-agent systems.
+3 Methodology
+In this section, we present a detailed description of our proposed approach. We begin
+by outlining the overall pipeline, and then highlight two key components: a multi-agent
+collaboration framework and a multi-armed bandit strategy tailored for the debugging phases
+3.1 Pipeline
+Our agent transforms a natural-language description of an optimization problem into both
+an executable solver and its corresponding solution. The end-to-end pipeline (illustrated in
+Figure 1) consists of four sequential stages ( S1–S4):
+4
+Figure 1: Overview of the pipeline.
+S1Optimization modeling. This stage translates the natural-language problem
+statement into a well-defined mathematical optimization problem. The formulation
+includes identifying the decision variables, specifying the objective function to be
+minimized or maximized, defining any constraints that must be satisfied, character-
+izing the problem domain (e.g., continuous, discrete, or mixed), and determining
+the expected format of the output solution.
+S2Planning. In this stage, the agent analyzes the mathematical formulation and
+proposes multiple candidate solution strategies. Each strategy specifies a suitable
+optimization solver, outlines the algorithmic approach to be implemented (e.g.,
+(MI)LP and (MI)NLP), and provides additional contextual information relevant to
+solver selection and code implementation (such as solver capabilities, and variable
+and constraint types). In this work, the supported solvers includes PuLP, Pyomo,
+Gekko, OR-Tools, SCIP, MOSEK, IPOPT, and Gurobi, covering a broad spectrum
+of linear, nonlinear, and mixed-integer optimization techniques.
+S3Solver code generation. Given the optimization problem, its mathematical
+formulation, and a selected solution strategy, this stage generates the corresponding
+Python solver code. The generated code is required to include data validation and
+error handling to ensure robustness, solution validation to verify correctness, and
+informative comments to enhance readability and maintainability.
+S4Reflective debugging. The generated code is executed in a runtime environment,
+where initial execution may often fail due to errors or unexpected behavior. At this
+stage, the LLM analyzes the code and the resulting error messages, engages in a
+process of self-reflection to diagnose the underlying issues, and formulates feedback
+for refining the current strategy. Guided by this reflection, the LLM then iteratively
+debugs and modifies the code to resolve the identified problems and improve overall
+reliability.
+The full set of prompts used in our pipeline is presented in Appendix A.
+3.2 Multi-Agent Extension
+Recent studies have demonstrated that incorporating a multi-agent setting within LLM
+frameworks can significantly enhance overall performance [ 31,32,33]. Building on this line
+5
+of research, we propose to integrate a multi-agent architecture into our system design to
+enable more effective coordination, specialization, and problem-solving capabilities.
+There are two main approaches for assigning different roles to LLMs: (1) Prompt engineering
+and context control: In this approach, each model is explicitly informed of its role and task.
+The context for each model includes only the relevant information, ensuring the granularity
+and scope are appropriate for the specific role. (2) Model assignment: This approach involves
+assigning different models to different tasks. For instance, these “different models” can be
+fine-tuned versions of the same base model using different data. The roles typically assigned
+to LLMs often mirror those found in collaborative human environments, such as project
+manager, programmer, testing engineer, and roles akin to mentor (critic) and student (actor).
+These roles correspond to social relationships that are well-established in human society.
+This alignment is particularly interesting as it reflects Conway’s Law, which asserts: “Any
+organization that designs a system (defined broadly) will produce a design whose structure
+is a copy of the organization’s communication structure.”
+To fully leverage the advantages of a multi-agent system, our pipeline allows different stages
+to be assigned to different LLMs. Corresponding to the four stages in our pipeline, we
+instantiate four roles: formulator ,planner ,coder, andcode critic . In particular, the
+planning stage, handled by the planner, requires strong long-term reasoning abilities and
+may benefit from a more capable model. In contrast, the coder focuses on fine-grained
+adjustments and may place lower demands on the LLM. Our framework provides flexible
+configuration options, allowing the entire pipeline to operate with either a single LLM or
+multiple LLMs assigned to distinct roles. This design not only facilitates the evaluation of
+individual model performance but also enables us to explore the potential synergistic effects
+of combining different models for enhanced outcomes.
+Remark 1 Evidently, reinforcement learning (RL) frameworks leveraging multi-agent ar-
+chitectures tend to exhibit greater robustness and adaptability, particularly in complex or
+uncertain environments [ 34]. Incorporating such multi-agent RL techniques into our frame-
+work could enhance its overall effectiveness, especially in dynamic or error-prone stages such
+as strategy selection and code debugging. Exploring this integration remains a promising
+research direction for future research.
+3.3 Debug Scheduling as a Multi-Armed Bandit
+Figure 2: Demonstration of the UCB-based Debug Scheduling.
+During the planning phase, the system generates multiple candidate plans to solve the
+problem. OptimAI then selects the most promising one to initiate implementation, based on
+evaluations from a separate language model. However, as coding progresses, the initially
+selected plan may prove ineffective after several rounds of debugging. When this occurs,
+OptimAI adapts by switching to an alternative plan, mirroring the way how humans revise
+their strategies during problem-solving.
+We formulate the problem of selecting which plan to debug next as a multi-armed bandit
+problem [ 37]. In this abstraction, each plan is treated as an arm. For each plan and its
+corresponding code, a decider LLM provides a score ˜rireflecting how promising it appears
+and the likelihood of successful debugging. The next arm (plan) is then chosen using the
+6
+Upper Confidence Bound (UCB) algorithm
+˜ri+c/radicaligg
+ln(/summationtext
+jnj)
+ni, (1)
+where cis the exploration coefficient [ 38,39], and niis the number of times plan ihas been
+debugged. In the worst case, if the critic LLM assigns the same score to every plan (i.e., lacks
+discernment), the UCB algorithm naturally reduces to uniform sampling, thereby debugging
+all plans equally. The full procedure is detailed in Algorithm 1, and Figure 2 illustrates the
+operation described above.
+Algorithm 1 UCB-based Debug Scheduling
+Require: Problem description
+Ensure: A working code solution
+1:Generate plans{Plan 1, . . . ,Plan n}using planner
+2:Generate code Code ifor each plan using the coder
+3:Initialize ni←1for all i
+4:whileno code has succeeded do
+5:Get score ˜rifrom decider for each (Plan i,Code i)
+6:UCB i←˜ri+c/radicalig
+ln(/summationtext
+jnj)/ni
+7:Select i∗←arg max i(UCB i)
+8:Debug code Code i∗
+9:Update ni∗←ni∗+ 1
+10:end while
+11:returnworking code
+4 Experiments
+4.1 Experimental Setting
+Datasets We aim to demonstrate the effectiveness and versatility of our approach by
+evaluating it on multiple heterogeneous and challenging datasets, as outlined in the following.
+•NLP4LP . The NLP4LP dataset [ 11] is a curated collection of 65 LPs aimed
+at bridging natural language processing and optimization. It includes problem
+descriptions, parameter data files, and optimal solutions, covering diverse areas like
+facility location, network flow, scheduling, and portfolio management.
+•OptiBench . The OptiBench [ 13] contains a diverse set of 605 optimization problems,
+including linear and nonlinear programming with or without tabular data. This
+is the first large-scale benchmark to include nonlinear and tabular optimization
+problems, going beyond the linear programming focus of previous benchmarks.
+•TSPLIB . The TSPLIB [ 40] is a publicly available library of benchmark instances
+for the Traveling Salesman Problem (TSP), which is known as a standard dataset
+for evaluating the performance of TSP algorithms. The library contains a variety of
+more than 100 TSP instances, ranging from small to large-scale problems, which
+researchers commonly use to test and compare the efficiency and accuracy of their
+optimization algorithms. The availability of this standardized dataset has been
+instrumental in the development and advancement of TSP algorithms, as it allows
+for a fair and consistent comparison of different methods.
+•SelfJSP . The SelfJSP dataset [ 41] is a large-scale benchmark designed for studying
+neural approaches to solving Job Shop Scheduling Problems (JSP) using supervised
+learning. It consists of over 30,000 JSP instances generated through simulation, cov-
+ering a wide range of configurations in terms of job and machine counts, processing
+times, and operation sequences. Each instance includes both the problem specifica-
+tion (e.g., job-operation-machine assignments and durations) and high-quality labels
+such as optimal or near-optimal dispatching sequences, enabling supervised training
+of neural scheduling policies.
+7
+•We also consider some Set Covering Problems from IBM ILOG CPLEX Optimiza-
+tion Studio documentation [42].
+Baselines To evaluate the effectiveness of our approach, we compare our approach against
+two representative state-of-the-art baselines: OptiMUS [ 11] and OptiBench [ 13]. To ensure a
+fair comparison, we deliberately restrained ourselves from using significantly more powerful
+models. While OptiMUS and OptiBench used GPT-4 as their strongest model, we conducted
+our experiments using GPT-4o, QwQ, and DeepSeek-R1, which are generally recognized
+to have capabilities comparable to GPT-4. We use GPT-4o in place of GPT-4, as the cost
+of using GPT-4 has increased significantly over time (e.g., by approximately 6x to 12x),
+rendering it no longer cost-effective for our purposes:
+Evaluation Metrics We evaluate OptimAI on multiple datasets under the zero-shot
+prompting setting by measuring the proportion of problems correctly solved in a single call
+(Pass@1). In addition, we assess the quality of the generated solutions using five metrics:
+Executability, Running Times, Token Usage, Productivity, and Revisions.
+•Executability is based on human evaluation as defined in [ 23], where a score of
+4 indicates a completely correct solution; 3 means minor issues; 2 corresponds to
+barely runnable code with notable problems; and 1 denotes completely non-functional
+output.
+•Running Time measures the execution time of the generated optimization code on
+a MacBook Air with an M3 chip; lower is better.
+•Token Usage refers to the average number of tokens consumed by the pipeline to
+solve a given problem; lower is better.
+•Productivity measures how many lines of code are generated per 1,000 tokens. A
+higher value indicates better efficiency.
+•Revisions captures the number of debugging attempts required to produce exe-
+cutable code.
+4.2 Main Result
+Table 3: Accuracy comparison between OptimAI and state-of-the-art methods.
+AgentDatasetNLP4LPOptibench Linear Optibench Nonlinear
+w/o Table w/ Table w/o Table w/ Table
+OptiMUS [11] 71.6% - - - -
+OptiBench [13] - 75.4% 62.5% 42.1% 32.0%
+Ours w/ GPT-4o 79.1% 77.7% 66.25% 64.4% 38.0%
+Ours w/ GPT-4o+o1-mini 88.1% 79.2% 70.0% 68.2% 44.0%
+Ours w/ QwQ (by Qwen) 79.1% 79.2% 68.8% 71.2% 42.0%
+Ours w/ DeepSeek-R1 82.1% 79.7% 70.0% 65.9% 48.0%
+All evaluations were conducted under a zero-shot prompting setting. GPT-4o+o1-mini refers to
+using o1-mini as the planner while employing GPT-4o for all other roles.
+Table 3 presents the accuracy of our method on NLP4LP and OptiBench datasets, along with
+a comparison against previous state-of-the-art approaches. OptimAI consistently outperforms
+prior work regardless of the underlying LLM used.
+Beyond mathematical programming problems, we further evaluate OptimAI on several rep-
+resentative NP-hard combinatorial optimization problems, including the Traveling Salesman
+Problem (TSP), Job Shop Scheduling Problem (JSP), and Set Covering Problem (SCP). As
+shown in Table 4, the consistent performance across a diverse set of tasks highlights the
+robustness and generality of our approach. Notably, it can effectively solve a wide range of
+challenging combinatorial problems without relying on any problem-specific customization.
+Detailed examples of how these problems are addressed can be found in Appendix B.
+8
+Table 4: Generalization of OptimAI across NP-hard combinatorial optimization problems.
+Math Programming TSP JSP Set Covering
+OptimAI ✓ ✓ ✓ ✓
+Abbreviations: TSP - Traveling Salesperson Problem, JSP - Job Shop Scheduling Problem,
+QAP - Quadratic Assignment Problem
+4.3 Ablation Study
+The Effectiveness of UCB-based Debug Scheduling To assess the effect of UCB-
+based debug scheduling, we conduct an ablation study using GPT-4o on the hard subset of
+the Optibench dataset2. As shown in Table 5, disabling the UCB-based debug scheduling
+results in significantly higher token usage and lower productivity. Specifically, enabling
+UCB-based debug scheduling reduces token usage by 3.6×and improves productivity by 3.3×,
+while maintaining comparable accuracy and slightly improving executability. These results
+demonstrate the effectiveness of UCB-based strategies in optimizing debugging efficiency
+without compromising the quality of outcomes.
+Table 5: Ablation study on the impact of UCB-based debug scheduling in OptimAI.
+Evaluation Metric OptimAI w/o UCB OptimAI w/ UCB
+Executability 3.4 3.5
+Pass@1 Accuracy 69% 69%
+Token Usage 839,185 234,939
+Productivity 0.70 2.32
+The Effectiveness of Roles To understand the impact of different roles and ensure
+that each component in our pipeline is necessary, we ablated individual stages (roles) and
+observed the system’s performance. As shown in Table 6, removing any single stage leads to a
+performance drop, confirming the critical contribution of each role to the overall effectiveness
+of the pipeline. In particular, removing the planner significantly hampers the framework’s
+ability to produce functional code: it requires 4.6 ×more revisions to reach a runnable state,
+resulting in a 5.8 ×drop in productivity. Similarly, omitting the code critic increases the
+number of revisions by 3.6 ×and decreases productivity by 3.1 ×. These results highlight the
+necessity of both high-level planning and post-generation critique in optimizing performance.
+Table 6: Ablation study on roles.
+Formulator Planner Code Critic Revisions Executability Productivity
+✓ ✓ ✓ 1.7 3.6 6.8
+✗ ✓ ✓ 2.0 3.2 6.3
+✓ ✗ ✓ 7.8 3.1 1.2
+✓ ✓ ✗ 6.2 3.3 2.2
+5 Conclusion
+We have presented OptimAI , a framework that leverages LLM-powered AI agents to
+solve optimization problems specified in natural language, achieving superior performance
+compared to current state-of-the-art methods. Extensive experiments involving four LLMs
+and five challenging datasets have demonstrated the effectiveness and robustness of our
+approach. Looking ahead, we identify several promising directions for future work: (1)
+reinforcing the framework with RL, especially for fine-tuning the decider component, which
+2Hard problems are defined as those requiring more than three debug iterations to reach a
+runnable state.
+9
+has the potential to yield substantial gains with modest computational cost; (2) scaling up
+OptimAI to tackle large-scale problems that typically require a team of human experts and
+engineers, moving beyond the current scope, where its performance is comparable to a single
+skilled programmer. Consequently, OptimAI offers a flexible and extensible foundation for
+further exploration of multi-agent LLM systems in real-world optimization scenarios.
+Acknowledgements
+The authors were partially supported by the US National Science Foundation under awards
+DMS-2244988, DMS2206333, the Office of Naval Research Award N00014-23-1-2007, and the
+DARPA D24AP00325-00.
+References
+[1]Philip E Gill, Walter Murray, and Margaret H Wright. Practical optimization . SIAM,
+2019.
+[2] Stephen Boyd. Convex optimization. Cambridge UP , 2004.
+[3]Léon Bottou, Frank E Curtis, and Jorge Nocedal. Optimization methods for large-scale
+machine learning. SIAM review , 60(2):223–311, 2018.
+[4]Xinyu Guan, Li Lyna Zhang, Yifei Liu, Ning Shang, Youran Sun, Yi Zhu, Fan Yang,
+and Mao Yang. rStar-Math: Small LLMs can master math reasoning with self-evolved
+deep thinking, 2025. URL https://arxiv.org/abs/2501.04519 .
+[5]Xuefeng Li, Haoyang Zou, and Pengfei Liu. LIMR: Less is more for rl scaling, 2025.
+URL https://arxiv.org/abs/2502.11886 .
+[6]Yuxiang Zhang, Shangxi Wu, Yuqi Yang, Jiangming Shu, Jinlin Xiao, Chao Kong, and
+Jitao Sang. o1-Coder: an o1 replication for coding, 2024. URL https://arxiv.org/
+abs/2412.00154 .
+[7]Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Floren-
+cia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat,
+et al. GPT-4 technical report. arXiv preprint arXiv:2303.08774 , 2023.
+[8]Rindranirina Ramamonjison, Timothy T. Yu, Raymond Li, Haley Li, Giuseppe Carenini,
+Bissan Ghaddar, Shiqi He, Mahdi Mostajabdaveh, Amin Banitalebi-Dehkordi, Zirui
+Zhou, and Yong Zhang. NL4Opt competition: Formulating optimization problems based
+on their natural language descriptions, 2023. URL https://arxiv.org/abs/2303.
+08233.
+[9]Ziyang Xiao, Dongxiang Zhang, Yangjun Wu, Lilin Xu, Yuan Jessica Wang, Xiongwei
+Han, Xiaojin Fu, Tao Zhong, Jia Zeng, Mingli Song, and Gang Chen. Chain-of-Experts:
+When LLMs meet complex operations research problems. In International Conference
+on Learning Representations (ICLR) , 2023.
+[10]Ali AhmadiTeshnizi, Wenzhi Gao, and Madeleine Udell. OptiMUS: Optimization
+modeling using MIP solvers and large language models, 2023. URL https://arxiv.
+org/abs/2310.06116 .
+[11]Ali AhmadiTeshnizi, Wenzhi Gao, and Madeleine Udell. OptiMUS: Scalable optimization
+modeling with (MI)LP solvers and large language models, 2024. URL https://arxiv.
+org/abs/2402.10172 .
+[12]Ali AhmadiTeshnizi, Wenzhi Gao, Herman Brunborg, Shayan Talaei, Connor Lawless,
+and Madeleine Udell. OptiMUS-0.3: Using large language models to model and solve
+optimization problems at scale, 2025. URL https://arxiv.org/abs/2407.19633 .
+10
+[13]Zhicheng Yang, Yiwei Wang, Yinya Huang, Zhijiang Guo, Wei Shi, Xiongwei Han,
+Liang Feng, Linqi Song, Xiaodan Liang, and Jing Tang. OptiBench meets ReSocratic:
+Measure and improve LLMs for optimization modeling, 2024. URL https://arxiv.
+org/abs/2407.09887 .
+[14]Bowen Zhang and Pengcheng Luo. OR-LLM-Agent: Automating modeling and solving
+of operations research optimization problem with reasoning large language model, 2025.
+URL https://arxiv.org/abs/2503.10009 .
+[15]Dimitris Bertsimas and Georgios Margaritis. Robust and adaptive optimization under a
+large language model lens. arXiv preprint arXiv:2501.00568 , 2024.
+[16]Zhong-Zhi Li, Duzhen Zhang, Ming-Liang Zhang, Jiaxin Zhang, Zengyan Liu, Yuxuan
+Yao, Haotian Xu, Junhao Zheng, Pei-Jie Wang, Xiuyi Chen, Yingying Zhang, Fei Yin,
+Jiahua Dong, Zhijiang Guo, Le Song, and Cheng-Lin Liu. From system 1 to system 2:
+A survey of reasoning large language models, 2025. URL https://arxiv.org/abs/
+2502.17419 .
+[17]Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei
+Zhang, Mingchuan Zhang, Y. K. Li, Y. Wu, and Daya Guo. DeepSeekMath: Pushing
+the limits of mathematical reasoning in open language models, 2024. URL https:
+//arxiv.org/abs/2402.03300 .
+[18]Zhuohao Yu, Weizheng Gu, Yidong Wang, Zhengran Zeng, Jindong Wang, Wei Ye, and
+Shikun Zhang. Outcome-refining process supervision for code generation, 2024. URL
+https://arxiv.org/abs/2412.15118 .
+[19]Chuanneng Sun, Songjun Huang, and Dario Pompili. Llm-based multi-agent reinforce-
+ment learning: Current and future directions, 2024. URL https://arxiv.org/abs/
+2405.11106 .
+[20]Shuaihang Chen, Yuanxing Liu, Wei Han, Weinan Zhang, and Ting Liu. A survey on
+llm-based multi-agent system: Recent advances and new frontiers in application, 2025.
+URL https://arxiv.org/abs/2412.17481 .
+[21]Zijun Liu, Yanzhe Zhang, Peng Li, Yang Liu, and Diyi Yang. A dynamic llm-powered
+agent network for task-oriented agent collaboration, 2024. URL https://arxiv.
+org/abs/2310.02170 .
+[22]Shyam Sundar Kannan, Vishnunandan L. N. Venkatesh, and Byung-Cheol Min. Smart-
+llm: Smart multi-agent robot task planning using large language models, 2024. URL
+https://arxiv.org/abs/2309.10062 .
+[23] Sirui Hong, Mingchen Zhuge, Jiaqi Chen, Xiawu Zheng, Yuheng Cheng, Ceyao Zhang,
+Jinlin Wang, Zili Wang, Steven Ka Shing Yau, Zijuan Lin, Liyang Zhou, Chenyu Ran,
+Lingfeng Xiao, Chenglin Wu, and Jürgen Schmidhuber. Metagpt: Meta programming
+for a multi-agent collaborative framework, 2024. URL https://arxiv.org/abs/
+2308.00352 .
+[24]Shen Gao, Yuntao Wen, Minghang Zhu, Jianing Wei, Yuhan Cheng, Qunzi Zhang, and
+Shuo Shang. Simulating financial market via large language model based agents, 2024.
+URL https://arxiv.org/abs/2406.19966 .
+[25]Nian Li, Chen Gao, Mingyu Li, Yong Li, and Qingmin Liao. EconAgent: Large
+language model-empowered agents for simulating macroeconomic activities. In Lun-Wei
+Ku, Andre Martins, and Vivek Srikumar, editors, Proceedings of the 62nd Annual
+Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) ,
+pages 15523–15536, Bangkok, Thailand, August 2024. Association for Computational
+Linguistics. doi: 10.18653/v1/2024.acl-long.829. URL https://aclanthology.
+org/2024.acl-long.829/ .
+11
+[26]Jifan Yu, Zheyuan Zhang, Daniel Zhang-li, Shangqing Tu, Zhanxin Hao, Rui Miao Li,
+Haoxuan Li, Yuanchun Wang, Hanming Li, Linlu Gong, Jie Cao, Jiayin Lin, Jinchang
+Zhou, Fei Qin, Haohua Wang, Jianxiao Jiang, Lijun Deng, Yisi Zhan, Chaojun Xiao,
+Xusheng Dai, Xuan Yan, Nianyi Lin, Nan Zhang, Ruixin Ni, Yang Dang, Lei Hou,
+Yu Zhang, Xu Han, Manli Li, Juanzi Li, Zhiyuan Liu, Huiqin Liu, and Maosong Sun.
+From mooc to maic: Reshaping online teaching and learning through llm-driven agents,
+2024. URL https://arxiv.org/abs/2409.03512 .
+[27]Zheyuan Zhang, Daniel Zhang-Li, Jifan Yu, Linlu Gong, Jinchang Zhou, Zhanxin Hao,
+Jianxiao Jiang, Jie Cao, Huiqin Liu, Zhiyuan Liu, Lei Hou, and Juanzi Li. Simulating
+classroom education with llm-empowered agents, 2024. URL https://arxiv.org/
+abs/2406.19226 .
+[28]Jinheon Baek, Sujay Kumar Jauhar, Silviu Cucerzan, and Sung Ju Hwang. Researcha-
+gent: Iterative research idea generation over scientific literature with large language
+models, 2025. URL https://arxiv.org/abs/2404.07738 .
+[29]Alireza Ghafarollahi and Markus J. Buehler. Sciagents: Automating scientific discovery
+through multi-agent intelligent graph reasoning, 2024. URL https://arxiv.org/
+abs/2409.05556 .
+[30]Yi Cheng, Wenge Liu, Jian Wang, Chak Tou Leong, Yi Ouyang, Wenjie Li, Xian Wu,
+and Yefeng Zheng. Cooper: Coordinating specialized agents towards a complex dialogue
+goal, 2023. URL https://arxiv.org/abs/2312.11792 .
+[31]Yue Hu, Yuzhu Cai, Yaxin Du, Xinyu Zhu, Xiangrui Liu, Zijie Yu, Yuchen Hou, Shuo
+Tang, and Siheng Chen. Self-evolving multi-agent collaboration networks for software
+development, 2024. URL https://arxiv.org/abs/2410.16946 .
+[32]Mingchen Zhuge, Wenyi Wang, Louis Kirsch, Francesco Faccio, Dmitrii Khizbullin,
+and Jürgen Schmidhuber. Language agents as optimizable graphs, 2024. URL https:
+//arxiv.org/abs/2402.16823 .
+[33]Chen Qian, Zihao Xie, YiFei Wang, Wei Liu, Kunlun Zhu, Hanchen Xia, Yufan Dang,
+Zhuoyun Du, Weize Chen, Cheng Yang, Zhiyuan Liu, and Maosong Sun. Scaling large
+language model-based multi-agent collaboration, 2025. URL https://arxiv.org/
+abs/2406.07155 .
+[34]Chanwoo Park, Seungju Han, Xingzhi Guo, Asuman Ozdaglar, Kaiqing Zhang, and
+Joo-Kyung Kim. Maporl: Multi-agent post-co-training for collaborative large language
+models with reinforcement learning, 2025. URL https://arxiv.org/abs/2502.
+18439.
+[35]Kartik Nagpal, Dayi Dong, Jean-Baptiste Bouvier, and Negar Mehr. Leveraging large
+language models for effective and explainable multi-agent credit assignment, 2025. URL
+https://arxiv.org/abs/2502.16863 .
+[36]Hongxin Zhang, Weihua Du, Jiaming Shan, Qinhong Zhou, Yilun Du, Joshua B.
+Tenenbaum, Tianmin Shu, and Chuang Gan. Building cooperative embodied agents
+modularly with large language models, 2024. URL https://arxiv.org/abs/2307.
+02485.
+[37]Aleksandrs Slivkins et al. Introduction to multi-armed bandits. Foundations and
+Trends ®in Machine Learning , 12(1-2):1–286, 2019.
+[38]Levente Kocsis and Csaba Szepesvári. Bandit based Monte-Carlo planning. In European
+conference on machine learning , pages 282–293. Springer, 2006.
+[39]Peter Auerand Ronald Ortner. UCB revisited: Improved regret bounds forthe stochastic
+multi-armed bandit problem. Periodica Mathematica Hungarica , 61(1-2):55–65, 2010.
+[40]G Reinhelt.{TSPLIB}: a library of sample instances for the tsp (and related problems)
+from various sources and of various types. URL: http://comopt. ifi. uniheidelberg.
+de/software/TSPLIB95 , 2014.
+12
+[41]Andrea Corsini, Angelo Porrello, Simone Calderara, and Mauro Dell’Amico. Self-labeling
+the job shop scheduling problem. Arxiv, 2024.
+[42]IBM Corporation. Ibm ilog cplex optimization studio documentation, 2025. URL
+https://www.ibm.com/docs/en/icos . Accessed: 2025-04-14.
+13
+A Prompt Examples
+Formulator Prompt
+You are an expert in Optimization Modeling.
+Analyze the following optimization problem and extract its key components:
+### Optimization Problem:
+{state["messages"][0].content}
+### Task:
+First analyze the optimization problem and then provide the following components:
+- Decision Variables: Include their types and domains. Make their names descriptive
+- Objective Function: Specify the objective expression.
+- Constraints: List all constraints.
+- Problem Type: Specify the type of optimization problem (e.g., Linear Programming, Mixed-Integer \
+Linear Programming, Non-Linear Programming, Mixed-Integer Non-Linear Programming, Quadratic \
+Programming, etc.). This information needs to be very precise and accurate.
+### Response Format:
+Return your response as a JSON object with the keys:
+"Decision Variables", "Objective Function", "Constraints", and "Problem Type".
+"""
+else:
+# Use the feedback prompt if human feedback is available
+prompt = f"""You are an expert in Optimization Modeling.
+Revise the extracted components of the following optimization problem based on human feedback.
+### Optimization Problem:
+{state["messages"][0].content}
+### Current Components:
+- Decision Variables: {state["components"]["decision_variables"]}
+- Objective Function: {state["components"]["objective_function"]}
+- Constraints: {state["components"]["constraints"]}
+- Problem Type: {state["components"]["problem_type"]}
+### Human Feedback:
+{state["components"]["user_feedback"]}
+### Task:
+Revise the components based on the feedback while ensuring accuracy.
+### Response Format:
+Return your response as a JSON object enclosed in ‘‘‘json‘‘‘ tags with the keys:
+"Decision Variables", "Objective Function", "Constraints", and "Problem Type".
+Planner Prompt
+You are an Optimization solver code planning expert.
+Your responsibility is to provide three best strategies to implement the source code to solve an \
+Optimization Problem.
+First, carefully analyze the optimization problem, try to understand the type of problem it is, and, \
+if given, examine the user recommendations for specific requirements, preferences, or domain \
+knowledge that should influence your solution approach.
+Next, thoroughly analyse the optimization model components, constraints, variables, and objective \
+function.
+Then, understand the available solvers and modeling tools we have = {Available_Tools}.
+Analyse the strengths and weaknesses of each solver and decide the ones that allign best with the \
+given problem and its type.
+Then think about the three most effective strategies that can be implemented to generate the solver \
+code for this problem.
+Each strategy must include the following:
+1) suitable Optimization solver for the task (You can only use the solvers and the modelling tools \
+from the list we peovided you)
+2) details about the algorithm to implement
+3) any other information to be kept in mind while implementing the solver code. (Do not include \
+information on solver installation)
+Make sure your strategies are elaborated in depth, which will enable better code generation using \
+them.
+Only make use of reliable sources, such as academic papers and official documentations, during your \
+tool calls to the tavily_tool to arrive at your conclusion
+However, do not include the sources in your final strategies.
+Only after completing this thorough analysis, provide your response.
+### Optimization Problem:
+{state["messages"][0].content}
+14
+### User recommendations (if any)
+{UserFeedbackRecord.user_recommendations}
+### Optimization Model
+{state["components"]}
+### Response Format:
+Your response should ONLY contain a list of the three strategies without any additional formatting.
+Decider Prompt
+You are an Optimization solver code implementation expert.
+Analyze the following optimization problem, it’s components, and the strategies to solve it, and \
+order the strategies from best to worst:
+### Optimization Problem:
+{state["messages"][0].content}
+### Strategies to implement the solver code
+{state["messages"][-1].content}
+### Task:
+Rank the strategies to implement the code to solve the given optimization problem from best to worst:
+- Consider which strategy would lead to the most efficient code that would give us the most accurate \
+result.
+Do not modify any strategy given to you.
+### Response Format:
+Return your response as a JSON object with the keys:
+"Strategy1", "Strategy2", and "Strategy3".
+"Strategy1" should map to the best strategy, "Strategy2" to the second best, and "Strategy3" to the \
+worst.
+Make sure to include the entire strategies in your output.
+Coder Prompt
+You are a python coding expert for solving Optimization problems.
+Your responsibility is to provide the python code to get the solution of a given optimization \
+problem.
+First, carefully analyze the optimization problem and the optimization model components, \
+constraints, variables, and objective function.
+Then, understand and analyse the given strategy to generate the code to solve that problem and the \
+requirements specified for the desired code.
+Then think about the most effective way to generate the solver code using the provided strategy for \
+this problem.
+Only after completing this thorough analysis, provide the desired python code.
+### Optimization Problem:
+{state["messages"][0].content}
+### Optimization Model
+{state["components"]}
+### Strategy to Implement the Solver Code
+{state["plans"][strategy]}
+### Requirements For the Python Code
+The code must only contain a single function named ’solver’.
+Generate code that:
+- Follows the given strategy.
+- Includes all necessary imports
+- Implements proper data validation and error handling
+- Creates all variables with correct types and bounds
+- Defines the objective function exactly as shown
+- Implements all constraints from the model
+- Solves the model and checks solution status
+- Format output as a dictionary with variable values
+- Report errors clearly by returning the "error" in the dictionary
+- Returns and prints both optimal solution and objective value
+- Includes the arguments in the function definition, if any
+- Handles unit conversions appropriately
+- Validates that output
+- Includes comments
+Make sure you are returning the value requested in the question.
+15
+Focus on accuracy of the final solution and make sure it satisfies all the requirements given in the \
+optimization problem.
+Make sure that the final answer logically makes sense, i.e., a variable in the solution does not \
+have a decimal value when it logically can not.
+The code you return, when run by itself using Python’s exec() function, should give the final \
+solution to the optimization problem.
+Basically, your code should be self sufficient to run by itself and give the final solution to the \
+given optimization problem.
+There should NOT be any need to make any adjustments to your code, like calling a function, putting \
+parameter values, etc., to get the desired solution to the optimization problem.
+### Response Format:
+Your response should ONLY contain the python code, which only contains a single function named \
+’solver’, with no additional formatting.
+Code Critic Prompt
+You are an expert at analyzing python optimization solver code.
+Your job is to provide feedback to debug the given code to solve an optimization problem.
+You will be provided the Optimization Problem, Optimization Model, Strategy to Implement the Solver \
+Code, Code to Solve the Problem, and the error returned to understand the problem.
+### Optimization Problem:
+{state["messages"][0].content}
+### Optimization Model
+{state["components"]}
+### Strategy to Implement the Solver Code
+{state["code_branches"][len(state["code_branches"]) - 1]["strategy"]}
+### Code to Solve the Problem
+{solver_code}
+### Error Returned by the Code
+{error_msg}
+### Task
+You need to provide feedback to help debug the code to generate the requested solution for a given \
+optimization problem.
+Keep in mind that the feedback you provide should be such that the debugged code should be able to \
+execute by itself using python’s exec() function without any additional steps.
+Only provide the feedback to help debug the code in simple English; do not provide any debugged code \
+in your feedback.
+### Response Format
+Your response should contain only the feedback to help debug the code without any formatting.
+Do not try to include any debugged code itself in your response.
+Your response should have nothing else except this feedback.
+Code Debug Prompt
+You are a python expert at debugging code for solving Optimization problems.
+Your responsibility is to debug the provided python code to get the solution for a given \
+optimization problem.
+First, carefully analyze the optimization problem and the optimization model components, \
+constraints, variables, and objective function.
+Then, understand and analyse the given code, the strategy to generate the code to solve that \
+problem, and the requirements specified for the desired code.
+Then analyse the error and the feedback to debug the code.
+Then, think about debugging the given code while maintaining the strategy being employed and the \
+requirements for the code.
+Only after completing this thorough analysis, provide the desired debugged python code.
+The code must only contain a single function named ’solver’.
+### Optimization Problem:
+{state["messages"][0].content}
+### Optimization Model
+{state["components"]}
+### Strategy to Implement the Solver Code
+16
+{state["code_branches"][current_length - 1]["strategy"]}
+### Solver Code
+{state["code_branches"][current_length - 1]["code"]}
+### Error
+{state["code_branches"][current_length - 1]["error"]}
+### Feedback to debug the code
+{state["code_branches"][current_length - 1]["critique"]}
+### Requirements For the debugged Python Code
+Generate debugged code without altering the characteristics of the provided code.
+The code must only contain a single function named ’solver’.
+Essentially, the debugged code should:
+- Follows the given strategy.
+- Includes all necessary imports
+- Implements proper data validation and error handling
+- Creates all variables with correct types and bounds
+- Defines the objective function exactly as shown
+- Implements all constraints from the model
+- Solves the model and checks solution status
+- Format output as a dictionary with variable values
+- Report errors clearly by returning the "error" in the dictionary
+- Returns and prints both optimal solution and objective value
+- Includes the arguments in the function definition, if any
+- Handles unit conversions appropriately
+- Validates that output
+- Includes comments
+Focus on the provided feedback to help debug the code.
+Make sure you are returning the value requested in the question.
+Focus on accuracy of the final solution and make sure it satisfies all the requirements given in the \
+optimization problem.
+Make sure that the final answer logically makes sense, i.e., a variable in the solution does not \
+have a decimal value when it logically can not.
+The code you return, when run by itself using python’s exec() function, should give the final \
+solution to the optimization problem.
+Basically, your code should be self sufficient to run by itself and give the final solution to the \
+given optimization problem.
+There should NOT be any need to make any adjustments to your code, like calling a function, putting \
+parameter values, etc., to get the desired solution to the optimization problem.
+### Response Format:
+Your response should ONLY contain the python code, which only contains a single function named \
+’solver’, with no additional formatting.
+B Case Study
+B.1 Traveling Salesperson Problems with 280 cities
+This is the a280 problem from the popular TSPLIB dataset [ 40]. The total time to solve
+TSP is 0.82 seconds.
+Optimization Modeling
+{
+"Decision Variables": {
+"x_ij": {
+"Description": "Binary variable indicating whether the edge from node i to node j is included \
+in the tour.",
+"Type": "Binary",
+"Domain": "x_ij \\in \\{0, 1\\} for all i, j \\in \\{1, 2, ..., 280\\}"
+},
+"u_i": {
+"Description": "Continuous variable used for subtour elimination (Miller-Tucker-Zemlin \
+formulation) representing the position of node i in the tour.",
+"Type": "Continuous",
+"Domain": "2 \\leq u_i \\leq 280 for all i \\in \\{2, 3, ..., 280\\}"
+}
+},
+"Objective Function": {
+"Description": "Minimize the total Euclidean distance of the tour.",
+"Expression": "Minimize \\sum_{1 \\leq i \\neq j \\leq 280} (d_ij *x_ij)",
+"Where": "d_ij is the Euclidean distance between node i and node j."
+},
+"Constraints": {
+"1_Flow_Conservation": {
+17
+"Description": "Ensure that exactly one outgoing edge leaves each node.",
+"Expression": "\\sum_{1 \\leq j \\leq 280, j \\neq i} x_ij = 1 for all i \\in \\{1, 2, ..., \
+280\\}"
+},
+"2_Flow_Conservation": {
+"Description": "Ensure that exactly one incoming edge enters each node.",
+"Expression": "\\sum_{1 \\leq i \\leq 280, i \\neq j} x_ij = 1 for all j \\in \\{1, 2, ..., \
+280\\}"
+},
+"3_Subtour_Elimination": {
+"Description": "Eliminate subtours using the Miller-Tucker-Zemlin (MTZ) constraints.",
+"Expression": "u_i - u_j + 280 *x_ij \\leq 279 for all i, j \\in \\{2, 3, ..., 280\\}, i \
+\\neq j"
+},
+"4_Start_Node": {
+"Description": "Define the starting node of the tour.",
+"Expression": "u_start = 1",
+"Note": "Assuming a specific starting node is selected, otherwise this constraint can be \
+omitted or adjusted."
+}
+},
+"Problem Type": "Mixed-Integer Linear Programming (MILP)"
+}
+Plans
+1) Asks the user if they want to input suggestions for the strategies to implement the solver \
+code. Human inputs "I want the output to be the most optimal solution to the given TSP, and I \
+also want the code to be feasible to run on my laptop, a Macbook Air".
+2) Planner Agent makes the following tool calls to search the web:
+query: Optimal code for Symmetric TSP problems
+query: pyconcorde solving TSP Concorde documentation
+query: Using OR-Tools for TSP
+3) Finally, the Planner Agent provides the following strategies:
+1) Utilize the Pyconcorde Solver:
+- Suitable Solver: Pyconcorde
+- Algorithm Details: Pyconcorde is a Python wrapper for the Concorde TSP Solver. Concorde is a \
+highly optimized and specialized solver for the TSP based on branch-and-cut algorithms. \
+It’s particularly suitable for this problem due to its efficiency in handling large \
+instances of TSP by dynamically adding constraint cuts to eliminate fractional solutions \
+and subtours within the branch-and-bound tree.
+- Additional Information: Ensure input data is correctly formatted for Pyconcorde. It requires \
+the adjacency matrix or list of city coordinates. Consider pre-processing the distances \
+using Euclidean calculation to speed up data provision. Pyconcorde will handle solving \
+with minimal setup complexity, suitable for a 280-node problem.
+2) Implement with OR-Tools and SCIP:
+- Suitable Solver: OR-Tools with SCIP backend
+- Algorithm Details: OR-Tools supports TSP through routing solvers utilizing the Constraint \
+Programming and MILP approaches. SCIP, accessed via OR-Tools, employs effective numerics \
+and heuristics along with branch-and-bound strategies. With constraint propagation and \
+optional LNS solvers in OR-Tools, this strategy converges quickly on optimum solutions.
+- Additional Information: Leverage OR-Tools to set up TSP in a routing problem context. Use \
+distance callbacks to integrate the Euclidean distance matrix. The use of parallel \
+processing and heuristic guidance within SCIP via OR-Tools enhances performance for \
+optimization, potentially complemented by metadata to improve node ordering and path \
+searches.
+3) Use Gurobi for MILP Modeling:
+- Suitable Solver: Gurobi
+- Algorithm Details: Gurobi is a powerful MILP solver with robust algorithms for solving \
+large-scale MIPs. Use the Miller-Tucker-Zemlin (MTZ) sub-tour elimination constraints. \
+Gurobi’s advanced presolve techniques, cutting planes, and node-level parallel executions \
+make it apt for exact TSP modeling as per MILP formulations.
+- Additional Information: Set up the problem with binary decision variables for routing between \
+cities and continuous variables for subtour elimination based on the MTZ model. Ensure \
+model environment settings in Gurobi exploit multi-core processing and memory efficiently. \
+Preprocessing steps should involve constructing accurate distance matrices and tuning \
+solver parameters like MIPGap, NodeLimit, and heuristics to balance speed and solution \
+precision.
+Decider
+Decider Agent:
+The decider agent ranks the strategies in the following order:
+1)Utilize the Pyconcorde Solver
+18
+2)Implement with OR-Tools and SCIP
+3)Use Gurobi for MILP Modeling
+Final Result
+{’optimal_route’: [1, 2, 242, 243, 244, 241, 240, 239, 238, 237, 236, 235, 234, 233, 232, 231, 246, \
+245, 247, 250, 251, 230, 229, 228, 227, 226, 225, 224, 223, 222, 221, 220, 219, 218, 217, \
+216, 215, 214, 213, 212, 211, 210, 209, 208, 207, 206, 205, 204, 203, 202, 201, 200, 144, \
+145, 199, 198, 197, 196, 195, 194, 193, 192, 191, 190, 189, 188, 187, 186, 185, 184, 183, \
+182, 181, 176, 180, 179, 150, 178, 177, 151, 152, 156, 153, 155, 154, 129, 128, 127, 126, \
+125, 124, 123, 122, 121, 120, 119, 157, 158, 159, 160, 175, 161, 162, 163, 164, 165, 166, \
+167, 168, 169, 170, 171, 172, 173, 174, 107, 106, 105, 104, 103, 102, 101, 100, 99, 98, 97, \
+96, 95, 94, 93, 92, 91, 90, 89, 109, 108, 110, 111, 114, 113, 112, 88, 87, 84, 83, 82, 81, \
+80, 79, 78, 77, 75, 76, 74, 73, 72, 71, 70, 67, 69, 68, 58, 57, 56, 55, 54, 53, 52, 51, 50, \
+49, 48, 47, 46, 45, 44, 59, 63, 64, 66, 65, 85, 86, 116, 115, 117, 118, 62, 61, 60, 43, 42, \
+41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 22, 25, 23, 24, 14, 15, 13, \
+12, 11, 10, 8, 9, 7, 6, 5, 4, 277, 276, 275, 274, 273, 272, 271, 16, 17, 18, 19, 20, 21, 130, \
+131, 132, 133, 134, 270, 269, 135, 136, 268, 267, 137, 138, 139, 149, 148, 147, 146, 143, \
+142, 141, 140, 266, 265, 264, 263, 262, 261, 260, 259, 258, 257, 254, 253, 252, 255, 256, \
+249, 248, 278, 279, 3, 280], ’total_distance’: 2579.0}
+B.2 Job Scheduling Problem with 20 Jobs and 5 Machines
+This is the la11.jsp problem from SelfJSP [41].
+Optimization Modeling
+{
+"Decision Variables": {
+"Start_Time_jk": {
+"Description": "Start time of the k-th operation of job j",
+"Type": "Continuous",
+"Domain": "Non-negative real numbers"
+},
+"Makespan": {
+"Description": "Overall completion time of all jobs",
+"Type": "Continuous",
+"Domain": "Non-negative real numbers"
+}
+},
+"Objective Function": {
+"Expression": "Minimize Makespan"
+},
+"Constraints": [
+{
+"Description": "Precedence constraints within each job",
+"Mathematical_Form": "For each job j and for each operation k > 1, Start_Time_jk \\geq \
+Start_Time_j(k-1) + Processing_Time_j(k-1)"
+},
+{
+"Description": "No overlap on each machine",
+"Mathematical_Form": "For any two operations (j1, k1) and (j2, k2) assigned to the same \
+machine m, either Start_Time_j1k1 + Processing_Time_j1k1 \\leq Start_Time_j2k2 or \
+Start_Time_j2k2 + Processing_Time_j2k2 \\leq Start_Time_j1k1"
+},
+{
+"Description": "Completion time of each job does not exceed Makespan",
+"Mathematical_Form": "For each job j, Start_Time_jK + Processing_Time_jK \\leq Makespan"
+},
+{
+"Description": "Start times are non-negative",
+"Mathematical_Form": "For all jobs j and operations k, Start_Time_jk \\geq 0"
+}
+],
+"Problem Type": "Mixed-Integer Linear Programming (MILP)"
+}
+Plans
+1) Strategy 1:
+- Suitable Optimization Solver: CP-SAT Solver from OR-Tools
+- Algorithm: The CP-SAT solver utilizes a combination of SAT (satisfiability testing) and \
+constraint programming approaches to efficiently solve the scheduling problem. Model the \
+19
+problem using interval variables for each operation to represent their start times and \
+processing durations. Leverage no-overlap constraints within the solver to handle the \
+machine assignment to avoid conflicts, and enforce job precedence constraints to maintain \
+operation order within jobs.
+- Other Considerations: Keep in mind the solver’s ability to handle large search spaces with \
+advanced search heuristics, and utilize the solver’s objective function capabilities to \
+minimize the makespan effectively, while using decision variable strategies like \
+warm-start or hinting when appropriate to speed up the solution process.
+2) Strategy 2:
+- Suitable Optimization Solver: OR-Tools (Using its Job Shop Scheduling and Integer Linear \
+Programming functionalities)
+- Algorithm: Embed the operations and jobs within the Job Shop Scheduling framework, which is \
+specifically designed for handling machine scheduling problems with constraints. Use \
+integer programming to model the decision variables as integer values leading to efficient \
+computation of start times and precedence. Explore OR-Tools’ symmetry breaking constraints \
+and specialized cutting planes for optimizing the schedule.
+- Other Considerations: Make full use of OR-Tools’ scalable performance on large instances of \
+scheduling problems. Consider breaking down the problem into smaller subproblems where \
+possible and apply iterative solving techniques like Lagrangian relaxation to ensure more \
+consistent convergence to optimal solutions.
+3) Strategy 3:
+- Suitable Optimization Solver: Pyomo with Gurobi
+- Algorithm: Use Pyomo’s flexible modeling environment to express the MILP model of the \
+scheduling problem, including variables, objectives, and constraints as defined. Integrate \
+with Gurobi’s solver capabilities, which include powerful branch-and-cut algorithms to \
+optimize the makespan. This combination allows fine-tuning of variable bounds and solver \
+parameters to efficiently explore the solution space.
+- Other Considerations: Gurobi’s optimization suite has extensive parameter tuning possibilities, \
+like tweaking MIP gap tolerances, setting relative and absolute termination criteria, and \
+using Gurobi’s heuristics to achieve faster solutions. While Pyomo allows for simplicity \
+in expressing complex relations, ensure computational resource constraints are accounted \
+for when dealing with the CPU- and time-intense parts of the solving process, especially \
+for evaluating inherent delays in large-scale problems.
+Decider
+The decider agent ranks the strategies in the following order:
+1)CP-SAT Solver from OR-Tools
+2)OR-Tools (Using its Job Shop Scheduling and Integer Linear Programming functionalities)
+3)Suitable Optimization Solver: Pyomo with Gurobi
+Code Critic
+Ensure that the ‘cp_model‘ is correctly imported by verifying that the line ‘from ortools.sat.python \
+import cp_model‘ is present and properly placed before any usage of ‘cp_model‘. Make sure \
+there are no typos in the import statement and that it is accessible within the scope where \
+‘cp_model‘ is used.
+Final Result
+{’Makespan’: 1222.0, ’Start_0_0’: 66, ’Start_0_1’: 298, ’Start_0_2’: 627, ’Start_0_3’: 689, \
+’Start_0_4’: 917, ’Start_1_0’: 680, ’Start_1_1’: 744, ’Start_1_2’: 842, ’Start_1_3’: 1040, \
+’Start_1_4’: 1138, ’Start_2_0’: 436, ’Start_2_1’: 458, ’Start_2_2’: 509, ’Start_2_3’: 674, \
+’Start_2_4’: 1015, ’Start_3_0’: 0, ’Start_3_1’: 66, ’Start_3_2’: 438, ’Start_3_3’: 798, \
+’Start_3_4’: 932, ’Start_4_0’: 353, ’Start_4_1’: 637, ’Start_4_2’: 822, ’Start_4_3’: 913, \
+’Start_4_4’: 1039, ’Start_5_0’: 325, ’Start_5_1’: 466, ’Start_5_2’: 535, ’Start_5_3’: 627, \
+’Start_5_4’: 788, ’Start_6_0’: 0, ’Start_6_1’: 165, ’Start_6_2’: 242, ’Start_6_3’: 371, \
+’Start_6_4’: 458, ’Start_7_0’: 242, ’Start_7_1’: 325, ’Start_7_2’: 666, ’Start_7_3’: 707, \
+’Start_7_4’: 1162, ’Start_8_0’: 404, ’Start_8_1’: 500, ’Start_8_2’: 701, ’Start_8_3’: 745, \
+’Start_8_4’: 1166, ’Start_9_0’: 93, ’Start_9_1’: 223, ’Start_9_2’: 423, ’Start_9_3’: 560, \
+’Start_9_4’: 936, ’Start_10_0’: 258, ’Start_10_1’: 353, ’Start_10_2’: 781, ’Start_10_3’: \
+1012, ’Start_10_4’: 1103, ’Start_11_0’: 517, ’Start_11_1’: 540, ’Start_11_2’: 931, \
+’Start_11_3’: 1054, ’Start_11_4’: 1081, ’Start_12_0’: 0, ’Start_12_1’: 172, ’Start_12_2’: \
+858, ’Start_12_3’: 1116, ’Start_12_4’: 1183, ’Start_13_0’: 145, ’Start_13_1’: 319, \
+’Start_13_2’: 772, ’Start_13_3’: 1088, ’Start_13_4’: 1116, ’Start_14_0’: 429, ’Start_14_1’: \
+448, ’Start_14_2’: 535, ’Start_14_3’: 635, ’Start_14_4’: 1009, ’Start_15_0’: 91, \
+’Start_15_1’: 778, ’Start_15_2’: 815, ’Start_15_3’: 922, ’Start_15_4’: 968, ’Start_16_0’: \
+527, ’Start_16_1’: 638, ’Start_16_2’: 796, ’Start_16_3’: 853, ’Start_16_4’: 931, \
+’Start_17_0’: 549, ’Start_17_1’: 745, ’Start_17_2’: 843, ’Start_17_3’: 856, ’Start_17_4’: \
+1056, ’Start_18_0’: 81, ’Start_18_1’: 189, ’Start_18_2’: 329, ’Start_18_3’: 707, \
+’Start_18_4’: 1054, ’Start_19_0’: 0, ’Start_19_1’: 100, ’Start_19_2’: 145, ’Start_19_3’: 223, \
+’Start_19_4’: 992}
+20

@@ -48,7 +48,7 @@ def compute_query_embedding(query, embedding_type='transformer', model_name='hua
     else:
         raise ValueError("embedding_type must be 'transformer' or 'llm'")
 
-def fetch_top_k(query, db_params, tag_hierarchy, k=3, debug=False, max_length=512):
+def fetch_top_k(query, db_params, tag_hierarchy, k=3, debug=False, max_length=512, embedder=None):
     """Fetch top-k most relevant chunks for query using semantic search"""
     # Route query to get relevant tags
     tags = route_query(query, tag_hierarchy)
@@ -60,8 +60,11 @@ def fetch_top_k(query, db_params, tag_hierarchy, k=3, debug=False, max_length=51
     if debug:
         print(f"Found relevant tags: {tags}")
     
-    # Compute query embedding
-    query_embedding = compute_query_embedding(query, max_length=max_length)
+    # Compute query embedding using provided embedder or default
+    if embedder:
+        query_embedding = embedder.embed(query)
+    else:
+        query_embedding = compute_query_embedding(query, max_length=max_length)
     
     try:
         # Connect to database

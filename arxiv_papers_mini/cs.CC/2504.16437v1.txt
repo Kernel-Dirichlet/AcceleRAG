@@ -1,0 +1,1408 @@
+Hardness of Median and Center in the Ulam Metric
+Nick Fischer * Elazar Goldenberg†Mursalin Habib‡Karthik C. S.§
+Abstract
+The classical rank aggregation problem seeks to combine a set Xofnpermutations into a
+single representative “consensus” permutation. In this paper, we investigate two funda-
+mental rank aggregation tasks under the well-studied Ulam metric : computing a median
+permutation (which minimizes the sum of Ulam distances to X) and computing a center
+permutation (which minimizes the maximum Ulam distance to X) in two settings.
+Continuous Setting: In the continuous setting, the median/center is allowed to be any
+permutation. It is known that computing a center in the Ulam metric is NP-hard and
+we add to this by showing that computing a median is NP-hard as well via a simple
+reduction from the Max-Cut problem. While this result may not be unexpected, it
+had remained elusive until now and confirms a speculation by Chakraborty, Das, and
+Krauthgamer [SODA ’21].
+Discrete Setting: In the discrete setting, the median/center must be a permutation from
+the input set. We fully resolve the fine-grained complexity of the discrete median and
+discrete center problems under the Ulam metric, proving that the naive eO(n2L)-time
+algorithm (where Lis the length of the permutation) is conditionally optimal. This
+resolves an open problem raised by Abboud, Bateni, Cohen-Addad, Karthik C. S.,
+and Seddighin [APPROX ’23]. Our reductions are inspired by the known fine-grained
+lower bounds for similarity measures, but we face and overcome several new highly
+technical challenges.
+1 Introduction
+Suppose that njudges each rank the performances of Lcompetitors. Given these rankings, how
+can the judges agree on a single consensus ranking? This fundamental question lies at the heart
+of a class of tasks known as rank aggregation , which has applications across various fields, in-
+cluding social choice theory [BCE+16], bioinformatics [LWX19], information retrieval [Har92],
+machine learning [LLQ+07], and recommendation systems [ODL+20], among others. For-
+mally, the judges’ rankings can be represented as a set of npermutations X⊆ S L. Then, for an
+appropriate metric d(·,·)on the space of permutations SL, the two most prominent rank aggre-
+gation tasks are to compute a median permutation πMwhich minimizes ∑π∈Xd(πM,π)[Kem59,
+You88, YL78, DKNS01], or a center permutation πCwhich minimizes max π∈Xd(πC,π)[BBGH15,
+BBD09, Pop07].
+Among the metrics studied in this context, two stand out. The first one is the classic
+Kendall’s tau distance which measures the number of disagreeing pairs between two permuta-
+tions, i.e., the number of pairs (i,j)for which one ranking orders ibefore jwhile the other
+orders jbefore i. Kendall’s tau distance is well-motivated as it satisfies several desirable
+*INSAIT, Sofia University “St. Kliment Ohridski”. Email: nick.fischer@insait.ai
+†The Academic College of Tel Aviv-Yaffo. Email: elazargo@mta.ac.il
+‡Rutgers University. Email: mursalin.habib@rutgers.edu
+§Rutgers University. Email: karthik.cs@rutgers.edu
+1arXiv:2504.16437v1  [cs.DS]  23 Apr 2025
+properties beyond the scope of this paper (e.g., neutrality, consistency, and the extended Con-
+dorcet property [Kem59, WSCK12]), and is also well-understood from a computational point-
+of-view [DKNS01, FKS03]. For example, it is known that computing the median or center
+of just four permutations is already NP-hard [DKNS01, BBD09]. Several approximation algo-
+rithms have also been proposed for this metric [ACN08, vZW07], culminating in a PTAS [KS07,
+Pev00] for approximating the median under Kendall’s tau metric.
+The other key metric is the Ulam distance which measures the minimum number of reloca-
+tion operations required to turn one permutation πinto another permutation π′– i.e., the min-
+imum number of competitors whose ranks have to be adjusted in πso that it agrees with π′.
+This metric offers a simpler and more practical alternative to Kendall’s tau metric for rank ag-
+gregation tasks [CMS01, CDK21, CGJ21, CDKS22]. Perhaps more importantly, the Ulam metric
+is intimately linked to the more general edit metric on arbitrary strings, which enjoys count-
+less applications in computational biology [Gus97, Pev00], specifically in the context of DNA
+storage systems [GBC+13, RMR+17], and beyond [Koh85, MJC00]. Despite the significance
+of Ulam rank aggregation problems and the extensive research dedicated to them [BBGH15,
+CDK21, CGJ21, CDKS22], some basic questions remain unanswered. This is the starting point
+of our paper.
+1.1 Question 1: Polynomial-Time Algorithms for Ulam Median?
+The first basic question is whether polynomial-time algorithms exist for exactly computing the
+center and median permutations under the Ulam metric. For almost all string metrics, includ-
+ing the aforementioned Kendall’s tau metric but also metrics beyond permutations such as the
+Hamming metric [FL97, LLM+03, AFG+23] or the edit metric [dlHC00, NR03], median and
+center problems are well-known and easily-proven to be NP-hard.1Quite surprisingly, while
+it is known that computing an Ulam center is NP-hard [BBGH15], the complexity of computing
+an Ulam median has remained an open question. This is not due to a lack of interest – despite
+the absence of an NP-hardness proof, Chakraborty, Das, and Krauthgamer have already initi-
+ated the study of approximation algorithms for the Ulam median problem [CDK21, CDK23],
+achieving a 1.999-factor approximation in polynomial time. Our first contribution is that we
+finally provide this missing hardness proof:
+Theorem 1.1. The median problem is NP-hard in the Ulam metric.
+1.2 Question 2: Fine-Grained Complexity of Discrete Ulam Center and Median?
+How can we circumvent this new lower bound? There are two typical approaches. The first
+is to resort to approximation algorithms as was done in [CDK21, CDK23]. But there is a
+commonly-studied second option for aggregation and clustering type problems: to restrict
+the solution space to only the input set of permutations X and compute the best median or center
+from it.2The best median or center from the input set Xis typically referred to as the discrete
+median or the discrete center , respectively, of X. (In the same spirit, we will occasionally refer
+to the unrestricted median and center, discussed in the previous subsection, as the continu-
+ous median and continuous center , respectively.) Besides being a natural polynomial-time rank
+1A notable exception is the Hamming median problem that can trivially be solved in polynomial time by a
+coordinate-wise plurality vote.
+2Or alternatively, the best median/center among the permutations in another given set Y⊆ S L; this is typically
+referred to as the bichromatic discrete center/median problem, or also as center/median problem with facilities in
+the theory of clustering. All of our results also apply to these bichromatic variants.
+2
+aggregation task, computing discrete medians or centers has two other motivations. First, it
+is easy to see that computing a discrete median/center yields a 2-approximation of the (con-
+tinuous) median/center problems. In fact, a key observation in [CDK21] is that a discrete
+median often provides a (2−ε)-approximation for the (continuous) median, particularly in
+practical DNA storage system instances where distances tend to be large. Second, the dis-
+crete median and center problems have gained significant attraction for the easier Hamming
+metric [ABC+23, AFG+23] and harder edit metric [ABC+23], often leading to matching upper
+and lower bounds. Studying the Ulam metric therefore serves as an interesting intermediate
+problem capturing some – but not all – of the hardness of the edit metric.
+Driven by these motivations, we study the fine-grained complexity of the discrete median
+and discrete center problems with respect to the Ulam distance. That is, we aim to pinpoint
+their precise polynomial run times.
+Discrete Ulam Center. The trivial algorithm for computing a discrete center is to explicitly
+compute the Ulam distance dU(π,π′)for all pairs of permutations π,π′∈X. We can then
+easily select the permutation πC∈Xminimizing max π∈XdU(πC,π). As the Ulam distance
+between two length- Lpermutations can be computed in near-linear time3eO(L)using the well-
+known patience sorting algorithm [AD99], the total time is eO(n2L).
+We prove that this simple algorithm is optimal , up to subpolynomial factors and condi-
+tioned on a plausible assumption from fine-grained complexity:
+Theorem 1.2. Letε>0andα>0. There is no algorithm running in time O ((n2L)1−ε)that solves
+the discrete center problem in the Ulam metric for n permutations of length L =Θ(nα), unless the
+Quantified Strong Exponential Time Hypothesis fails.
+The Quantified Strong Exponential Time Hypothesis (QSETH) is a plausible generaliza-
+tion of the by-now well-established Strong Exponential Time Hypothesis (SETH), postulat-
+ing that the CNF-SAT problem cannot be solved faster than brute-force search even when
+only some variables are existentially quantified and others are universally quantified (see Sec-
+tion 3.1 for the formal treatment) [BC20]. This hypothesis has already proven useful for con-
+ditional lower bounds for a wide array of problems [BC20, ABHS22, ABC+23]. Besides, we
+remark that it is impossible to obtain SETH-based lower bounds for the discrete center prob-
+lem unless the Nondeterministic Strong Exponential Time Hypothesis [CGI+16] is false (see
+Section 5.1 for details).
+We emphasize that these lower bounds applies to the full range of nversus L, as long as L
+is at least polynomial in n. In the case when Lis very small, ω(logn)<L<no(1), previous
+work by Abboud, Bateni, Cohen-Addad, Karthik C. S. and Seddighin already established a
+matching conditional lower bound of n2−o(1)[ABC+23].
+It is interesting to compare Theorem 1.2 with the state of the art for discrete center prob-
+lems in the Hamming metric (say, over a constant-size alphabet) and the edit metric. For
+concreteness, consider the case L=Θ(n)(i.e., the input consists of nstrings/permutations
+of length roughly n). Then, on the one hand, the discrete center problem in the Hamming
+metric can be solved in time O(nω)[ABC+23, AFG+23], where ω<2.3714 is the exponent of
+matrix multiplication [ADV+25]. On the other hand, the discrete center problem in the edit
+metric cannot be solved in time n4−Ω(1)unless QSETH fails [ABC+23]. Therefore, remarkably,
+Theorem 1.2 indeed places the discrete center problem in the Ulam metric as a problem of inter-
+mediate complexity n3±o(1). This answers an explicit open question posed by Abboud, Bateni,
+Cohen-Addad, Karthik C. S., and Seddighin [ABC+23].
+3We write eO(T) =T(logT)O(1)to suppress polylogarithmic factors.
+3
+Discrete Ulam Median. The trivial algorithm for the discrete median problem is exactly the
+same as for the center problem: First compute all pairwise distances dU(π,π′), then select the
+permutation πMminimizing ∑π∈XdU(πM,π). It also runs in time eO(n2L). So perhaps one
+could also hope that a matching lower bound follows from our Theorem 1.2. Unfortunately,
+this turns out to be true only for a restricted subproblem.4Nevertheless, with considerable
+technical overhead we manage to prove essentially the same matching lower bound:
+Theorem 1.3. Letε>0andα≥1. There is no algorithm running in time O ((n2L)1−ε)that solves
+the discrete median in the Ulam metric for n permutations of length L =Θ(nα), unless the SETH fails.
+In comparison to Theorem 1.2, Theorem 1.3 has the advantage that it conditions on the
+weaker assumption SETH (thus constituting a stronger lower bound). However, the applicable
+range of parameters is more restricted ( α≥1 forces the permutations to have length at least
+Ω(n)).
+2 Proof Overview
+In this section, we provide the proof overviews of Theorems 1.1, 1.2, and 1.3. We avoid some
+technicalities to highlight the core ideas – for instance, some subpolynomial factors have been
+dropped. Complete proofs can be found in Sections 4, 5, and 6, respectively.
+2.1 NP-Hardness for Continuous Median in the Ulam Metric
+In this section, we provide a high-level sketch of our NP-hardness proof for the continuous
+median problem in the Ulam metric. Our starting point is the Max-Cut problem5. Given a
+Max-Cut instance G= (V,E)where V= [n], our goal is to construct a set of permutations
+of length O(n)such that the median of these permutations encodes the cut in Gof maximum
+size.
+To achieve this, we first set up a natural correspondence between cuts in Gand permu-
+tations of length O(n). However, since there are many more permutations than cuts, not all
+permutations will represent valid cuts. To ensure that only relevant permutations are consid-
+ered, we construct two special permutations:
+πL=1◦2◦ · · · ◦ (n−1)◦n◦X1◦X2,
+πR=X1◦n◦(n−1)◦ · · · ◦ 2◦1◦X2,
+for some fixed long permutations X1,X2. The simple key insight is that any median of πL
+andπRhas the following form: it starts with some subset A⊆[n]of the symbols in increasing
+order, followed by X1, followed by the symbols in [n]\Aindecreasing order, finally followed
+byX2. Thus, medians of πL,πRwill naturally encode cuts of the form (A,[n]\A)inG.
+To further enforce that the median represents a maximum cut, we include additional per-
+mutations in our instance. Specifically, for each edge e∈E, we include two permutations, π1
+e
+andπ2
+e, which reward picking solutions that correspond to partitions that cut e. This ensures
+that the final median permutation encodes a maximum cut of G. The precise construction and
+formal analysis of these edge-cutting permutations π1
+e,π2
+eis detailed in Section 4.
+4Namely, the bichromatic discrete median problem mentioned in Footnote 2.
+5Recall that the Max-Cut problem is, given an undirected graph G= (V,E)to compute a vertex partition
+V=A⊔Bmaximizing the number of edges from AtoB.
+4
+2.2 Fine-Grained Lower Bound for Discrete Center in the Ulam Metric
+Our proof of the lower bound for the discrete center problem in the Ulam metric relies on two
+key components. The first is a reduction from the Orthogonal Vectors (OV) problem to the
+problem of computing the Ulam distance between two permutations. Specifically, we seek a
+pair of functions that, given two sets of binary vectors as inputs, independently output two
+permutations whose Ulam distance is small if and only if there exists an orthogonal pair of
+vectors in the input sets. This falls into a well-established framework in the fine-grained
+complexity literature [BI18, BK15, ABV15]: Given two sets of roughly Lbinary vectors, one
+constructs “coordinate gadgets”, “vector gadgets”, and “OR-gadgets” to produce a pair of
+length- Lstrings whose edit distance encodes the existence of an orthogonal pair.
+Clearly such a reduction cannot exist for the Ulam distance under SETH. The Ulam dis-
+tance between two permutations can be computed in near-linear time by a simple reduction
+to the longest increasing subsequence problem [Sch61], and thus, if there were a way to trans-
+form sets of O(L)many vectors into permutations of length Lsuch that the existence of an
+orthogonal pair in the sets could be determined via an Ulam distance computation of these
+permutations, then that would imply a near-linear time algorithm for OV , falsifying SETH! In
+light of this observation, we start with O(√
+L)vectors in the OV instance. The constructions of
+the coordinate and vector gadgets are similar to the edit distance reduction. However, during
+the construction of the OR-gadgets, there is a quadratic blowup resulting in length Lpermu-
+tations with the desired properties. A detailed construction of these gadgets can be found in
+Section 5.
+The second component in our proof is a reduction from a problem called ∃∀∃∃ -Orthogonal
+Vectors. In this problem, we are given four sets A,B,C,Eof binary vectors and we have to de-
+cide if there exists a∈A, such that for all b∈B, there exist c∈C,e∈Esuch that a,b,c,eare or-
+thogonal6. If|A|=|B|=nand|C|=|E|=√
+L, then this problem has a O((n2L)1−Ω(1))lower
+bound under the Quantified Strong Exponential Time Hypothesis. Given such sets A,B,C,E,
+we proceed as follows. First, for each a∈A, we construct the set Vaof√
+Lvectors by taking
+the pointwise product of awith all√
+Lvectors in C. There will be nsuch sets Va, one for each
+choice of a∈A. Similarly, for each b∈B, we construct the set Wbof√
+Lvectors by taking
+the pointwise product of bwith all√
+Lvectors in C. We then run the OV to Ulam distance
+reduction from before on these sets to obtain two sets of n-many permutations of length L. Fi-
+nally, we show that there exists a permutation in the first set with small Ulam distance to every
+permutation in the second set if and only if the starting ∃∀∃∃ -OV instance is a YES-instance.
+To go from these two sets to the final discrete center instance, we append additional sym-
+bols to each permutation and introduce a new permutation that is far from every permutation
+in the second set. This ensures that the center indeed comes from the first set completing the
+reduction. We defer the details to Section 5.
+2.3 Fine-Grained Lower Bound for Discrete Median in the Ulam Metric
+Our lower bound proof for the discrete median problem follows a similar initial approach
+as our proof for the center lower bound, with only one difference: instead of starting with
+an∃∀∃∃ -OV instance, we begin with a ∃∃∃∃ -OV (also known as 4-OV) instance. Given this
+4-OV instance, we retrace the same steps to construct two sets, Xand Y, each containing n
+permutations of length L. As in the center proof, we show that there exists a permutation in X
+whose total Ulam distance to all elements in Yis small if and only if the original 4-OV instance
+6We say that vectors a,b,c,e∈ {0, 1}dareorthogonal if∑i∈[d]a[i]b[i]c[i]e[i] =0.
+5
+is a YES-instance.
+However, going from these two sets to the standard single-set version of the discrete me-
+dian problem is technically very challenging. In fact, such challenges were addressed in the
+past in the context of the closest pair problem [DKL19, KM20], and more generally identified
+as the task of reversing color coding [BKN21], typically requiring extremal combinatorial objects
+which are then composed with the input in a black-box manner.
+In this paper, we transform the bichromatic instance to a monochromatic one, in multi-
+ple steps but in a white-box manner using the structure of the input instance. The first key
+observation is that all pairwise Ulam distances within Xcan be computed much faster than
+the naive O(n2L)time bound, specifically, in O(n2√
+L)time. This speedup is possible because
+the permutations in Xare not arbitrary but outputs formed during our OV to Ulam distance
+reduction. Thus, in O(n2√
+L)time, we can compute the total Ulam distance of each x∈Xto
+all other elements in X.
+Once these ndistance sums are computed, we initiate a balancing procedure. This proce-
+dure iteratively appends additional symbols to each permutation in X∪Ysuch that:
+• For every permutation in X, the sum of its Ulam distances to all other elements in X
+becomes equal.
+• The relative Ulam distances between permutations across the sets remain unchanged.
+• For every permutation in Y, the sum of its Ulam distances to all other elements in Y
+becomes very large.
+We show that this balancing procedure can be performed efficiently without significantly in-
+creasing the permutation lengths. Finally, we include all modified permutations into a single
+set, and output that as our final discrete median instance. The details turn out to be quite
+involved, and we direct the reader to Section 6 for further details.
+3 Preliminaries
+Sets, Strings and Permutations. For a positive integer n, let[n]denote the set {1, 2, . . . , n}.
+We denote by Snthe set of all permutations over [n]. Throughout the paper, we treat any
+permutation s∈ S nas a string over the alphabet [n]with no repeating symbols, and we write
+s:=s[1]s[2]. . .s[n]. Given kstrings s1,s2, . . . , skover some alphabet, we denote by ⃝i∈[k]si
+the concatenated string s1s2. . .sk. We will often require strings that can be obtained by adding
+some fixed “offset” to each symbol of some other canonical string7. For every nonnegative
+integer kand string of length n, we let ∆k(s):= (s[1] +k)(s[2] +k). . .(s[n] +k). In other
+words, ∆k(s)is the string obtained by adding kto each symbol of s. We will also often require
+strings that are obtained by restricting some string to some sub-alphabet. Given any string
+sover the alphabet Σand any sub-alphabet Σ′⊆Σ, we denote by s|Σ′to be string obtained
+from sby deleting all symbols that are not in Σ′. Given a,b∈ {0, 1}d, we write ⟨a,b⟩for the
+inner product of aand b, i.e.,⟨a,b⟩=∑i∈[d]a[i]b[i]. We further write a⊙bfor the pointwise
+product aand b, i.e., a⊙b∈ {0, 1}dis the vector satisfying (a⊙b)[i] =a[i]b[i]for all i∈[d].
+Ulam Distances and Common Subsequences. The Hamming distance between two equal-
+length strings xand y, denoted by dH(x,y), is the number of locations where xand yhave
+7Here we are treating the symbols of a string as integers themselves.
+6
+different symbols. Let π:=π[1]π[2]. . .π[n]∈ S nbe a permutation and i,j∈[n]be distinct
+positions. A symbol relocation operation from position jto position iinπconstitutes of deleting
+thejthsymbol of πand reinserting it at position i. More formally, if eπ∈ S nis the permutation
+obtained after applying a symbol relocation from position jto position iinπ, then:
+eπ:=(
+π[1]π[2]. . .π[j−1]π[j+1]· · ·π[i−1]π[j]π[i]π[i+1]· · ·π[n], if j<i,
+π[1]π[2]· · ·π[i−1]π[j]π[i]π[i+1]· · ·π[j−1]π[j+1]· · ·π[n], if j>i.
+Given π,π′∈ S n, the Ulam distance between πandπ′, denoted by dU(π,π′), is the mini-
+mum number of symbol relocation operations required to transform πintoπ′. We will further
+denote by LCS(x,y)the length of a longest common subsequence of two strings xand y. We
+will frequently use the following fact throughout the paper, which relates the Ulam distance
+between two permutations to the length of their longest common subsequence.
+Fact 3.1 ([AD99]) .For every π,π′∈ S n, we have d U(π,π′) =n−LCS(π,π′).
+3.1 Hardness Assumptions
+Our results are conditional on several hardness assumptions and hypotheses, which we list
+in this section. The first one is the Strong Exponential Time Hypothesis, which is a standard
+assumption in the theory of fine-grained complexity.
+Hypothesis 3.2 (Strong Exponential Time Hypothesis ( SETH )).For all ε>0, there exists q ≥3
+such that no algorithm running in time O (2(1−ε)n)can solve the q-SAT problem on n variables.
+More specifically, for one of our lower bounds, we will need the following corollary of
+SETH , which we dub Unbalanced 4- OVH .
+Hypothesis 3.3 (Unbalanced 4- OVH ).For all ε>0, no algorithm can, given sets A ,B,C,E⊆
+{0, 1}dwith|A|=n,|B|,|C|,|E|=nΘ(1)andω(logn)<d<no(1), determine if there exists
+a∈A, b∈B, c∈C, e∈E such that ∑i∈[d]a[i]b[i]c[i]e[i] =0in time O ((|A||B||C||E|)1−ε).
+It is well-known that SETH in conjunction with the sparsification lemma [IPZ01] implies
+Unbalanced 4- OVH [Wil05]. We will also make use of the following strengthening of SETH .
+Hypothesis 3.4 (∃∀∃SETH ).For all ε>0and0<α<β<1, there exists q ≥3, such that
+given a q-CNF formula ϕover the variables x 1,x2, . . . , xn, no algorithm running in time O (2(1−ε)n)
+can determine if the following is true:
+∃x1, . . . , x⌈αn⌉∀x⌈αn⌉+1, . . . , x⌈βn⌉∃x⌈βn⌉+1, . . . , xnϕ(x1,x2, . . . , xn).
+We note that ∃∀∃SETH is a special case of the Quantified SETH proposed by Bringmann
+and Chaudhury [BC20] – a hypothesis about the complexity of deciding quantified q-CNF
+formulas with a constant number of quantifier blocks where each block contains some constant
+fraction of the variables. We do not formally define Quantified SETH in all of its generality
+since we only require three quantfier alternations. In fact, the specific hardness assumption we
+need is the following which is implied by ∃∀∃SETH .
+Hypothesis 3.5 (Unbalanced ∃∀∃∃OVH ).For all ε>0, no algorithm can, given sets A ,B,C,E⊆
+{0, 1}dwith|A|=n,|B|,|C|,|E|=nΘ(1)andω(logn)<d<no(1), determine if there exists
+a∈A such that for all b ∈B, there exist c ∈C,e∈E such that ∑i∈[d]a[i]b[i]c[i]e[i] = 0in time
+O((|A||B||C||E|)1−ε).
+7
+4 NP-Hardness of Continuous Median in the Ulam Metric
+In this section, we prove Theorem 1.1. Before we do so, we first formally define the continuous
+median problem in the Ulam metric.
+CONTINUOUS ULAM MEDIAN
+Input: A set S⊆ S nof permutations and an integer d.
+Question: Is there a permutation π∗∈Snsuch that ∑π∈SdU(π,π∗)≤d?
+The main result of this section is the following.
+Theorem 4.1. CONTINUOUS ULAM MEDIAN is NP-hard.
+Proof. We will reduce from the M AXCUTproblem, which is NP-hard [Kar72]. Let G= (V,E)
+be a M AXCUTinstance with V= [n]. From G, we will construct a C ONTINUOUS ULAM ME-
+DIAN instance S⊆ S Nconsisting of permutations of length N:=3n+2. On a high level, our
+construction will work as follows. We will first construct many copies of two special permu-
+tations that will force every median of Sto take on a very specific structure. All permutations
+of this structure will naturally encode cuts of the vertex set V. Then for each edge einG, we
+will construct permutations that reward choosing a median that “cuts” e. Thus, we will end up
+with a set of permutations whose overall median will encode the maximum cut of G. Details
+follow.
+To describe our construction, it will be convenient to define the following two strings, both
+of length (n+1):
+X1:= (n+1)◦(n+2)◦ · · · ◦ (2n+1),
+X2:= (2n+2)◦(2n+3)◦ · · · ◦ (3n+2).
+Next, we define the two special permutations πL,πR∈ S Nalluded to earlier:
+πL:=1◦2◦ · · · ◦ (n−1)◦n◦X1◦X2,
+πR:=X1◦n◦(n−1)◦ · · · ◦ 2◦1◦X2.
+We make the observation that every median of the set {πL,πR}naturally encodes a cut of the
+vertex set V.
+Definition 4.2. For a nonnegative integer r ≤n, let A ={a1,a2, . . . , ar}and B ={b1,b2, . . . , bn−r}
+be sets such that A ⊔B= [n], a1<a2<· · ·<arand b 1>b2>· · ·>bn−r. Define πA,B∈ S Nas:
+πA,B:=a1◦a2◦ · · · ◦ ar◦X1◦b1◦b2◦ · · · ◦ bn−r◦X2.
+Furthermore, define S∗
+N⊆ S Nas:
+S∗
+N:={π∈ S N:π=πA,Bfor some pair of sets A,Bwith A⊔B= [n]}.
+Clearly, permutations in S∗
+Nnaturally encode cuts of [n]. We will first show that every
+permutation in S∗
+Nhas the same sum of Ulam distances to πLandπR.
+Lemma 4.3. For every π∈ S∗
+N, dU(π,πL) +dU(π,πR) =n.
+8
+Proof. Fix some π∈ S∗
+N. Then π=πA,Bfor some sets A,Bwith A⊔B= [n]. Let|A|=r
+and|B|=n−rfor some nonnegative integer r≤n. Clearly, LCS(π,πL)≥r+2(n+1), since
+one can form a common subsequence of πandπLby deleting the symbols in Bfrom both.
+Furthermore, no LCS of πandπLcan contain a symbol from Bsince otherwise, the LCS would
+not contain any symbol from X1and would have a length that is at most 2 n+1. Therefore,
+LCS(π,πL) = r+2(n+1)and dU(π,πL) = n−r. By a similar argument, dU(π,πR) = r. So,
+dU(π,πL) +dU(π,πR) =n. ⌟
+Next, we show that any permutation that is not in S∗
+Nhas strictly larger sum of Ulam
+distances to πLandπR.
+Lemma 4.4. Letπ/∈ S∗
+N. Then d U(π,πL) +dU(π,πR)≥n+1.
+The proof of Lemma 4.4 involves somewhat tedious casework and has been deferred to
+Appendix A.
+The final pieces in our construction are the “edge gadgets”, which we now define. For
+each edge e={i,j} ∈E, where i<j, define the following two strings:
+π1
+e=j◦i◦X1◦X2◦1◦2◦ · · · ◦ (i−1)◦(i+1)◦ · · · ◦ (j−1)◦(j+1)◦ · · · ◦ n,
+π2
+e=X1◦i◦j◦X2◦1◦2◦ · · · ◦ (i−1)◦(i+1)◦ · · · ◦ (j−1)◦(j+1)◦ · · · ◦ n.
+The role of the edge gadgets associated with an edge eis to reward choosing partitions of the
+vertices that cut e. This is formalized in the following lemma.
+Lemma 4.5. Letπ∈ S∗
+Nsuch that π=πA,Bwith A ⊔B= [n]and e∈E. Then we have the
+following:
+dU(π1
+e,π) +dU(π2
+e,π) =(
+2n−2,if e is cut by the partition (A,B),
+2n−1,otherwise.
+Proof. Suppose eis cut by the partition (A,B)and let {k}=A∩e. We must have LCS(π1
+e,π)≥
+2n+3 since the string k◦X1◦X2is a common subsequence of π1
+eandπ. Furthermore, no LCS
+ofπ1
+eandπcan contain any symbol in [n]\ {k}since otherwise, the LCS would not contain
+any symbol from one of X1and X2, and consequently, would have a length of at most 2 n+1.
+Therefore, LCS(π1
+e,π) =2n+3 and dU(π1
+e,π) =n−1. By essentially the same argument, we
+also have dU(π2
+e,π) =n−1 and therefore, dU(π1
+e,π) +dU(π2
+e,π) =2n−2.
+Ifeis not cut by the partition (A,B), then assume that e={i,j} ⊆ A. The case where
+e⊆Bis similar. First, note that LCS(π1
+e,π)≥2n+3 since the string i◦X1◦X2is a common
+subsequence of π1
+eandπ. Furthermore, LCS(π1
+e,π)≤2n+3 because of the following two
+reasons:
+• No LCS of π1
+eandπcan contain both iand jsince their relative order is different in π1
+e
+andπ.
+• No LCS of π1
+eandπcan contain any symbol in [n]\ {i,j}since otherwise, the LCS would
+not contain any symbol from one of X1and X2, and consequently, would have a length
+of at most 2 n+1.
+Therefore, LCS(π1
+e,π) = 2n+3 and dU(π1
+e,π) = n−1. Next we claim that LCS(π2
+e,π)≤
+2n+2. Let ρbe any LCS of π2
+eandπ. We make the following observations.
+9
+• Ifρcontains any symbol from A, then ρcannot contain any symbol from X1forcing
+|ρ| ≤2n+1.
+• Ifρcontains any symbol from B, then ρcannot contain any symbol from X2, once again
+forcing |ρ| ≤2n+1. This is because Bcontains neither inorj.
+Therefore, the symbols of ρmust come from X1orX2and so, |ρ| ≤ | X1|+|X2|=2n+2.
+Furthermore, X1◦X2is a common subsequence of π2
+eandπ. Therefore, LCS(π1
+e,π) = 2n+2
+and dU(π1
+e,π) =n. Putting everything together, we have dU(π1
+e,π) +dU(π2
+e,π) =2n−1.⌟
+Now let SE={π1
+e:e∈E} ∪ {π2
+e:e∈E}and Sauxbe the set consisting of t:=|E|(2n−1)
+copies of πLandπR. Our final C ONTINUOUS ULAM MEDIAN instance will be the multiset
+S:=SE∪Saux.
+We now show that Ghas a cut of size at least kif and only if the median of Shas cost at most k′,
+where k′=|E|(2n−1)−k+tn. For the completeness case, assume there exist sets A,Bwith
+A⊔B=nsuch that the partition (A,B)cuts at least kedges in G. Denote by E(A,B)the set of
+all edges cut by the partition (A,B). Now consider the permutation πA,B∈ S nand note that:
+∑
+π∈SdU(πA,B,π) =∑
+π∈SEdU(πA,B,π) +∑
+π∈SauxdU(πA,B,π)
+= 
+∑
+e∈E(dU(πA,B,π1
+e) +dU(πA,B,π2
+e))!
++t(dU(πA,B,πL) +dU(πA,B,πR))
+=
+∑
+e∈E(A,B)(dU(πA,B,π1
+e) +dU(πA,B,π2
+e)) +∑
+e/∈E(A,B)(dU(πA,B,π1
+e) +dU(πA,B,π2
+e))
++tn
+=(|E(A,B)|(2n−2) + (|E| − |E(A,B)|)(2n−1))+tn
+=|E|(2n−1)− |E(A,B)|+tn
+≤ |E|(2n−1)−k+tn.
+For the soundness case, assume that there exists π∗∈ S Nwhose median cost to Sis at
+most k′. We can further assume that π∗∈ S∗
+Nsince otherwise, every eπ∈ S∗
+Nwill have a
+median cost that is at most that of π∗. Indeed, assume that π∗/∈ S∗
+Nand fix any eπ∈ S∗
+N. We
+have:
+∑
+π∈SdU(π∗,π) =∑
+π∈SauxdU(π∗,π) +∑
+π∈SEdU(π∗,π)
+≥t(n+1) +0
+=tn+t
+=tn+|E|(2n−1)
+≥tn+∑
+π∈SEdU(eπ,π)
+=∑
+π∈SauxdU(eπ,π) +∑
+π∈SEdU(eπ,π) =∑
+π∈SdU(eπ,π).
+Thus, the assumption that π∗∈ S∗
+Nis without loss of generality. Then, we have π∗=πA,B
+for sets A,Bwith A⊔B= [n]. We claim that the partition (A,B)cuts at least kedges in G.
+Indeed, since ∑π∈SauxdU(π∗,π) =tn, we have ∑π∈SEdU(π∗,π)≤k′−tn=|E|(2n−1)−k=
+k(2n−2) + (|E| −k)(2n−1). Then, by Lemma 4.5 the partition (A,B)cuts at least kedges.
+10
+Remark 4.6. Although our NP-hardness reduction produces multisets instead of sets, it is not to hard
+to turn them into sets by appending a unique permutation to each permutation without affecting the
+structure of the solution. See Appendix B for details.
+5 Fine-Grained Complexity of Discrete Center in the Ulam Metric
+In this section, we prove Theorem 1.2. We first formally define the discrete center problem in
+the Ulam metric.
+DISCRETE ULAM CENTER
+Input: A set S⊆ S Lof permutations such that |S|=nand an integer τ.
+Question: Is there a permutation π∗∈Ssuch that max π∈SdU(π,π∗)≤τ?
+Our main result of this section is the following.
+Theorem 5.1. Letε>0andα>0. There is no algorithm running in time O ((n2L)1−ε)that solves
+theDISCRETE ULAM CENTER problem for n permutations of length L =Θ(nα), unless ∃∀∃SETH
+fails.
+The key step in the proof of Theorem 5.1 is a reduction from Orthogonal Vectors to Ulam
+Distance – that is, to construct a pair of functions that, given a set of nbinary vectors of length
+deach as input, outputs, independently of each other, a pair of permutations whose Ulam
+distance is small if and only if there exists an orthogonal pair of vectors in the input sets.
+Theorem 5.2. There exists a pair of functions f and g such that for all sets A ,B⊆ {0, 1}dwith
+|A|=|B|=n, the following holds.
+•f(A),g(B)∈ S(5d−1)n2, i.e., both f and g output permutations of length (5d−1)n2.
+•If there exist a ∈A,b∈B such that ⟨a,b⟩=0, then the Ulam distance between f (A)and g (B)
+is at most 3n2d−1. Otherwise, the Ulam distance between f (A)and g (B)is exactly 3n2d.
+•Both f and g are computable in time O (n2d).
+Proof. The proof outline resembles many of the other sequence dissimilarity (e.g., edit dis-
+tance) lower bound proofs – we will first construct coordinate and vector gadgets, and then
+stitch them together to construct the final output permutations (see [BK19] for an instructive
+example). Throughout the proof, we will phrase our arguments in terms of LCS lengths and
+use Fact 3.1 at the end. We begin by constructing coordinate gadgets, which are small permu-
+tations that encode the product of two bits through their LCS.
+Lemma 5.3 (Coordinate Gadgets) .There exist functions C A,CB:{0, 1} → S 3such that for all
+x,y∈ {0, 1},LCS(CA(x),CB(y)) = 2−xy.
+Proof. For each x,y∈ {0, 1}, letCA(x)and CB(y)be defined as follows:
+CA(0):=123, CA(1):=312,
+CB(0):=132, CB(1):=213.
+By inspection, LCS(CA(0),CB(0)) = LCS(CA(0),CB(1)) = LCS(CA(1),CB(0)) = 2, Further-
+more, LCS(CA(1),CB(1)) = 1. ⌟
+11
+Next, from these coordinate gadgets, we construct vector gadgets that guarantee a large
+LCS if and only if the corresponding vectors have a small inner product.
+Lemma 5.4 (Vector Gadgets) .There exist functions V A,VB:{0, 1}d→ S 3d, computable in time
+O(d), such that for all vectors a ,b∈ {0, 1}d, we have LCS(VA(a),VB(b)) = 2d− ⟨a,b⟩.
+Proof. Fixa,b∈ {0, 1}dwhere a=a[1]a[2]. . .a[d]and b=b[1]b[2]. . .b[d]. We will construct
+the permutations VA(a)and VB(b)by concatenating the coordinate gadgets for a[i]and b[i], re-
+spectively, for each i∈[d], while using fresh new symbols to ensure that no letters are repeated.
+More precisely, for each i∈[d], we define8ca,i:=∆3i−3(CA(a[i]))and cb,i:=∆3i−3(CB(b[i])).
+Finally, we define VA(a)and VB(b)as follows:
+VA(a):=⃝
+i∈[d]ca,i,
+VB(b):=⃝
+i∈[d]cb,i.
+Clearly, for distinct i,j∈[d],ca,iand cb,jhave no symbols in common. So, for every i∈[d], the
+symbols of ca,ican only be aligned with symbols of cb,i, and we have
+LCS(VA(a),VB(b)) =∑
+i∈[d]LCS(ca,i,cb,i)
+=∑
+i∈[d](2−a[i]b[i])
+=2d− ⟨a,b⟩. ⌟
+We then normalize these vector gadgets to ensure only two possible values for the LCS
+length of two gadgets.
+Lemma 5.5 (Normalized Vector Gadgets) .There exist functions N A,NB:{0, 1}d→ S 5d−1, com-
+putable in time O (d), such that for all vectors a ,b∈ {0, 1}d, we have
+LCS(NA(a),NB(b)) =(
+2d, if⟨a,b⟩=0,
+2d−1,if⟨a,b⟩ ̸=0.
+Proof. Fixa,b∈ {0, 1}d. Let P:=⃝i∈[2d−1](3d+i). We define
+NA(a):=P◦VA(a),
+NB(b):=VB(b)◦P.
+To see why the claim is true, note that since Phas no symbols in common with VA(a)orVB(b),
+LCS(NA(a),NB(b)) = max{|P|,LCS(VA(a),VB(b))}. Moreover, by Lemma 5.4, if ⟨a,b⟩=0,
+LCS(VA(a),VB(b)) = 2d>2d−1=|P|. In this case, LCS(NA(a),NB(b)) =LCS(VA(a),VB(b)) =
+2d. In the case where ⟨a,b⟩ ̸=0, we have LCS(VA(a),VB(b))≤2d−1=|P|. We finally con-
+clude that LCS(NA(a),NB(b)) =|P|=2d−1. ⌟
+Given these normalized vector gadgets, we are now ready to describe how to compute the
+functions fand g. Fix A,B⊆ {0, 1}dwith|A|=|B|=n, and let A={a1,a2, . . . , an}and B=
+{b1,b2, . . . , bn}. On a high-level, we obtain the permutations f(A)and g(B)by concatenating
+8Recall that for a string sand a nonnegative integer k, we denote by ∆k(s)the string obtained by adding kto
+every symbol of s.
+12
+Figure 1: Illustration of the functions fand g.f(A)is obtained by taking ncopies of each
+normalized vector gadget in Aand then concatenating together the nresulting strings. For
+g(B), the order is flipped – the nnormalized vector gadgets in Bare first concatenated together
+and then ncopies of the resulting string are concatenated.
+the normalized vector gadgets for each vector in Aand B, respectively, some number of times
+and in some particular order. For f(A), the idea is to take ncopies of each normalized vector
+gadget in Aand then concatenating together the nresulting strings, while using fresh new
+symbols when necessary. For g(B), we flip the order – we first concatenate together the n
+normalized vector gadgets in Band then take ncopies of the resulting string, again using
+fresh new symbols when necessary. See Figure 1 for an illustration. More precisely, we do the
+following. Let v=5d−1 be the length of each normalized vector gadget. For each (i,j)∈
+[n]×[n], we define:
+αi,j:=∆((i−1)n+(j−1))v(NA(ai)),
+βi,j:=∆((i−1)n+(j−1))v(NB(bj)).
+Finally, we define
+f(A):=⃝
+i∈[n] 
+⃝
+j∈[n]αi,j!
+,
+g(B):=⃝
+i∈[n] 
+⃝
+j∈[n]βi,j!
+.
+Clearly, |f(A)|=|g(B)|=vn2= (5d−1)n2. So, it only remains to prove the Ulam
+distance claim in Theorem 5.2. Note that for distinct pairs (i,j),(i′,j′)∈[n]×[n],αi,jandβi′,j′
+do not have any symbols in common. Therefore, for every (i,j)∈[n]×[n], the symbols of αi,j
+can only be aligned with the symbols of βi,j, and we have
+LCS(f(A),g(B)) = ∑
+(i,j)∈[n]×[n]LCS(αi,j,βi,j).
+Furthermore, by Lemma 5.5, for each pair (i,j),LCS(αi,j,βi,j)can take only one of two values –
+2d, which happens when ⟨ai,bj⟩=0, or 2 d−1, which happens when ⟨ai,bj⟩ ̸=0. Consider the
+setS={(i,j)∈[n]×[n]:⟨ai,bj⟩=0}. We now have:
+LCS(f(A),g(B)) = ∑
+(i,j)∈[n]×[n]LCS(αi,j,βi,j)
+=∑
+(i,j)∈SLCS(αi,j,βi,j) +∑
+(i,j)/∈SLCS(αi,j,βi,j)
+=2d|S|+ (2d−1)(n2− |S|).
+This means that if there do not exist ai∈A,bj∈Bsuch that ⟨ai,bj⟩=0 (i.e., S=∅), then
+13
+LCS(f(A),g(B)) = ( 2d−1)n2. Otherwise, LCS(f(A),g(B))≥(2d−1)n2+1. The claim then
+follows by Fact 3.1.
+Equipped with Theorem 5.2, we can now prove Theorem 5.1.
+Proof of Theorem 5.1. We will give a reduction from ∃∀∃∃ OV to the D ISCRETE ULAM CENTER
+problem. The reduction will be in two steps. In the first step, we will reduce to a problem
+called B ICHROMATIC DISCRETE ULAM CENTER , where one is given as input twosets Xand Y
+of permutations along with an integer τ, and the goal is to determine if there is a permutation
+inXthat has Ulam distance at most τto all permutations in Y. In the second step, we will
+reduce B ICHROMATIC DISCRETE ULAM CENTER to D ISCRETE ULAM CENTER .
+LetA,B,C,E⊆ {0, 1}dbe any ∃∀∀∃∃ OV instance such that |A|=|B|=nand|C|=
+|E|=m, where m=nΘ(1)andω(logn)<d<no(1). From this, we construct a pair of sets X
+and Yof permutation as follows.
+For each a∈A, we first construct the set Vaconsisting of mvectors as follows:
+Va={a⊙c∈ {0, 1}d:c∈C}.
+Similarly, for each b∈B, we construct the set Wb, again consisting of mvectors as
+Wb={b⊙e∈ {0, 1}d:e∈E}.
+Finally, for each set Va, where a∈A, we compute f(Va)(where fis one of the functions
+from Theorem 5.2) and add the resulting permutation to the first set X. That is we consider:
+X={f(Va):a∈A}.
+Similarly, construct
+Y={g(Wb):b∈B}.
+Finally, we set τ=3m2d−1. We now have two sets Xand Yeach containing nper-
+mutations of length (5d−1)m2=L. Furthermore, by Theorem 5.2, there exists x∈Xsuch
+that dU(x,y)≤τfor each y∈Yif and only if there exists an orthogonal pair in Va,Wbfor
+some a∈Aand all b∈Bwhich happens if and only if the original ∃∀∃∃ OV instance is a
+YES-instance.
+The entire reduction takes O 
+nm2d=O(nL)time. Now fix ε>0. If the resulting
+BICHROMATIC DISCRETE ULAM CENTER instance can be solved in time O((n2L)1−ε), then
+∃∀∀∃∃ OV can also be solved in time O((n2m2d)1−ε) =O((n2+o(1)m2)1−ε) =O((|A||B||C||E|)1−ε′)
+for some constant ε′>0, refuting Unbalanced ∃∀∃∃OVH .
+Next we reduce B ICHROMATIC DISCRETE ULAM CENTER to D ISCRETE ULAM CENTER .
+We first define the strings p1:=⃝i∈[L](L+i),p2:=⃝i∈[2L](2L+i), and p3:=⃝i∈[L]i.
+Furthermore, we define pR
+1and pR
+2to be the reverses of p1and p2, respectively. Our D ISCRETE
+ULAM CENTER instance S⊆ S 4mis simply the following:
+S={pR
+2◦p1◦x:x∈X} ∪ { p2◦p1◦y:y∈Y} ∪ { pR
+2◦pR
+1◦p3}.
+Note that the center of Smust be of the form pR
+2◦p1◦x, where x∈X. This is seen from the
+following observation, which can be justified using straightforward alignment arguments.
+Observation 5.6. Let x ,y∈ S L. Then the following hold.
+14
+•dU(pR
+2◦p1◦x,pR
+2◦p1◦y)≤L−1.
+•dU(pR
+2◦p1◦x,pR
+2◦pR
+1◦p3)≤2L−2.
+•dU(p2◦p1◦y,pR
+2◦pR
+1◦p3)≥3L−2.
+•dU(pR
+2◦p1◦x,p2◦p1◦y) =2L−1+dU(x,y).
+By Observation 5.6, Shas a center with cost at most 2 L−1+τif and only if the B ICHRO -
+MATIC DISCRETE ULAM CENTER instance X∪Yhas a solution with cost at most τ.
+5.1 The Need for Quantifiers
+Our lower bound for D ISCRETE ULAM CENTER is based on a plausible generalization of the
+Strong Exponential Time Hypothesis, namely ∃∀∃SETH . One could ask if we could get a simi-
+lar lower bound under the weaker but more standard SETH instead. We remark that this is im-
+possible unless the Nondeterministic Strong Exponential Time Hypothesis ( NSETH ) [CGI+16]
+is false. This is because D ISCRETE ULAM CENTER can be solved in (co-)nondeterministic
+timeeO(nL)with the following simple algorithm. We first guess the center πCand com-
+pute d∗:=max π∈XdU(πC,π). Then for each permutation π, we guess the furthest permu-
+tation π′∈Xand verify that dU(π,π′)≥d∗, thereby certifying that our guess πCis optimal.
+In light of this algorithm, a O((n2L)1−Ω(1))fine-grained lower bound based on SETH would
+contradict NSETH .
+6 Fine-Grained Complexity of Discrete Median in the Ulam Metric
+In this section, we prove a tight fine-grained lower bound for the D ISCRETE ULAM MEDIAN
+problem conditioned on SETH . We first give a formal statement of the problem.
+DISCRETE ULAM MEDIAN
+Input: A set S⊆ S Lof permutations such that |S|=nand an integer τ.
+Question: Is there a permutation π∗∈Ssuch that ∑π∈SdU(π,π∗)≤τ?
+This section is organized as follows. In Section 6.1, we start with a simple lower bound for
+thebichromatic version of the problem that essentially follows from the proof for the D ISCRETE
+ULAM CENTER problem from before. Going from the bichromatic version to the standard
+monochromatic version defined above is technically significantly more involved. We establish
+this stronger lower bound in three steps. First, in Section 6.2, we prepare some useful lemmas
+for embedding the Hamming metric (in specialized settings) to the Ulam metric. This will be
+particularly helpful in the design of some gadgets. Second, in Section 6.3, we establish the core
+of our reduction and show that any set of npermutations can be balanced in such a way that
+the sum of Ulam distances from each permutation to all the others is (approximately) equal .
+Finally, in Section 6.4, we assemble the full reduction.
+6.1 Hardness for Bichromatic Instances
+In this section, we give a fine-grained lower bound for the B ICHROMATIC DISCRETE ULAM
+MEDIAN problem. In this problem, we given twosets X,Yof permutations and an integer τ,
+and the goal is to determine if there exists x∈Xsuch that ∑y∈YdU(x,y)≤τ.
+15
+Theorem 6.1. Letε>0andα>0. There is no algorithm running in time O ((n2L)1−ε)that solves
+theBICHROMATIC DISCRETE ULAM MEDIAN problem for n permutations of length L =Θ(nα),
+unless the SETH fails.
+Proof. The proof is almost identical to the first half of the proof of Theorem 5.1. The only
+difference is the starting problem, which is 4-OV (i.e., ∃∃∃∃ OV) instead of ∃∀∃∃ OV. Given
+a 4-OV instance A,B,C,E⊆ { 0, 1}dwhere |A|=|B|=n,|C|=|E|=m=nΘ(1)and
+ω(logn)<d<no(1), we retrace the proof of Theorem 5.1 and construct the sets Xand Y.
+Finally, we set τ:=3m2nd−1. Once again, by Theorem 5.2, it is not hard to see that there
+exists x∈Xsuch that ∑y∈YdU(x,y)≤τif and only if the starting 4-OV instance is a YES-
+instance. The conclusion then follows from Unbalanced 4- OVH .
+6.2 Embedding the Hamming Metric into the Ulam Metric
+The following lemmas show how to embed the Hamming metric on various sets of strings
+into the Ulam metric. These lemmas will be useful when we finally reduce B ICHROMATIC
+DISCRETE ULAM MEDIAN into D ISCRETE ULAM MEDIAN .
+Lemma 6.2 (Embedding the Hamming Metric on Small Alphabets) .Let a 1, . . . , an∈ {0, 1, 2}L.
+In time O (nL)we can construct permutations π1, . . . ,πn∈ S 3Lsuch that d H(ai,aj) =dU(πi,πj)for
+all i,j∈[n].
+Proof. Consider the three permutations σ0=123,σ1=231,σ2=312 in S3. Clearly the Ulam
+distance between any two of these is exactly 1. Thus, construct the permutation πi∈ S 3L
+from aiby replacing each symbol “0” by a copy of σ0, each symbol “1” by a copy of σ1, and each
+symbol “2” by a copy of σ2. Here we use fresh symbols for each copying such that across all
+strings ai, the jthcharacter is consistently replaced by the same three symbols. The correctness
+is straightforward, and clearly the strings can be computed in time O(nL).
+Lemma 6.3 (Embedding the Hamming Metric on Permutations) .Letπ1, . . . ,πn∈ S L. In
+time O (nL)we can compute permutations τ1, . . . ,τn∈ S 2Lsuch that d H(πi,πj) = dU(τi,τj)for
+all i,j∈[n].
+Proof. Consider the map η:SL→ S 2Ldefined as follows. For each π∈ S Lwhere π=
+π[1]◦π[2]◦ · · · ◦ π[L], the permutation η(π)∈ S 2Lis equal to:
+π[1]◦(L+1)◦π[2]◦(L+2)◦ · · ·π[L]◦(2L).
+In other words, η(π)is obtained by interleaving the symbols of πwith the symbols of the
+string (L+1)◦(L+2)◦ · · · ◦ (2L). We now make the following observation.
+Observation 6.4. For every π,π′∈ S L, we have d U(η(π),η(π′)) = dH(π,π′).
+Proof. Letσ:=η(π)andσ′:=η(π′), respectively. It suffices to show that LCS(σ,σ′) = 2L−
+dH(π,π′). Note that LCS(σ,σ′)≥2L−dH(π,π′)since one can obtain a common subsequence
+ofσandσ′with length 2 L−dH(π,π′)by concatenating, for i∈[2L], the symbols σ[i]ifσ[i] =
+σ′[i]. To show that LCS(σ,σ′)≤2L−dH(π,π′), consider any longest common subsequence
+sofσandσ′. If snever aligns a symbol σ[i]with the symbol σ′[j]with i̸=j, then clearly,
+|s| ≤2L−dH(π,π′). So, assume otherwise. Then there exist i,j∈[2L]with i̸=jsuch that s
+aligns σ[i]with σ′[j]. Clearly, iand jare both odd since for even i,j,σ[i]̸=σ′[j]ifi̸=j. We can
+further assume without loss of generality that i<j. Then σ[i+1]does not appear in s. We can
+16
+now replace σ[i]with σ[i+1]insto obtain a common subsequence that is no shorter but with
+one fewer alignment between unequal indices. The claim follows. ⌟
+For each i∈[n], we can now set τi=η(πi). Clearly, this takes O(nL)time and the
+conclusion follows.
+Lemma 6.5 (Embedding the Hamming Metric without Repeating Symbols) .Let a 1, . . . , an∈ΣL
+be strings such that each symbol appears at most once in each string a i. Given a 1, . . . , an, in time
+O(n(|Σ|+nlogn))we can construct permutations π1, . . . ,πn∈ SO(|Σ|+nlogn)and some integer
+K≥0such that d H(ai,aj) =dU(πi,πj)−K for all distinct i ,j∈[n].
+Proof. The key idea of the proof lies in the following claim:
+Claim 6.6. LetΣ1, . . . ,Σn⊆Σbe alphabets of size s =|Σ1|=· · ·=|Σn|. Given Σ1, . . . ,Σn, in time
+O(n(|Σ|+nlogn))we can compute an alphabet Φ(disjoint from Σ) and strings b 1, . . . , bnsuch that:
+(i) Each string b i∈(Σi⊔Φ)s+|Φ|is a permutation of Σi⊔Φ.
+(ii) For all distinct i ,j, the strings b iand b jhave maximal Hamming distance: d H(bi,bj) =s+|Φ|.
+(iii)|Φ|=O(nlogn).
+Suppose for now that Claim 6.6 holds. Then apply the claim to the sets Σ1, . . . ,Σn, where
+Σi⊆Σis the set of characters notappearing in ai. Clearly, s:=|Σ1|=· · ·=|Σn|=|Σ| −L.
+Then the concatenations with the resulting strings b1, . . . , bn,πi:=aibi, are permutations of
+Σ⊔Φ. Moreover, we have that dH(ai,aj) = dH(πi,πj)−KforK:= (s+|Φ|)and for all
+distinct i,j. The lemma statement follows by further embedding the permutations πiusing the
+previous lemma. This completes the proof of the lemma, except for the proof of Claim 6.6.
+Proof of Claim 6.6. We design a recursive algorithm. Throughout assume that nis a power of 2
+(i.e., initially add some dummy sets Σito the instance to increase nto the closest power of 2).
+Moreover, assume that s≥n(otherwise we initially add n−sdummy elements to all alphabets
+Σiincreasing the number of fresh symbols by at most n). The algorithm has two cases:
+1. If s>n: Greedily select pairwise distinct characters σ1∈Σ1, . . . ,σn∈Σn(i.e., pick ar-
+bitrary symbols σi∈Σidifferent from the previously chosen symbols σ1, . . . ,σi−1; the
+condition |Σi|=s>nensures there is always one such symbol). Remove these char-
+acters from the respective sets (i.e., remove σifromΣi) and recursively construct strings
+b′
+1, . . . , b′
+n. Then pick the strings bi:=biσi.
+2. If s=n: Let k=n/2. We recursively call the algorithm on Σ1, . . . ,Σkto construct an al-
+phabet Φ1and length- (s+|Φ1|)strings b′
+1, . . . , b′
+k. Similarly, recursively call the algorithm
+onΣk+1, . . . ,Σnto construct an alphabet Φ2and length- (s+|Φ2|)strings b′
+k+1, . . . , b′
+n. As
+we will see, the sizes of the alphabets Φ1andΦ2depend only on the number of inputs
+(which in both cases is k=n/2). Therefore, we may identify Φ1andΦ2(arbitrarily). Let
+Ψdenote a fresh alphabet of size |Ψ|=s+|Φ1|. Then let c1, . . . , ckdenote permutations
+ofΨwith pairwise Hamming distances dH(ci,cj) =|Ψ|(e.g., let c1be arbitrary and let
+c2, . . . , ckdenote distinct cyclic rotations of c1; as|Ψ| ≥ s≥n≥kthere are sufficiently
+many such rotations). Finally, let Φ:=Φ1⊔Ψand construct the strings
+bi:=b′
+ici (i≤k),
+bi:=ci−kb′
+i (i>k).
+17
+This completes the description of the algorithm. It remains to analyze the correctness:
+(i) In case 1, we recursively construct strings b′
+1, . . . , b′
+nsuch that b′
+iis a permutation of (Σi\
+{σi})⊔Φ. Then biis obtained from b′
+iby appending σi, proving the claim. In case 2, each
+recursively constructed string b′
+iis a permutation of Σi⊔Φ1. Thus, by construction each
+string biis a permutation of Σi⊔Φ1⊔Ψ=Σi⊔Φ.
+(ii) For case 1, it suffices to observe that we append distinct symbols σ1, . . . ,σnto all recur-
+sively constructed strings. So focus on case 2. By induction we get that the Hamming
+distance between any two strings in b′
+1, . . . , b′
+kis maximal, and similarly that the Ham-
+ming distance between any two strings in b′
+k+1, . . . , b′
+nis maximal. From this, and by the
+construction of the strings c1, . . . , ck, it follows immediately that the Hamming distance
+between any two strings in b1, . . . , bkor any two strings in bk+1, . . . , bnis maximal. It
+remains to verify that the Hamming distance dH(bi,bj)is maximal whenever i≤kand
+j>k:
+dH(bi,bj) =dH(b′
+ici,cj−kb′
+j) =dH(b′
+i,cj−k) +dH(ci,b′
+j) = ( s+|Φ1|) + ( s+|Φ2|) =s+|Φ|.
+Here, we used that all strings b′
+iand cihave the same length, and the fact that the alphabet
+of the strings b′
+iis disjoint from the alphabet of the strings ci.
+(iii) Let ϕ(n,s)denote the size of the constructed alphabet Φfor the input parameters nand
+s. Then we obtain the following recurrences relations from cases 1 and 2, respectively:
+ϕ(n,s) =ϕ(n,s−1) ( s>n),
+ϕ(n,n) =2·ϕ(n/2,n) +n.
+Together with the trivial base case ϕ(1, 1) = 0, this recurrence is solved by ϕ(n,s) =
+nlognfor all s≥n. The running time can be similarly analyzed.
+6.3 Balancing Median Distances
+In this section, we present several lemmas useful for balancing median distances. The problem
+we consider is the following. We are given permutations π1,π2, . . . ,πnalong with the distance
+sums∑j̸=idU(πi,πj)for all i∈[n]. Is it possible to append to each πisome symbols and obtain
+new permutations π′
+isuch that the new median distances ∑j̸=idU(π′
+i,π′
+j)are all at most two
+away from each other? The goal would be to do it efficiently while not blowing up the lengths
+of the permutations by too much. The following lemmas show how to achieve this.
+Lemma 6.7 (Coarse-Grained Balancing) .Let n ,N be integers such that n is divisible by 4, and let
+k1, . . . , kn∈[N]. Given k 1, . . . , kn, in time O (Nlogn)we can construct permutations π1, . . . ,πn,τ∈
+SO(N/n)and integer d with the following two properties:
+•Writing d i=∑j̸=idU(πi,πj), it holds that |(ki+di)−d| ≤n for all i ∈[n].
+•It holds that d U(π1,τ) =· · ·=dU(πn,τ).
+Proof. Instead of constructing the permutations directly, we will construct strings a1, . . . , an∈
+{0, 1}O(N/n)and an integer dsuch that, writing di=∑j̸=idH(ai,aj), it holds that |(di+ki)−
+d| ≤n. Then letting π1, . . . ,πndenote the images of the strings a1, . . . , anunder the embedding
+from Lemma 6.2, and letting τdenote embedding of the all-2 string, the lemma statement
+follows.
+18
+The strings a1, . . . , anare constructed by the following process. Initially, let a1, . . . , anbe
+empty strings. Then repeat the following O(N/n)times: Reorder the indices such that k1+
+d1≤ · · · ≤ kn+dn. Then:
+• Append 01 to the firstn
+4strings a1, . . . , an
+4.
+• Append 10 to the nextn
+4strings an
+4, . . . , an
+2.
+• Append 00 to the lastn
+2strings an
+2+1, . . . , an.
+To analyze the correctness of this algorithm, write d=1
+n∑i(ki+di)and∆i= (ki+di)−d.
+We analyze how the quantities ∆ichange in a single iteration of the algorithm. For each of the
+lastn
+2strings, diincreases byn
+2(asdH(00, 01 ) =dH(00, 10 ) =1). For each of the firstn
+4strings,
+diincreases by 2 ·n
+4+n
+2=n. For each of the middlen
+4strings, disimilarly increases by n. Thus,
+the average dincrease is3n
+4, and therefore ∆iincreases byn
+4for the firstn
+2strings and decreases
+byn
+4for the lastn
+2strings.
+From this it follows that after O(N/n)iterations, we have that D:=max i∆i−min i∆i≤n.
+Indeed, focus on any iteration and suppose that D>n; we show that Ddecreases. We say
+that an index iisα-small if ∆i≤min j∆j+α·n
+4(i.e., if it has distance α·n
+4to the minimum)
+and we say that iisα-large if ∆i≥max j∆j−α·n
+4(i.e., if it has distance α·n
+4to the maximum).
+Since D>n, the sets of 2-small and 2-large indices are disjoint. Therefore, either the number
+of 2-small or 2-large indices is at mostn
+2; we focus on the latter event, the former is symmetric.
+In this case clearly max j∆jdecreases byn
+4in this iteration. If the minimum does not decrease,
+then we are done. So suppose otherwise that the minimum decreases. But this can only happen
+if the number of 1-small indices exceedsn
+2. In this case we analyze how many indices are 1-
+small in the next iteration. As the minimum decreases, and asn
+2of the formerly 1-small indices
+increase by 1, the number of new 1-small indices is less thann
+2. In summary, after one iteration
+we have that both the number of 1-small and of 1-large indices is less thann
+2, and therefore the
+second iteration Ddecreases byn
+2. In both cases, on average each iteration decreases Dbyn
+4,
+and therefore the total number of iterations until D≤nis bounded by O(N/n)(given that
+initially D≤O(N)).
+The previous paragraph proves that after the algorithm terminates, we have that max i∆i−
+min i∆i≤n. In particular, the absolute difference between any ∆iand the average1
+n∑i∆iis at
+most n. However, note that ∑i∆i=∑i(ki+di)−nd=0, and thus in fact |∆i| ≤nfor all i. We
+have finally reached the situation from the lemma statement for d:=d.
+Concerning the running time, note that each iteration can be implemented in time O(nlogn).
+Thus, the total time is O(Nlogn)as claimed.
+Lemma 6.8 (Fine-Grained Balancing) .Let n≥3and let k 1, . . . , kn∈[N]. Given k 1, . . . , kn, in
+time O (n(N+nlogn))we can construct permutations π1, . . . ,πn,τ∈ SO(N+nlogn)and an integer
+d with the following two properties:
+•Writing d i=∑j̸=idU(πi,πj), it holds that |(ki+di)−d| ≤1for all i ∈[n].
+•It holds that d U(π1,τ) =· · ·=dU(πn,τ).
+Proof. Again, we will not construct the permutation directly, but instead will construct strings
+a1, . . . , an,bsatisfying the following analogous properties: Writing di=∑j̸=idH(ai,aj), we
+guarantee that |d−(di+ki)| ≤1 for some integer d, and dH(a1,b) =· · ·=dH(an,b). Addi-
+tionally, we will make sure that each string a1, . . . , an,b∈ΣO(N)contains each symbol from Σ
+19
+at most once, where Σis some alphabet of size O(n+N). In this situation we can apply the
+embedding from Lemma 6.5 to obtain the permutations promised in the lemma statement.
+We will first focus on the construction of the strings a1, . . . , an. Initially, let all these strings
+be empty and let Σbe an alphabet of size at least 6 N+n+1. Then consider the following
+process, running for 3 Nsteps: Let I={i: min j(dj+kj)<di+ki}. IfIhas even size, then
+arbitrarily pair up the elements in I. If Ihas odd size, we leave out one element i∈Ithat
+maximizes di+kifrom the pairing. Then let σ1, . . . ,σn∈Σbe characters selected subject to the
+following constraints: (1) Two characters σi1andσi2are equal if and only if (i1,i2)is a pair in
+the previously constructed pairing. (2) σidoes not appear already in ai. These characters can
+e.g. be constructed as follows: Traverse the pairs (i1,i2)in the pairing, and for each pick an
+arbitrary character that does not appear in the strings ai1and ai2and that has not been selected
+before in the current iteration. As |ai1|=|ai2| ≤3Nand as |Σ|>6N+n, there is always at
+least one such character available. Afterwards, assign the character σifor the unpaired indices
+by similarly avoiding collisions.
+There is one special case: If |I|=1, say I={i}, then we instead consider the pairing
+consisting of exactly one pair (i,j)where j̸=iis arbitrary.
+To analyze this process, let us write ℓi:=ki+di. Letℓmax:=max iℓiandℓmin:=min iℓi.
+We prove that within at most three iterations, ℓmax−ℓmindecreases by 1. Indeed, focus on
+a single iteration. For each pair (i1,i2)in the pairing, the quantities ℓi1andℓi2increase by
+exactly n−2. For each unpaired index i, the quantity ℓiinstead increases by n−1. By the
+choice of I, we thus normally increase ℓminbyn−1, and thus ℓi−ℓmindecreases by 1 for each
+index ithat appears in a pair. Hence, if there is an even number of indices iwithℓi> ℓ min,
+then after a single iteration we decrease ℓmax−ℓminby 1. Otherwise, it can happen that one
+of the indices iwitnessing ℓmaxis left out of the pairing. In this case, however, ℓi−ℓmin(and
+thereby ℓmax−ℓmin) decreases by 1 in the next iteration. The only exception is when |I|=1.
+In this case the algorithm is forced to increase ℓminby only n−2. But it is not hard to verify
+that also in this case, using that n≥3 and assuming that ℓmax−ℓmin≥2, after at most 2 more
+iterations we have decreased our progress measure ℓmax−ℓminby at least 1. Recall that initially
+0≤ℓmin≤ℓmax≤N, and thus the process correctly terminates after 3 Niterations. At this
+point we assign d:=ℓmin.
+Finally, we comment on the construction of b: Simply take bto any permutation of 3 N
+symbols disjoint from the symbols used to construct the strings a1, . . . , an; then clearly dH(a1,b) =
+· · ·=dH(an,b).
+The process from before can be implemented in time O(nN). The application of Lemma 6.5
+to embed from the Hamming metric into the Ulam metric afterwards take time O(n(|Σ|+
+nlogn)) = O(n(N+nlogn)).
+Corollary 6.9 (Full Balancing) .Let n and L be integers such that n is divisible by 4and let k 1, . . . , kn∈
+[O(nL)]. Given k 1, . . . , kn, in time eO(n2+nL)we can construct permutations π1, . . . ,πn,τ∈
+SeO(n+L)and an integer d with the following two properties:
+•Writing d i=∑j̸=idU(πi,πj), it holds that |(ki+di)−d| ≤1for all i ∈[n].
+•It holds that d U(π1,τ) =· · ·=dU(πn,τ).
+Proof. First apply the coarse-grained balancing (Lemma 6.7) on the given values k1, . . . , knand
+forN=O(nL)to obtain permutations π′
+1, . . . ,π′
+n,τ′∈ SO(L). Let k′
+i:=ki+∑j̸=idU(π′
+i,π′
+j);
+then Lemma 6.7 guarantees that all k′
+iequals some common integer d′up to an additive error
+ofn. Next, apply the fine-grained balancing (Lemma 6.8) on the values k′
+iand for N=n
+20
+to obtain permutations π′′
+1, . . . ,π′′
+n,τ′′∈ SeO(n). Lemma 6.8 guarantees that all k′′
+i:=k′
+i+
+∑j̸=idU(π′′
+i,π′′
+j)equal some common integer d′′, up to an additive error of 1. The claimed
+statement follows by choosing the concatenations πi:=π′
+iπ′′
+iandτ:=τ′τ′′(while using fresh
+symbols as is necessary to ensure that the strings are permutations) and picking d:=d′′.
+6.4 Hardness for Monochromatic Instances
+Theorem 6.10. Letε>0andα≥1. There is no algorithm running in time O ((n2L)1−ε)that
+solves the ( MONOCHROMATIC )DISCRETE ULAM MEDIAN problem for n permutations of length
+L=Θ(nα), unless the SETH fails.
+Proof. We follow the same reduction as in Theorem 6.1, which, given an initial 4-OV instance
+produces an instance (X,Y)of B ICHROMATIC DISCRETE ULAM MEDIAN onnpermutations of
+length L. During the reduction, we can set everything up so that L=Ω(n). Without loss of
+generality, we may also assume that nis divisible by 4 by adding some dummy vectors in the
+initial 4-OV instance if necessary. Let x1, . . . , xndenote the permutations in Xand let y1, . . . , yn
+denote the permutations in Y. As a first preprocessing step, concatenate each permutation
+xi(oryi) two times to itself (using fresh symbols when necessary) so that each permutation
+becomes of length 3 Land the median distance min i∑jdU(xi,yj)becomes a multiple of 3.
+We first make the observation that the Ulam distance between any two permutations in X
+can be computed very quickly — in time that is proportional to the square root of the length of
+the permutations.
+Observation 6.11. Let x ,x′∈X. Then d U(x,x′)can be computed in time O (L1/2+o(1)).
+Proof. Since x∈X, there exist T={t1,t2, . . . , tm} ⊆ { 0, 1}dsuch that x=f(T)◦f(T)◦f(T),
+where fis the function from Theorem 5.2 and each concatenation is done using a fresh set of
+symbols. Similarly, there exist T′={t′
+1,t′
+2, . . . , t′
+m} ⊆ { 0, 1}dsuch that x′=f(T′)◦f(T′)◦
+f(T′), where again each concatenation is with a fresh set of symbols.
+Therefore, we have dU(x,x′) =3m∑i∈[m]dH(ti,t′
+i). Thus, dU(x,x′)can be found by com-
+puting the Hamming distance between two bit strings of length md. Further recall that L=
+O(m2d). Therefore, md=O(L1/2+o(1))and the conclusion follows. ⌟
+By Observation 6.11, we can compute in time O(n2L1/2+o(1))all pairwise distances dU(xi,xj).
+Letki:=∑j̸=idU(xi,xj); clearly we have that ki≤3nL. Thus, we may apply Corollary 6.9 to
+obtain permutations π1, . . . ,πn,τ∈ S L′, where L′=eO(n+L) =eO(L), with
+|(ki+∑
+j̸=idU(πi,πj))−D| ≤1
+for some integer Dand for all i∈[n], and with M:=dU(π1,τ) =· · ·=dU(πn,τ).
+Additionally, let K:=10(3L+L′). Compute some length- O(K)permutations µ,η1, . . . ,ηn
+such that dU(µ,ηi) = Kand such that ∑jdU(ηi,ηj) = nK. For instance, viewing µ,η1, . . . ,ηn
+as 0-1-strings under the Hamming distance to be embedded by Lemma 6.2, take µto be the
+all-0 string of length 2 K, let half of the strings ηibe the string 0K1Kand let the other half of the
+strings ηibe the string 1K0K.
+We are now ready to construct the M ONOCHROMATIC DISCRETE ULAM MEDIAN instance Z.
+We include into Zthe following 2 npermutations:9
+9As always, we use fresh symbols when necessary to ensure that the resulting strings are permutations.
+21
+•x′
+i:=xiπiµ(fori∈[n]), and
+•y′
+i:=yiτ ηi(fori∈[n]).
+We claim that this construction is correct in the following sense: (1) All discrete medians
+ofZare strings x′
+i. (2) Whenever x′
+iis a discrete median in Z, then xiis a discrete median in
+(X,Y). (3) There is some discrete median xiin(X,Y)such that x′
+iis a discrete median in Z.
+The proofs of all three claims easily follow from the following calculations. On the one hand,
+the median distance for each x′
+iis
+∑
+z∈ZdU(x′
+i,z) =∑
+jdU(x′
+i,x′
+j) +∑
+jdU(x′
+i,y′
+j)
+=∑
+j(dU(xi,xj) +dU(πi,πj) +dU(µ,µ)) +∑
+j(dU(xi,yj) +dU(πi,τ) +dU(µ,ηi))
+=ki+∑
+jdU(πi,πj) +∑
+jdU(xi,yj) +nM+nK
+=∑
+jdU(xi,yj) +nM+nK+D±1.
+On the other hand, the median distance for each y′
+iis
+∑
+z∈ZdU(y′
+i,z) =∑
+jdU(y′
+i,x′
+j) +∑
+jdU(y′
+i,y′
+j)
+≥∑
+jdU(ηi,µ) +∑
+jdU(ηi,ηj)
+=2nK.
+Comparing these two terms, and recalling that ∑jdU(xi,yj) +nM+D≤3nL+nL′+nL′<
+nK, it is clear that the median distance of any y′
+iis always significantly larger that the median
+distance of any x′
+iproving (1). Recalling further that all median distances ∑jdU(xi,yj)in the
+original instance are multiples of 3, the ±1 term in the first computation becomes irrelevant,
+completing the proofs of claims (2) and (3).
+Finally we comment on the running time. The original reduction, along with the com-
+putation of the values kitakes time eO(nL+n2L1/2+o(1)). Running Corollary 6.9 takes time
+eO(n2+nL), and the final instance Zcan be implemented in negligible overhead.
+Acknowledgements
+The authors would like to thank the DIMACS Workshop on Efficient Algorithms for High Dimen-
+sional Metrics: New Tools for a special collaboration opportunity. We would also like to thank
+Siam Habib and Antti Roeyskoe for helpful discussions. Part of this work was done while
+Mursalin Habib and Karthik C. S. were visiting INSAIT, Sofia University “St. Kliment Ohrid-
+ski” and were partially funded by the Ministry of Education and Science of Bulgaria’s support
+for INSAIT as part of the Bulgarian National Roadmap for Research Infrastructure. They were
+also supported by the National Science Foundation under Grants CCF-2313372, CCF-2422558,
+and CCF-2443697.
+22
+References
+[ABC+23] Amir Abboud, MohammadHossein Bateni, Vincent Cohen-Addad, Karthik C. S.,
+and Saeed Seddighin. On complexity of 1-center in various metrics. In Nicole
+Megow and Adam D. Smith, editors, Approximation, Randomization, and Combina-
+torial Optimization. Algorithms and Techniques, APPROX/RANDOM 2023, September
+11-13, 2023, Atlanta, Georgia, USA , volume 275 of LIPIcs , pages 1:1–1:19. Schloss
+Dagstuhl - Leibniz-Zentrum f ¨ur Informatik, 2023.
+[ABHS22] Amir Abboud, Karl Bringmann, Danny Hermelin, and Dvir Shabtay. Scheduling
+lower bounds via AND subset sum. J. Comput. Syst. Sci. , 127:29–40, 2022.
+[ABV15] Amir Abboud, Arturs Backurs, and Virginia Vassilevska Williams. Tight hardness
+results for LCS and other sequence similarity measures. In Venkatesan Guruswami,
+editor, IEEE 56th Annual Symposium on Foundations of Computer Science, FOCS 2015,
+Berkeley, CA, USA, 17-20 October, 2015 , pages 59–78. IEEE Computer Society, 2015.
+[ACN08] Nir Ailon, Moses Charikar, and Alantha Newman. Aggregating inconsistent infor-
+mation: Ranking and clustering. J. ACM , 55(5):23:1–23:27, 2008.
+[AD99] David Aldous and Persi Diaconis. Longest increasing subsequences: from patience
+sorting to the Baik-Deift-Johansson theorem. Bulletin of the American Mathematical
+Society , 36(4):413–432, 1999.
+[ADV+25] Josh Alman, Ran Duan, Virginia Vassilevska Williams, Yinzhan Xu, Zixuan Xu,
+and Renfei Zhou. More asymmetry yields faster matrix multiplication. In Yossi
+Azar and Debmalya Panigrahi, editors, Proceedings of the 2025 Annual ACM-SIAM
+Symposium on Discrete Algorithms, SODA 2025, New Orleans, LA, USA, January 12-15,
+2025 , pages 2005–2039. SIAM, 2025.
+[AFG+23] Amir Abboud, Nick Fischer, Elazar Goldenberg, Karthik C. S., and Ron Safier.
+Can you solve closest string faster than exhaustive search? In Inge Li Gørtz,
+Martin Farach-Colton, Simon J. Puglisi, and Grzegorz Herman, editors, 31st An-
+nual European Symposium on Algorithms, ESA 2023, September 4-6, 2023, Amsterdam,
+The Netherlands , volume 274 of LIPIcs , pages 3:1–3:17. Schloss Dagstuhl - Leibniz-
+Zentrum f ¨ur Informatik, 2023.
+[BBD09] Therese Biedl, Franz-Josef Brandenburg, and Xiaotie Deng. On the complexity of
+crossings in permutations. Discret. Math. , 309(7):1813–1823, 2009.
+[BBGH15] Christian Bachmaier, Franz J. Brandenburg, Andreas Gleißner, and Andreas
+Hofmeier. On the hardness of maximum rank aggregation problems. J. Discrete
+Algorithms , 31:2–13, 2015.
+[BC20] Karl Bringmann and Bhaskar Ray Chaudhury. Polyline simplification has cubic
+complexity. J. Comput. Geom. , 11(2):94–130, 2020.
+[BCE+16] Felix Brandt, Vincent Conitzer, Ulle Endriss, J ´erˆome Lang, and Ariel D. Procaccia,
+editors. Handbook of Computational Social Choice . Cambridge University Press, 2016.
+[BI18] Arturs Backurs and Piotr Indyk. Edit distance cannot be computed in strongly
+subquadratic time (unless SETH is false). SIAM J. Comput. , 47(3):1087–1097, 2018.
+23
+[BK15] Karl Bringmann and Marvin K ¨unnemann. Quadratic conditional lower bounds
+for string problems and dynamic time warping. In Venkatesan Guruswami, ed-
+itor, IEEE 56th Annual Symposium on Foundations of Computer Science, FOCS 2015,
+Berkeley, CA, USA, 17-20 October, 2015 , pages 79–97. IEEE Computer Society, 2015.
+[BK19] Karl Bringmann and Marvin K ¨unnemann. Quadratic lower bounds for sequence
+similarity, 2019. Available at https://www.mpi-inf.mpg.de/fileadmin/inf/d1/
+teaching/summer19/finegrained/lec3.pdf .
+[BKN21] Boris Bukh, Karthik C. S., and Bhargav Narayanan. Applications of random alge-
+braic constructions to hardness of approximation. In 62nd IEEE Annual Symposium
+on Foundations of Computer Science, FOCS 2021, Denver, CO, USA, February 7-10,
+2022 , pages 237–244. IEEE, 2021.
+[CDK21] Diptarka Chakraborty, Debarati Das, and Robert Krauthgamer. Approximating the
+median under the ulam metric. In D ´aniel Marx, editor, Proceedings of the 2021 ACM-
+SIAM Symposium on Discrete Algorithms, SODA 2021, Virtual Conference, January 10
+- 13, 2021 , pages 761–775. SIAM, 2021.
+[CDK23] Diptarka Chakraborty, Debarati Das, and Robert Krauthgamer. Clustering permu-
+tations: New techniques with streaming applications. In Yael Tauman Kalai, editor,
+14th Innovations in Theoretical Computer Science Conference, ITCS 2023, January 10-13,
+2023, MIT, Cambridge, Massachusetts, USA , volume 251 of LIPIcs , pages 31:1–31:24.
+Schloss Dagstuhl - Leibniz-Zentrum f ¨ur Informatik, 2023.
+[CDKS22] Diptarka Chakraborty, Syamantak Das, Arindam Khan, and Aditya Subramanian.
+Fair rank aggregation. In Sanmi Koyejo, S. Mohamed, A. Agarwal, Danielle Bel-
+grave, K. Cho, and A. Oh, editors, Advances in Neural Information Processing Systems
+35: Annual Conference on Neural Information Processing Systems 2022, NeurIPS 2022,
+New Orleans, LA, USA, November 28 - December 9, 2022 , 2022.
+[CGI+16] Marco L. Carmosino, Jiawei Gao, Russell Impagliazzo, Ivan Mihajlin, Ramamohan
+Paturi, and Stefan Schneider. Nondeterministic extensions of the strong exponen-
+tial time hypothesis and consequences for non-reducibility. In Madhu Sudan, ed-
+itor, Proceedings of the 2016 ACM Conference on Innovations in Theoretical Computer
+Science, Cambridge, MA, USA, January 14-16, 2016 , pages 261–270. ACM, 2016.
+[CGJ21] Diptarka Chakraborty, Kshitij Gajjar, and Agastya Vibhuti Jha. Approximating the
+center ranking under ulam. In Mikolaj Bojanczyk and Chandra Chekuri, editors,
+41st IARCS Annual Conference on Foundations of Software Technology and Theoretical
+Computer Science, FSTTCS 2021, December 15-17, 2021, Virtual Conference , volume
+213 of LIPIcs , pages 12:1–12:21. Schloss Dagstuhl - Leibniz-Zentrum f ¨ur Informatik,
+2021.
+[CMS01] Graham Cormode, S. Muthukrishnan, and S ¨uleyman Cenk Sahinalp. Permutation
+editing and matching via embeddings. In Fernando Orejas, Paul G. Spirakis, and
+Jan van Leeuwen, editors, Automata, Languages and Programming, 28th International
+Colloquium, ICALP 2001, Crete, Greece, July 8-12, 2001, Proceedings , volume 2076 of
+Lecture Notes in Computer Science , pages 481–492. Springer, 2001.
+[DKL19] Roee David, Karthik C. S., and Bundit Laekhanukit. On the complexity of closest
+pair via polar-pair of point-sets. SIAM J. Discret. Math. , 33(1):509–527, 2019.
+24
+[DKNS01] Cynthia Dwork, Ravi Kumar, Moni Naor, and D. Sivakumar. Rank aggregation
+methods for the web. In Vincent Y. Shen, Nobuo Saito, Michael R. Lyu, and
+Mary Ellen Zurko, editors, Proceedings of the Tenth International World Wide Web Con-
+ference, WWW 10, Hong Kong, China, May 1-5, 2001 , pages 613–622. ACM, 2001.
+[dlHC00] Colin de la Higuera and Francisco Casacuberta. Topology of strings: Median string
+is np-complete. Theor. Comput. Sci. , 230(1-2):39–48, 2000.
+[FKS03] Ronald Fagin, Ravi Kumar, and D. Sivakumar. Efficient similarity search and classi-
+fication via rank aggregation. In Alon Y. Halevy, Zachary G. Ives, and AnHai Doan,
+editors, Proceedings of the 2003 ACM SIGMOD International Conference on Manage-
+ment of Data, San Diego, California, USA, June 9-12, 2003 , pages 301–312. ACM, 2003.
+[FL97] Moti Frances and Ami Litman. On covering problems of codes. Theory Comput.
+Syst. , 30(2):113–119, 1997.
+[GBC+13] Nick Goldman, Paul Bertone, Siyuan Chen, Christophe Dessimoz, Emily M. LeP-
+roust, Botond Sipos, and Ewan Birney. Towards practical, high-capacity, low-
+maintenance information storage in synthesized DNA. Nat., 494(7435):77–80, 2013.
+[Gus97] Dan Gusfield. Algorithms on Strings, Trees, and Sequences - Computer Science and
+Computational Biology . Cambridge University Press, 1997.
+[Har92] Donna Harman. Ranking algorithms. In William B. Frakes and Ricardo A. Baeza-
+Yates, editors, Information Retrieval: Data Structures & Algorithms , pages 363–392.
+Prentice-Hall, 1992.
+[IPZ01] Russell Impagliazzo, Ramamohan Paturi, and Francis Zane. Which problems
+have strongly exponential complexity? Journal of Computer and System Sciences ,
+63(4):512–530, 2001.
+[Kar72] Richard M. Karp. Reducibility among combinatorial problems. In Raymond E.
+Miller and James W. Thatcher, editors, Proceedings of a symposium on the Complexity
+of Computer Computations, held March 20-22, 1972, at the IBM Thomas J. Watson Re-
+search Center, Yorktown Heights, New York, USA , The IBM Research Symposia Series,
+pages 85–103. Plenum Press, New York, 1972.
+[Kem59] John G. Kemeny. Mathematics without numbers. Daedalus , 88(4):577–591, 1959.
+[KM20] Karthik C. S. and Pasin Manurangsi. On closest pair in euclidean metric:
+Monochromatic is as hard as bichromatic. Comb. , 40(4):539–573, 2020.
+[Koh85] Teuvo Kohonen. Median strings. Pattern Recognit. Lett. , 3(5):309–313, 1985.
+[KS07] Claire Kenyon-Mathieu and Warren Schudy. How to rank with few errors. In
+David S. Johnson and Uriel Feige, editors, Proceedings of the 39th Annual ACM Sym-
+posium on Theory of Computing, San Diego, California, USA, June 11-13, 2007 , pages
+95–103. ACM, 2007.
+[LLM+03] J. Kevin Lanct ˆot, Ming Li, Bin Ma, Shaojiu Wang, and Louxin Zhang. Distinguish-
+ing string selection problems. Inf. Comput. , 185(1):41–55, 2003.
+[LLQ+07] Yuting Liu, Tie-Yan Liu, Tao Qin, Zhiming Ma, and Hang Li. Supervised rank
+aggregation. In Carey L. Williamson, Mary Ellen Zurko, Peter F. Patel-Schneider,
+25
+and Prashant J. Shenoy, editors, Proceedings of the 16th International Conference on
+World Wide Web, WWW 2007, Banff, Alberta, Canada, May 8-12, 2007 , pages 481–490.
+ACM, 2007.
+[LWX19] Xue Li, Xinlei Wang, and Guanghua Xiao. A comparative study of rank aggrega-
+tion methods for partial and top ranked lists in genomic applications. Briefings in
+bioinformatics , 20(1):178–189, 2019.
+[MJC00] Carlos D. Mart ´ınez-Hinarejos, Alfons Juan, and Francisco Casacuberta. Use of me-
+dian string for classification. In 15th International Conference on Pattern Recognition,
+ICPR’00, Barcelona, Spain, September 3-8, 2000 , pages 2903–2906. IEEE Computer
+Society, 2000.
+[NR03] Franc ¸ois Nicolas and Eric Rivals. Complexities of the centre and median string
+problems. In Ricardo A. Baeza-Yates, Edgar Ch ´avez, and Maxime Crochemore,
+editors, Combinatorial Pattern Matching, 14th Annual Symposium, CPM 2003, More-
+lia, Michoc´ an, Mexico, June 25-27, 2003, Proceedings , volume 2676 of Lecture Notes in
+Computer Science , pages 315–327. Springer, 2003.
+[ODL+20] Samuel E. L. Oliveira, Victor Diniz, An ´ısio Lacerda, Luiz H. C. Merschmann, and
+Gisele L. Pappa. Is rank aggregation effective in recommender systems? an exper-
+imental analysis. ACM Trans. Intell. Syst. Technol. , 11(2):16:1–16:26, 2020.
+[Pev00] Pavel A. Pevzner. Computational molecular biology - an algorithmic approach . MIT
+Press, 2000.
+[Pop07] V . Y. Popov. Multiple genome rearrangement by swaps and by element duplica-
+tions. Theor. Comput. Sci. , 385(1-3):115–126, 2007.
+[RMR+17] Cyrus Rashtchian, Konstantin Makarychev, Mikl ´os Z. R ´acz, Siena Ang, Djordje
+Jevdjic, Sergey Yekhanin, Luis Ceze, and Karin Strauss. Clustering billions of
+reads for DNA data storage. In Isabelle Guyon, Ulrike von Luxburg, Samy Ben-
+gio, Hanna M. Wallach, Rob Fergus, S. V . N. Vishwanathan, and Roman Garnett,
+editors, Advances in Neural Information Processing Systems 30: Annual Conference on
+Neural Information Processing Systems 2017, December 4-9, 2017, Long Beach, CA, USA ,
+pages 3360–3371, 2017.
+[Sch61] Craige Schensted. Longest increasing and decreasing subsequences. Canadian Jour-
+nal of mathematics , 13:179–191, 1961.
+[vZW07] Anke van Zuylen and David P . Williamson. Deterministic algorithms for rank
+aggregation and other ranking and clustering problems. In Christos Kaklamanis
+and Martin Skutella, editors, Approximation and Online Algorithms, 5th International
+Workshop, WAOA 2007, Eilat, Israel, October 11-12, 2007. Revised Papers , volume 4927
+ofLecture Notes in Computer Science , pages 260–273. Springer, 2007.
+[Wil05] Ryan Williams. A new algorithm for optimal 2-constraint satisfaction and its im-
+plications. Theor. Comput. Sci. , 348(2-3):357–365, 2005.
+[WSCK12] Tiance Wang, John Sturm, Paul W. Cuff, and Sanjeev R. Kulkarni. Condorcet voting
+methods avoid the paradoxes of voting theory. In 50th Annual Allerton Conference on
+Communication, Control, and Computing, Allerton 2012, Allerton Park & Retreat Center,
+Monticello, IL, USA, October 1-5, 2012 , pages 201–203. IEEE, 2012.
+26
+[YL78] H. Peyton Young and Arthur Levenglick. A consistent extension of condorcet’s
+election principle. SIAM Journal on applied Mathematics , 35(2):285–300, 1978.
+[You88] H. Peyton Young. Condorcet’s theory of voting. American Political science review ,
+82(4):1231–1244, 1988.
+A Proof of Lemma 4.4
+In this section, we prove Lemma 4.4. Before we do so, we first prove the following helper
+lemma.
+Lemma A.1. Letπ,π′∈ S nbe permutations with the same last symbol, i.e., π[n] =π′[n] = x for
+some x ∈[n]. Then for any median π∗ofπandπ′(i.e., any π∗∈ S nminimizing the expression
+dU(π∗,π) +dU(π∗,π′)), we must have π∗[n] =x.
+Proof. Letπ∗be a median of πandπ′and assume for contradiction that x∗=π∗[n]̸=x. Letρ
+be any longest common subsequence of πandπ∗. Similarly, let ρ′be any longest common
+subsequence of π′andπ∗. Note that if xdoes not appear in at least one of ρandρ′, then π∗
+cannot be a median. Indeed, assume without loss of generality that xdoes not appear in ρ. Let
+eπbe the permutation obtained from π∗by moving xto the last position. Then clearly, ρ◦x
+is a common subsequence of πandeπand therefore, dU(eπ,π)<dU(π∗,π). Furthermore, we
+claim that ρ′remains a common subsequence of π′andeπ. There are two cases to consider. In
+the case when xdoes not appear in ρ′, the claim is immediate since moving xdoes not affect
+the relative order of the symbols in ρ′. Additionally, if ρ′does contain x, then it must be the last
+symbol of ρ′. Thus, even in this case, moving xto the end does not affect the relative order of
+the symbols in ρ′andρ′remains a common subsequence. Combining these two observations,
+we have dU(eπ,π) +dU(eπ,π′)<dU(π∗,π) +dU(π∗,π′), contradicting the assumption that π∗
+is a median of πandπ′.
+Ifxappears in both ρandρ′, then x∗appears in neither ρnorρ′. Once again, we will
+construct from π∗a new permutation π†with better median cost. Denote by Σρthe set of
+symbols appearing in ρ. Note that since x∗does not appear in ρandρis a longest common
+subsequence of πandπ∗, we must have π∗|Σρ∪{x∗}̸=π|Σρ∪{x∗}.10Letπ†be any permutation
+obtained from π∗by only moving the symbol x∗to any position such that the strings π†|Σρ∪{x∗}
+andπ|Σρ∪{x∗}become equal. Clearly, dU(π†,π)<dU(π∗,π)since π|Σρ∪{x∗}is a common sub-
+sequence of πandπ†. Furthermore, ρ′remains a common subsequence of π′andπ†since we
+have only moved the symbol x∗which does not appear in ρ′. Thus, dU(π†,π′)≤dU(π∗,π′),
+contradicting the fact that π∗is a median of πandπ′.
+Now we are ready to prove Lemma 4.4.
+Lemma 4.4. Letπ/∈ S∗
+N. Then d U(π,πL) +dU(π,πR)≥n+1.
+Proof. Letπ∗be any median of πLandπR. We will actually prove that π∗∈ S∗
+N. Since by
+Lemma 4.3, we have dU(π,πL) +dU(π,πR) = n, this will complete the proof. The proof will
+be in two parts. Let πL′,πR′∈ S 2n+1be the permutations obtained by deleting the suffix X2
+from πLandπR, respectively. First we will show that π∗must have a median of πL′andπR′
+as its prefix, followed by X2.
+10Recall that for any permutation π∈ S nand any subset A⊆[n]of the symbols, we denote by π|Ato be the
+string obtained from πby deleting all the symbols not in A.
+27
+Lemma A.2. We must have π∗=π∗′◦X2, where π∗′is a median of πL′andπR′.
+Proof. By Lemma A.1, the last symbol of π∗is the same as those of πLandπR, namely (3n+2).
+Furthermore, if we delete this last symbol from π∗,πLandπR, the first string still remains the
+median of the latter two, since otherwise we would be able to find a permutation with strictly
+better median cost than π∗. The conclusion follows by repeating this argument |X2|=n+1
+times. ⌟
+Letπ∗′∈ S 2n+1be the permutation obtained by deleting the suffix X2from π∗. Next, we
+will show that π∗′must necessarily take a very specific form – some subset of [n]in increasing
+order, followed by X1, followed by the rest of the symbol in decreasing order.
+Lemma A.3. There exists sets A ={a1,a2, . . . , ar}, B={b1,b2, . . . , bn−r}with A ⊔B= [n],
+a1<a2<· · ·<arand b 1>b2>· · ·>bn−rsuch that:
+π∗′=a1◦a2◦ · · · ◦ ar◦X1◦b1◦b2◦ · · · ◦ bn−r.
+Proof. LetρL′be any longest common subsequence of πL′andπ∗′. Similarly, let ρR′be any
+longest common subsequence of πR′andπ∗′. We claim that there does not exist a symbol
+x∈[n]that appears in both ρL′andρR′. Suppose otherwise. First note that there cannot exist
+another symbol y∈[n]that also appears in both ρL′andρR′. This is because the relative order
+ofxand yis different in πL′andπR′. Furthermore, every symbol zinX1must appear in at
+most one of ρL′andρR′– ifzappears to the left of xinπ∗, then it cannot appear in ρL′, and
+ifzappears to the right of xinπ∗′, then it cannot appear in ρR′. Therefore, if there does exist
+x∈[n]that appears in both ρL′andρR′, then we would have:
+|ρL′|+|ρR′|=
+ρL′|[n]+ρL′|[2n+1]\[n]
++
+ρR′|[n]+ρR′|[2n+1]\[n]
+=
+ρL′|[n]+ρR′|[n]
++
+ρL′|[2n+1]\[n]+ρR′|[2n+1]\[n]
+≤n+1+|X1|
+=2n+2.
+However, there exist permutations π∈ S 2n+1, e.g., πL′itself, such that LCS(π,πL′) +
+LCS(π,πR′) =3n+2, which contradicts the fact that π∗′is a median of πL′andπR′. Therefore,
+there does not exist a symbol x∈[n]that appears in both ρL′andρR′.
+Now, let A={a1,a2, . . . , ar} ⊆[n]with a1<a2<· · ·<arbe the set of symbols that
+appear in ρL′|[n]. Similarly, let B={b1,b2, . . . , br′} ⊆[n]with b1>b2>· · ·>br′be the set of
+symbols that appear in ρR′|[n]. We have just established that A∩B=∅. We now claim that
+no symbol zofX1appears to the left of any symbol in Ainπ∗′. Indeed, if there existed such a
+symbol z, then zwould not appear in ρL′and we would have:
+|ρL′|+|ρR′|=
+ρL′|[n]+ρL′|[2n+1]\[n]
++
+ρR′|[n]+ρR′|[2n+1]\[n]
+=
+ρL′|[n]+ρR′|[n]
++ρL′|[2n+1]\[n]+ρR′|[2n+1]\[n]
+≤n+|X1| −1+|X1|
+=3n+1.
+However, we have just seen examples of permutations with sum of LCS lengths (3n+2), again
+contradicting the fact that π∗′is a median. Therefore, every symbol in Aappears before every
+28
+symbol of X1inπ∗′. By a similar argument, every symbol in Bappears after every symbol of
+X1inπ∗′.
+Finally, we claim that A∪B= [n]. Assume otherwise. Then the set C:= [n]\(A∪B)
+is non-empty. We now modify π∗′in the following way – first, for every symbol in Cthat
+appears to the right of any symbol of X1, we move it so that appears to the left of every symbol
+ofX1, and then finally sort all symbols to the left of X1in increasing order. It is not hard to see
+that after this procedure, |ρL′|increases by at least |C|while |ρR′|does not decrease since the
+symbols that were moved throughout the process never appeared in ρR′to begin with. Thus,
+we obtain a new permutation with strictly smaller median cost than π∗′, once again reaching
+a contradiction. This completes the proof. ⌟
+By Lemmas A.2 and A.3, we can now conclude that π∗is necessarily in SN.
+B From Multisets to Sets
+In this section, we show that C ONTINUOUS ULAM MEDIAN is at least as hard on sets as it is on
+multisets. In particular, we show the following lemma.
+Lemma B.1. There is a polynomial time algorithm that takes a multiset S ⊆ S nwith m permutations
+and produces a set S′of permutations satisfying the following properties.
+•S′⊆ S n+2m, i.e., the length of each permutation in S′is n+2m.
+•|S′|=|S|.
+•For all k, there exists π∗∈ S nwith∑π∈SdU(π∗,π)≤k if and only if there exists π∗′∈ S n+2m
+with∑π′∈S′dU(π∗′,π′)≤k+m.
+Proof. Letτ∈ S 2mbe the identity permutation of length 2 m. For each i∈[m], define τito be the
+permutation obtain from τby swapping the symbols 2 iand 2 i−1. It is not hard to see that τis
+a median of {τi}i∈[m]and for every permutation τ′∈ S 2m,∑i∈[m]dU(τ′,τi)≥m. (Indeed, this
+is clear if τ′differs from all permutations τi, and otherwise, if τ′=τ1, say, then dU(τ′,τi)≥2
+for all i≥2.) To obtain S′from S, we will append the permutation τito the ithpermutation
+ofSfor each i∈[m]using fresh symbols as necessary. More formally, if S={π1,π2, . . . ,πm},
+then:
+S′:={πi◦∆n(τi):i∈[m]}.
+Now if there exists π∗∈ S nwith∑π∈SdU(π∗,π)≤k, then we have:
+∑
+π∈S′dU(π∗◦∆n(τ),π) =∑
+i∈[m]dU(π∗◦∆n(τ),πi◦∆n(τi))
+=∑
+i∈[m]dU(π∗,πi) +∑
+i∈[m]dU(τ,τi)
+≤k+m.
+For the other direction, assume there is some π∗′with∑π′∈S′dU(π∗′,π′)≤k+m. Define
+π∗:=π∗′|[n]andτ′=π∗′|[n+2m]\[m]. For every π′∈S′, we have dU(π′,π∗′)≥dU(π′|[n],π∗) +
+dU(π′|[n+2m]\[n],τ′), and consequently:
+∑
+i∈[m]dU(πi,π∗) +∑
+i∈[m]dU(∆n(τi),τ′)≤k+m.
+29
+However, ∑i∈[m]dU(∆n(τi),τ′)≥m, and so we must have ∑i∈[m]dU(πi,π∗)≤k.
+30

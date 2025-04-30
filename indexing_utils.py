@@ -9,6 +9,117 @@ from anthropic import Anthropic
 from openai import OpenAI
 import logging
 import re
+from typing import Dict, Optional, Union, Tuple
+
+# Model configuration mapping
+MODEL_CONFIGS = {
+    # OpenAI models
+    'gpt-4o': {'provider': 'openai', 'type': 'chat'},
+    'gpt-4-turbo': {'provider': 'openai', 'type': 'chat'},
+    'gpt-3.5-turbo': {'provider': 'openai', 'type': 'chat'},
+    'text-embedding-3-small': {'provider': 'openai', 'type': 'embedding'},
+    'text-embedding-3-large': {'provider': 'openai', 'type': 'embedding'},
+    
+    # Anthropic models
+    'claude-3-7-sonnet-20250219': {'provider': 'anthropic', 'type': 'chat'},
+    'claude-3-5-sonnet': {'provider': 'anthropic', 'type': 'chat'},
+    'claude-3-5-haiku': {'provider': 'anthropic', 'type': 'chat'},
+    
+    # Default transformer models
+    'huawei-noah/TinyBERT_General_4L_312D': {'provider': 'transformer', 'type': 'embedding'},
+    'sentence-transformers/all-MiniLM-L6-v2': {'provider': 'transformer', 'type': 'embedding'},
+    'BAAI/bge-large-en-v1.5': {'provider': 'transformer', 'type': 'embedding'},
+}
+
+# Default embedding model configurations
+EMBEDDING_MODELS = {
+    'transformer': {
+        'huawei-noah/TinyBERT_General_4L_312D': {
+            'max_length': 512,
+            'pooling': 'cls',
+        },
+        'sentence-transformers/all-MiniLM-L6-v2': {
+            'max_length': 384,
+            'pooling': 'mean',
+        },
+        'BAAI/bge-large-en-v1.5': {
+            'max_length': 512,
+            'pooling': 'cls',
+        },
+    }
+}
+
+def get_model_provider(model_name):
+    """Get provider and type information for a given model name.
+    
+    Args:
+        model_name: Name of the model to look up
+        
+    Returns:
+        Dictionary containing provider and type information
+        
+    Raises:
+        ValueError: If model name is not found in configuration
+    """
+    if model_name not in MODEL_CONFIGS:
+        # Check if it's a valid transformer model
+        try:
+            AutoTokenizer.from_pretrained(model_name)
+            return {'provider': 'transformer', 'type': 'embedding'}
+        except Exception:
+            raise ValueError(f"Model {model_name} not found in configuration and is not a valid transformer model")
+    return MODEL_CONFIGS[model_name]
+
+def get_embedding_model_config(model_name):
+    """Get configuration for a specific embedding model.
+    
+    Args:
+        model_name: Name of the embedding model
+        
+    Returns:
+        Dictionary containing model configuration
+        
+    Raises:
+        ValueError: If model configuration is not found
+    """
+    # First check if it's in our default configurations
+    for provider, models in EMBEDDING_MODELS.items():
+        if model_name in models:
+            return models[model_name]
+            
+    # If not found, try to get default configuration for transformer models
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        return {
+            'max_length': tokenizer.model_max_length if hasattr(tokenizer, 'model_max_length') else 512,
+            'pooling': 'cls'  # Default pooling strategy
+        }
+    except Exception as e:
+        raise ValueError(f"Could not determine configuration for model {model_name}: {e}")
+
+def load_embedding_model(model_name, device='cpu'):
+    """Load tokenizer and model for embedding generation.
+    
+    Args:
+        model_name: Name of the model to load
+        device: Device to load model on ('cpu' or 'cuda')
+        
+    Returns:
+        Tuple of (tokenizer, model, config) or None for LLM models
+    """
+    try:
+        model_config = get_model_provider(model_name)
+        if model_config['provider'] == 'transformer':
+            config = get_embedding_model_config(model_name)
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            model = AutoModel.from_pretrained(model_name).to(device)
+            return tokenizer, model, config
+        else:
+            # For LLM models, we don't need to load anything
+            return None, None, None
+    except Exception as e:
+        logging.error(f"Error loading model {model_name}: {e}")
+        raise
 
 def get_ngrams(text, n):
     """Extract ngrams from text using non-overlapping chunks of size n"""
@@ -30,59 +141,72 @@ def get_ngrams(text, n):
         
     return ngrams
 
-def compute_embeddings(ngrams, model=None, tokenizer=None, device='cpu', embedding_type='transformer', llm_provider='anthropic'):
-    """Compute embeddings for ngrams using transformers or LLM"""
-    if embedding_type == 'transformer':
-        if model is None or tokenizer is None:
-            try:
-                tokenizer = AutoTokenizer.from_pretrained('huawei-noah/TinyBERT_General_4L_312D')
-                model = AutoModel.from_pretrained('huawei-noah/TinyBERT_General_4L_312D').to(device)
-            except Exception as e:
-                logging.error(f"Error loading model: {e}")
-                raise
-            
+def compute_embeddings(ngrams, model_name='huawei-noah/TinyBERT_General_4L_312D', device='cpu'):
+    """Compute embeddings for ngrams using specified model.
+    
+    Args:
+        ngrams: List of text chunks to embed
+        model_name: Name of the model to use
+        device: Device to run model on
+        
+    Returns:
+        Numpy array of embeddings
+    """
+    model_config = get_model_provider(model_name)
+    provider = model_config['provider']
+    
+    if provider == 'transformer':
+        tokenizer, model, config = load_embedding_model(model_name, device)
         embeddings = []
+        
         for ngram in ngrams:
-            try:
-                inputs = tokenizer(ngram, return_tensors='pt').to(device)
-                with torch.no_grad():
-                    outputs = model(**inputs)
-                embeddings.append(outputs.last_hidden_state[:,0,:].cpu().numpy())
-            except Exception as e:
-                logging.error(f"Error computing embedding: {e}")
-                raise
+            inputs = tokenizer(
+                ngram,
+                return_tensors='pt',
+                max_length=config['max_length'],
+                truncation=True,
+                padding=True
+            ).to(device)
+            
+            with torch.no_grad():
+                outputs = model(**inputs)
+                
+            if config['pooling'] == 'cls':
+                embedding = outputs.last_hidden_state[:,0,:]
+            elif config['pooling'] == 'mean':
+                embedding = outputs.last_hidden_state.mean(dim=1)
+                
+            embeddings.append(embedding.cpu().numpy())
+            
         return np.vstack(embeddings)
         
-    elif embedding_type == 'llm':
+    elif provider in ['openai', 'anthropic']:
         embeddings = []
         
-        if llm_provider == 'anthropic':
+        if provider == 'anthropic':
             client = Anthropic()
             for ngram in ngrams:
                 response = client.messages.create(
-                    model="claude-3-sonnet-20240320",
+                    model=model_name,
                     max_tokens=1000,
                     system="Return an embedding vector for the provided text.",
                     messages=[{"role": "user", "content": ngram}]
                 )
                 embeddings.append(np.array(response.content[0].text))
                 
-        elif llm_provider == 'openai':
+        elif provider == 'openai':
             client = OpenAI()
             for ngram in ngrams:
                 response = client.embeddings.create(
-                    model="text-embedding-3-small",
+                    model=model_name,
                     input=ngram
                 )
                 embeddings.append(np.array(response.data[0].embedding))
                 
-        else:
-            raise ValueError("llm_provider must be 'anthropic' or 'openai'")
-            
         return np.stack(embeddings)
     
     else:
-        raise ValueError("embedding_type must be 'transformer' or 'llm'")
+        raise ValueError(f"Unsupported provider: {provider}")
 
 def batch_insert_sqlite(conn, table_name, batch_data):
     """Insert batch of data into sqlite"""
@@ -158,21 +282,37 @@ def get_tag_from_path(rel_path, tag_hierarchy):
 
 def process_corpus(
     corpus_dir,
-    tag_hierarchy,
+    tag_hierarchy=None,
     ngram_size=3,
     batch_size=32,
     db_params={
         'dbname': 'your_db'
     },
-    embedding_type='transformer',
-    llm_provider='anthropic'
+    model_name='huawei-noah/TinyBERT_General_4L_312D',
+    device='cpu'
 ):
-    """Process corpus and store embeddings in database"""
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    tokenizer = AutoTokenizer.from_pretrained('huawei-noah/TinyBERT_General_4L_312D')
-    model = AutoModel.from_pretrained('huawei-noah/TinyBERT_General_4L_312D').to(device)
+    """Process corpus and store embeddings in database.
     
+    Args:
+        corpus_dir: Directory containing documents
+        tag_hierarchy: Optional tag hierarchy for organizing documents
+        ngram_size: Size of ngrams to extract
+        batch_size: Batch size for processing
+        db_params: Database parameters
+        model_name: Name of the model to use for embeddings
+        device: Device to run model on
+    """
     try:
+        # Get model configuration
+        model_config = get_model_provider(model_name)
+        provider = model_config['provider']
+        
+        # Initialize model based on provider
+        if provider == 'transformer':
+            tokenizer, model, config = load_embedding_model(model_name, device)
+        else:
+            tokenizer = model = config = None
+            
         # Ensure SQLite database is created in the correct location
         db_path = db_params.get('dbname', 'embeddings.db.sqlite')
         if not os.path.isabs(db_path):
@@ -191,20 +331,25 @@ def process_corpus(
             logging.warning(f"No files found in {corpus_dir}")
             return
 
-        # Create tables for each tag
-        created_tables = set()
-        for full_path, rel_path in all_files:
-            tag = get_tag_from_path(rel_path, tag_hierarchy)
-            if tag:
-                # Sanitize the table name
-                table_name = sanitize_table_name(tag)
-                if table_name not in created_tables:
-                    create_embeddings_table(conn, table_name)
-                    created_tables.add(table_name)
-                    logging.info(f"Created table for tag: {table_name} (original: {tag})")
+        # Create a default table if no tag hierarchy is provided
+        if not tag_hierarchy:
+            table_name = 'documents'
+            create_embeddings_table(conn, table_name)
+            created_tables = {table_name}
+        else:
+            # Create tables for each tag
+            created_tables = set()
+            for full_path, rel_path in all_files:
+                tag = get_tag_from_path(rel_path, tag_hierarchy)
+                if tag:
+                    table_name = sanitize_table_name(tag)
+                    if table_name not in created_tables:
+                        create_embeddings_table(conn, table_name)
+                        created_tables.add(table_name)
+                        logging.info(f"Created table for tag: {table_name}")
 
         logging.info(f"Processing {len(all_files)} files with {ngram_size}-grams...")
-        logging.info(f"Created tables: {created_tables}")
+        logging.info(f"Using model: {model_name} ({provider})")
 
         completed = 0
         with tqdm(total=len(all_files), desc="Processing files") as pbar:
@@ -215,7 +360,6 @@ def process_corpus(
                     with open(full_path, 'r', encoding='utf-8') as f:
                         text = f.read()
                     
-                    # Split text into paragraphs and process each paragraph
                     paragraphs = text.split('\n\n')
                     results = []
                     
@@ -230,20 +374,27 @@ def process_corpus(
                         # Process ngrams in batches
                         for i in range(0, len(ngrams), batch_size):
                             batch = ngrams[i:i+batch_size]
-                            embeddings = compute_embeddings(batch, model, tokenizer, device, embedding_type, llm_provider)
+                            embeddings = compute_embeddings(
+                                batch,
+                                model_name=model_name,
+                                device=device
+                            )
                             
                             for ngram, embedding in zip(batch, embeddings):
                                 results.append((ngram, embedding, 0, rel_path))
                     
-                    tag = get_tag_from_path(rel_path, tag_hierarchy)
-                    if tag:
-                        table_name = sanitize_table_name(tag)
-                        batch_insert(conn, table_name, results)
-                        completed += 1
-                        pbar.update(1)
-                        logging.info(f"Completed {completed}/{len(all_files)} files")
+                    if tag_hierarchy:
+                        tag = get_tag_from_path(rel_path, tag_hierarchy)
+                        if tag:
+                            table_name = sanitize_table_name(tag)
+                            batch_insert(conn, table_name, results)
                     else:
-                        logging.warning(f"No matching tag found for {rel_path}")
+                        # Use default table if no tag hierarchy
+                        batch_insert(conn, 'documents', results)
+                        
+                    completed += 1
+                    pbar.update(1)
+                    logging.info(f"Completed {completed}/{len(all_files)} files")
                     
                 except Exception as e:
                     logging.error(f"Error processing {rel_path}: {e}")

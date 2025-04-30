@@ -87,12 +87,18 @@ def init_cache(db_path: str) -> None:
         logging.error(f"Error initializing cache: {e}")
         raise
 
-def get_query_embedding(query: str) -> np.ndarray:
-    """Get embedding for a query using the compute_embeddings function."""
-    # Use compute_embeddings with transformer type and TinyBERT model
-    # Force CPU device to avoid CUDA issues
-    embeddings = compute_embeddings([query], embedding_type='transformer', device='cpu')
-    return embeddings[0]  # Return first (and only) embedding
+def get_query_embedding(query, model_name):
+    """Get embedding for a query using the specified model."""
+    try:
+        embeddings = compute_embeddings(
+            [query],
+            model_name=model_name,
+            device='cpu'  # Force CPU to avoid CUDA issues
+        )
+        return embeddings[0]  # Return first (and only) embedding
+    except Exception as e:
+        logging.error(f"Error computing query embedding: {e}")
+        raise
 
 def extract_score_from_response(score_text: str) -> float:
     """Extract numerical score from LLM's evaluation response."""
@@ -126,7 +132,8 @@ def extract_score_from_response(score_text: str) -> float:
         return 0.0
 
 def cache_response(db_path: str, query: str, response: str, quality_score: str = None, 
-                  quality_thresh: float = 80.0, cache_db: Optional[str] = None) -> None:
+                  quality_thresh: float = 80.0, cache_db: Optional[str] = None,
+                  model_name: str = 'huawei-noah/TinyBERT_General_4L_312D') -> None:
     """Cache a query and its response if quality score meets threshold.
     
     Args:
@@ -136,6 +143,7 @@ def cache_response(db_path: str, query: str, response: str, quality_score: str =
         quality_score: Quality score of the response
         quality_thresh: Quality threshold for caching
         cache_db: Optional path to external cache database
+        model_name: Name of the model used for embedding computation
     """
     try:
         # Extract numerical score if quality_score is a string
@@ -161,7 +169,7 @@ def cache_response(db_path: str, query: str, response: str, quality_score: str =
         cur = conn.cursor()
         
         # Get query embedding
-        query_embedding = get_query_embedding(query)
+        query_embedding = get_query_embedding(query, model_name)
         
         # Convert numpy array to bytes for storage
         embedding_bytes = query_embedding.tobytes()
@@ -179,7 +187,8 @@ def cache_response(db_path: str, query: str, response: str, quality_score: str =
         logging.error(f"Error caching response: {e}")
         raise
 
-def get_cached_response(db_path: str, query: str, threshold: float, cache_db: Optional[str] = None) -> Optional[Tuple[str, float]]:
+def get_cached_response(db_path: str, query: str, threshold: float, cache_db: Optional[str] = None,
+                       model_name: str = 'huawei-noah/TinyBERT_General_4L_312D') -> Optional[Tuple[str, float]]:
     """Retrieve a cached response if a similar query exists.
     
     Args:
@@ -187,6 +196,7 @@ def get_cached_response(db_path: str, query: str, threshold: float, cache_db: Op
         query: Query string
         threshold: Similarity threshold
         cache_db: Optional path to external cache database
+        model_name: Name of the model used for embedding computation
         
     Returns:
         Optional[Tuple[str, float]]: Cached response and similarity score if found
@@ -196,25 +206,26 @@ def get_cached_response(db_path: str, query: str, threshold: float, cache_db: Op
         if cache_db:
             if not verify_cache_schema(cache_db):
                 raise ValueError("External cache database has incorrect schema")
-            result = _get_cached_response_from_db(cache_db, query, threshold)
+            result = _get_cached_response_from_db(cache_db, query, threshold, model_name)
             if result:
                 return result
                 
         # Fall back to embeddings database
-        return _get_cached_response_from_db(db_path, query, threshold)
+        return _get_cached_response_from_db(db_path, query, threshold, model_name)
         
     except sqlite3.Error as e:
         logging.error(f"Error retrieving cached response: {e}")
         return None
 
-def _get_cached_response_from_db(db_path: str, query: str, threshold: float) -> Optional[Tuple[str, float]]:
+def _get_cached_response_from_db(db_path: str, query: str, threshold: float,
+                               model_name: str = 'huawei-noah/TinyBERT_General_4L_312D') -> Optional[Tuple[str, float]]:
     """Internal function to retrieve cached response from a specific database."""
     try:
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
         
         # Get query embedding
-        query_embedding = get_query_embedding(query)
+        query_embedding = get_query_embedding(query, model_name)
         
         # Get all cached embeddings
         cur.execute("SELECT query, query_embedding, response, quality_score FROM response_cache")

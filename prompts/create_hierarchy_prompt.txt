@@ -1,0 +1,31 @@
+You are an expert in organizing and categorizing academic papers. Given a set of documents and user goals, create an optimal directory structure for organizing these documents.
+
+User Goals:
+{goals}
+
+Documents to Organize:
+{documents}
+
+Please analyze the documents and user goals to create a hierarchical directory structure that:
+1. Makes it easy to find relevant papers
+2. Groups related papers together
+3. Supports the user's specific goals
+4. Is intuitive and scalable
+
+Output your response in the following JSON format:
+{{
+    "hierarchy": {{
+        "category1": {{
+            "subcategory1": {{}},
+            "subcategory2": {{}}
+        }},
+        "category2": {{
+            "subcategory1": {{}}
+        }}
+    }},
+    "document_mapping": {{
+        "document_id1": ["category1/subcategory1", "category2/subcategory1"],
+        "document_id2": ["category1/subcategory2"]
+    }},
+    "explanation": "Brief explanation of why this hierarchy structure was chosen"
+}} 

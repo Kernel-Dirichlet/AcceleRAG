@@ -51,45 +51,24 @@ def search_web(query, search_provider='anthropic'):
         
     return chunks
 
-def score_response(response, query, llm_provider='anthropic'):
-    """Score the final LLM response for accuracy and relevance"""
-    if llm_provider == 'anthropic':
-        client = anthropic.Anthropic()
-        prompt = f"""Evaluate the following response to the query. Consider:
-1. Accuracy of information
-2. Relevance to the query
-3. Completeness of the answer
-4. Logical coherence
-
-Query: {query}
-Response: {response}
-
-Provide a score from 0-100 and a brief explanation of the score."""
-
+def score_response(response, query, provider, api_key):
+    """Score a response using the specified provider."""
+    if provider == 'anthropic':
+        client = anthropic.Anthropic(api_key=api_key)
+        prompt = f"Score this response to the query '{query}':\n\n{response}\n\nScore from 0-100 based on relevance and accuracy."
         response = client.messages.create(
-            model="claude-3-7-sonnet-20250219",
+            model="claude-3-sonnet-20240229",
             max_tokens=1000,
             messages=[{"role": "user", "content": prompt}]
         )
         return response.content[0].text
-    else:  # openai
-        client = OpenAI()
+    else:
+        client = OpenAI(api_key=api_key)
+        prompt = f"Score this response to the query '{query}':\n\n{response}\n\nScore from 0-100 based on relevance and accuracy."
         response = client.chat.completions.create(
             model="gpt-4",
-            messages=[{
-                "role": "user",
-                "content": f"""Evaluate the following response to the query. Consider:
-1. Accuracy of information
-2. Relevance to the query
-3. Completeness of the answer
-4. Logical coherence
-
-Query: {query}
-Response: {response}
-
-Provide a score from 0-100 and a brief explanation of the score."""
-            }],
-            max_tokens=1000
+            max_tokens=1000,
+            messages=[{"role": "user", "content": prompt}]
         )
         return response.choices[0].message.content
 
@@ -118,7 +97,7 @@ def interactive_web_rag(llm_provider='anthropic', score=False):
         context = "\n\n".join(chunks)
         
         if score:
-            score_msg = score_response(context, query, llm_provider)
+            score_msg = score_response(context, query, llm_provider, api_key)
             print(score_msg)
             logging.info(f"Query: {query}{score_msg}")
             
