@@ -1,98 +1,135 @@
-# AcceleRAG
+# AcceleRAG v0.9.0
 
-A high-performance RAG (Retrieval-Augmented Generation) framework focused on speed and accuracy. Version 0.9.0
+A high-performance RAG (Retrieval-Augmented Generation) framework focused on speed and accuracy.
 
 ## Overview
 
-AcceleRAG is a framework (not a library) designed to provide fast and accurate document retrieval and generation capabilities. It features a modular document chunking system with n-gram based indexing as the default strategy, flexible database support, and advanced embedding models.
+AcceleRAG is a framework designed to provide fast and accurate document retrieval and generation capabilities. 
+It features a fully operational text-based RAG pipeline with built-in prompt caching, with image and audio modalities coming soon. 
+The framework is fully modular, allowing users to implement their own indexing, retrieval, and caching logic.
+
+Key design principles:
+- Modular architecture for custom implementations
+- No vendor lock-in for external libraries
+- Out-of-the-box functionality with sensible defaults
+- Extensive and evolving documentation
 
 ## Key Features
 
 ### 1. Grounding Modes for Hallucination Control
 
-AcceleRAG provides two grounding modes that significantly impact response quality and hallucination control:
+AcceleRAG provides two grounding modes that significantly impact response quality:
 
 1. **Hard Grounding**
-   ```latex
-   \begin{tikzpicture}[node distance=2cm]
-   \node (query) {Query};
-   \node[right of=query] (context) {Context};
-   \node[right of=context] (response) {Response};
-   \draw[->] (query) -- (context);
-   \draw[->] (context) -- (response);
-   \node[below of=context] (strict) {Strict Context Only};
-   \node[below of=response] (zero) {Zero Hallucinations};
-   \end{tikzpicture}
+   ```mermaid
+   graph LR
+       A[Query] --> B[Query + context]
+       B --> C[Response]
+       D[context] --> B
    ```
-   - Strictly uses retrieved context
-   - Zero hallucination guarantee
-   - Explicitly states when context is insufficient
-   - Best for factual accuracy
+   - Documents are indexed with embeddings
+   - Only uses verified user documents (enforced via a prompt)
+   - Zero hallucination guarantee (model won't produce a response unless it can justify with retrieved data)
+   - Best for factual accuracy enforcement
    - Ideal for technical documentation
 
 2. **Soft Grounding**
-   ```latex
-   \begin{tikzpicture}[node distance=2cm]
-   \node (query) {Query};
-   \node[right of=query] (context) {Context + General Knowledge};
-   \node[right of=context] (response) {Natural Responses};
-   \draw[->] (query) -- (context);
-   \draw[->] (context) -- (response);
-   \end{tikzpicture}
+   ```mermaid
+   graph LR
+       A[Query] --> B[Query + context + pre-trained knowledge]
+       B --> C[Response]
    ```
-   - Combines context with general knowledge
+   - Combines indexed docs with general knowledge
    - More natural responses
    - Better for open-ended questions
-   - Higher risk of hallucinations
-   - Requires careful monitoring
+   - Higher hallucination risk but will include a disclaimer if no relevant chunks were found
 
 ### 2. TinyBERT for Efficient Embeddings
 
-AcceleRAG uses TinyBERT for both indexing and query embeddings, providing significant performance benefits:
+AcceleRAG uses TinyBERT by default for both indexing and query embeddings, providing significant performance benefits. 
+Note that the `Embedder` class allows a drop-in replacement for TinyBERT.
 
-```latex
-\begin{tikzpicture}[node distance=2cm]
-\node (query) {Query};
-\node[right of=query] (tinybert) {TinyBERT};
-\node[right of=tinybert] (embedding) {312-dim Embeddings};
-\node[below of=tinybert] (speed) {6x Faster Inference};
-\draw[->] (query) -- (tinybert);
-\draw[->] (tinybert) -- (embedding);
-\draw[->] (tinybert) -- (speed);
-\end{tikzpicture}
+```mermaid
+graph LR
+    A[Query / docs] --> B[Embedder]
+    B --> C[Embedded query / docs]
+    C --> D[SQLite Table]
 ```
 
-Key Benefits:
-- 50% smaller embeddings (312 vs 768 dimensions)
-- 4x smaller model size
-- 6x faster inference
-- Lower memory requirements
-- Efficient storage
+#### Why BERT is Sufficient for Text Similarity
+
+For indexing and query embedding tasks, BERT-based models are more than sufficient because:
+
+1. **Task-Specific Optimization**
+   - Text similarity is a well-defined task
+   - BERT excels at semantic understanding
+   - No need for full LLM capabilities
+   - Focused on embedding quality, not generation
+
+2. **Model Size Comparison**
+   - BERT models are significantly smaller than full LLMs:
+     - BERT: ~110M parameters
+     - DistilBERT: ~66M parameters
+     - TinyBERT: ~14M parameters
+   - Compared to:
+     - Claude: >100B parameters
+     - DeepSeek: >60B parameters
+     - GPT-4: possibly >1T parameters
+   - This means BERT models might be 4+ orders of magnitude smaller
+
+3. **Performance Benefits**
+   - Much faster inference times
+   - Lower memory requirements
+   - Efficient storage
+   - Better suited for real-time applications
+
+4. **Cost Savings**
+   - Significantly lower compute costs
+   - Reduced storage requirements
+   - Lower memory usage
+   - More cost-effective for production use
 
 ### 3. Query Routing for Performance
 
-AcceleRAG implements intelligent query routing to reduce search space:
+AcceleRAG implements intelligent query routing using a tag hierarchy system:
 
-```latex
-\begin{tikzpicture}[node distance=2cm]
-\node (query) {Query};
-\node[right of=query] (route) {Route to Relevant Tables};
-\node[right of=route] (search) {Search Fewer Docs};
-\node[below of=route] (identify) {Identify Relevant Tables};
-\node[below of=search] (compare) {Compare Against Fewer Docs};
-\draw[->] (query) -- (route);
-\draw[->] (route) -- (search);
-\draw[->] (route) -- (identify);
-\draw[->] (identify) -- (compare);
-\end{tikzpicture}
+Traditional RAG (Single Large Table):
+```mermaid
+graph TD
+    A[Query] --> B[KNN Search 1M+ Docs]
+    B --> C[Response]
 ```
 
-Performance Impact:
-- 90-99% reduction in search space
-- Example: 1M documents → 10K relevant
-- Fewer similarity computations
-- Lower database load
-- Faster response times
+AcceleRAG (Intelligent Routing):
+```mermaid
+graph TD
+    A[Query] --> B[Router w/ Tag Hierarchy]
+    B --> C[Relevant Table]
+    C --> D[Skip Tables]
+    C --> E[KNN search 10K Docs]
+    E --> F[Response]
+```
+
+Tag Hierarchy System:
+1. **Directory-Based Tags**
+   - Each document's directory path becomes its tag
+   - Example: `/docs/api/authentication.md` → tag: `api/authentication`
+   - Table name: `api_authentication`
+   - Tags form a hierarchical structure
+
+2. **Routing Process**
+   - Query is analyzed for relevant tags
+   - Router matches query to tag hierarchy (managed through a prompt)
+   - Only relevant tables are searched
+   - Irrelevant tables are skipped entirely
+
+3. **Performance Benefits**
+   - O(log n) routing vs O(n) search
+   - Search space reduction: 100x+ typical
+   - Example: 1M documents → 10K relevant
+   - Fewer similarity computations
+   - Lower database load
+   - Faster response times
 
 ### 4. Flexible Caching System
 
@@ -127,37 +164,63 @@ Cache Features:
 
 ### 5. Modular Architecture
 
-AcceleRAG is built on a modular architecture with dependency injection:
+AcceleRAG is built on a modular architecture with dependency injection. The framework provides abstract base classes for all core components:
 
-```latex
-\begin{tikzpicture}[node distance=2cm]
-\node (core) {Core};
-\node[right of=core] (components) {Components};
-\node[right of=components] (custom) {Custom};
-\draw[->] (core) -- (components);
-\draw[->] (components) -- (custom);
-\node[below of=components] (abstract) {Abstract Classes};
-\node[below of=custom] (concrete) {Concrete Implementations};
-\draw[->] (components) -- (abstract);
-\draw[->] (abstract) -- (concrete);
-\end{tikzpicture}
+```mermaid
+graph TD
+    A[RAGManager] --> B[Abstract Classes]
+    B --> C[Cache]
+    B --> D[Retriever]
+    B --> E[Indexer]
+    B --> F[Embedder]
+    B --> G[QueryEngine]
+    
+    C --> H[Default/Custom Cache]
+    D --> I[Default/Custom Retriever]
+    E --> J[Default/Custom Indexer]
+    F --> K[Default/Custom Embedder]
+    G --> L[Default/Custom QueryEngine]
 ```
 
-Key Components:
-1. **Indexer**
-   - Abstract: `Indexer` base class
-   - Default: `DefaultIndexer` with TinyBERT
-   - Custom: Implement custom indexing logic
+The Inversion of Control (IoC) principle enables flexible component composition:
+
+```mermaid
+graph TD
+    A[RAGManager] --> B[Component Mix]
+    
+    subgraph "User Customizations"
+        C[Custom Cache]
+        D[Custom Retriever]
+    end
+    
+    subgraph "Framework Defaults"
+        E[Default Indexer]
+        F[Default Embedder]
+        G[Default QueryEngine]
+    end
+    
+    B --> C
+    B --> D
+    B --> E
+    B --> F
+    B --> G
+```
+
+Components:
+1. **Cache**
+   - Abstract: `PromptCache` base class
+   - Default: `DefaultCache` with SQLite
+   - Custom: Implement custom caching logic
 
 2. **Retriever**
    - Abstract: `Retriever` base class
    - Default: `DefaultRetriever` with query routing
    - Custom: Implement custom retrieval logic
 
-3. **Cache**
-   - Abstract: `PromptCache` base class
-   - Default: `DefaultCache` with SQLite
-   - Custom: Implement custom caching logic
+3. **Indexer**
+   - Abstract: `Indexer` base class
+   - Default: `DefaultIndexer` with TinyBERT
+   - Custom: Implement custom indexing logic
 
 4. **QueryEngine**
    - Abstract: `QueryEngine` base class
@@ -184,27 +247,6 @@ cd accelerag
 pip install -r requirements.txt
 ```
 
-### API Key Configuration
-
-AcceleRAG supports multiple LLM providers and requires an API key for operation. The API key can be provided in two ways:
-
-1. **File Path**: Pass the path to a text file containing the API key:
-```python
-rag = RAGManager(
-    api_key='path/to/api_key.txt',
-    llm_provider='anthropic'  # or 'openai'
-)
-```
-
-2. **Environment Variable**: Set the appropriate environment variable:
-```bash
-# For Anthropic
-export ANTHROPIC_API_KEY='your-api-key'
-
-# For OpenAI
-export OPENAI_API_KEY='your-api-key'
-```
-
 ## Quick Start
 
 ### Using the RAGManager
@@ -212,69 +254,129 @@ export OPENAI_API_KEY='your-api-key'
 ```python
 from runners import RAGManager
 
-# Basic usage
+# Basic initialization
 rag = RAGManager(
-    embedding_type='transformer',  # Uses TinyBERT by default
-    ngram_size=16,
-    api_key='path/to/api_key.txt',
-    llm_provider='anthropic',
-    rag_mode='local',
+    api_key='path/to/api_key.txt',  # Required for LLM operations
+    dir_to_idx='path/to/documents',  # Directory to index
     grounding='soft',  # or 'hard' for strict context adherence
-    quality_thresh=80.0,
-    dir_to_idx='path/to/documents'
+    quality_thresh=80.0,  # Minimum quality score for caching
+    enable_cache=True,  # Enable response caching
+    use_cache=True,  # Use cached responses
+    cache_thresh=0.9,  # Similarity threshold for cache hits
+    logging_enabled=True,  # Enable detailed logging
+    query_engine=None,  # Optional custom query engine
+    show_similarity=False,  # Show embedding similarity scores
+    device='cpu',  # Device for embedding computation
+    embedder=None,  # Optional custom embedder
+    scorer=None,  # Optional custom scorer
+    indexer=None,  # Optional custom indexer
+    retriever=None,  # Optional custom retriever
+    cache_db=None,  # Optional external cache database
+    force_reindex=False  # Force reindexing if already indexed
 )
 
 # Index documents
-rag.index(batch_size=100)
+rag.index()  # Will prompt for reindexing if already indexed
 
 # Generate responses
 response = rag.generate_response(
     query="What is the capital of France?",
-    use_cache=True,
-    cache_thresh=0.9
+    use_cache=True,  # Override instance setting
+    cache_thresh=0.9,  # Override instance setting
+    grounding='hard',  # Override instance setting
+    show_similarity=True  # Show similarity scores
+)
+
+# Retrieve relevant chunks
+chunks = rag.retrieve(
+    query="What is the capital of France?",
+    top_k=5  # Number of chunks to retrieve
 )
 ```
 
-## Performance and Cost Analysis
+## Custom Implementation Example
 
-### Algorithmic Runtime Analysis
+Here's a simple example of creating a custom indexer that demonstrates the framework's modularity:
 
-| Operation | Traditional RAG | AcceleRAG | Speedup |
-|-----------|----------------|-----------|---------|
-| Query Routing | N/A | O(log n) | N/A |
-| Embedding Search | O(n) | O(log n) | O(n/log n) |
-| Similarity Computation | O(n) | O(k) | O(n/k) |
-| Total | O(n) | O(log n + k) | O(n/(log n + k)) |
+```python
+from base_classes import Indexer
+import sqlite3
+import os
 
-Where:
-- n = total number of documents
-- k = number of relevant documents per tag
-- log n = time to traverse tag hierarchy
+class CustomIndexer(Indexer):
+    """A custom indexer that splits documents by paragraphs and stores them in SQLite."""
+    
+    def index(self, corpus_dir, tag_hierarchy=None, db_params=None, **kwargs):
+        """Index documents by splitting them into paragraphs."""
+        # Connect to SQLite database
+        conn = sqlite3.connect(db_params['dbname'])
+        cur = conn.cursor()
+        
+        # Create table for storing paragraphs
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS paragraphs (
+                id INTEGER PRIMARY KEY,
+                content TEXT,
+                filepath TEXT,
+                tag TEXT
+            )
+        """)
+        
+        # Process each file in the corpus
+        for root, _, files in os.walk(corpus_dir):
+            for file in files:
+                filepath = os.path.join(root, file)
+                rel_path = os.path.relpath(filepath, corpus_dir)
+                
+                # Extract tag from path if using tag hierarchy
+                tag = None
+                if tag_hierarchy:
+                    tag = os.path.dirname(rel_path)
+                
+                # Read and process file
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    paragraphs = content.split('\n\n')
+                    
+                    # Store each paragraph
+                    for para in paragraphs:
+                        if para.strip():  # Skip empty paragraphs
+                            cur.execute(
+                                "INSERT INTO paragraphs (content, filepath, tag) VALUES (?, ?, ?)",
+                                (para.strip(), rel_path, tag)
+                            )
+        
+        conn.commit()
+        conn.close()
 
-### Cost Savings
+# Usage in RAGManager
+rag = RAGManager(
+    indexer=CustomIndexer(),  # Use our custom indexer
+    dir_to_idx='path/to/documents'
+)
 
-1. **Caching Efficiency**
-   - SQLite can store 100k+ responses efficiently
-   - Cache hits reduce LLM API calls by 40-60%
+# Index documents using custom implementation
+rag.index()
+```
 
-2. **Embedding Optimization**
-   - TinyBERT reduces embedding storage by 50%
-   - 6x faster inference
-
-3. **Query Routing**
-   - Reduces search space by 90-99%
-   - Example: 1M documents → 10K relevant
+This example demonstrates:
+1. **Modularity**: Easy to implement custom indexing logic
+2. **Flexibility**: Can use any storage backend (SQLite in this case)
+3. **Integration**: Seamless integration with RAGManager
+4. **Extensibility**: Can add custom features like tag hierarchy support
 
 ## Roadmap
 
 ### v0.9.0 (Current)
-- Advanced grounding modes with hallucination control
-- TinyBERT for efficient embeddings
-- Query routing for performance
-- Flexible caching system
-- Modular architecture with dependency injection
+- grounding modes for hallucination control
+- TinyBERT defaults for efficient embeddings
+- Prompt caching
+- Functional RAG pipeline as a framework
 
 ### v1.0.0 (Next)
+- Comprehensive unit test suite
+- Image and audio modality support
+- PyPI package publishing
 - REST API for RAG operations
 - WebSocket support for streaming
 - Authentication and rate limiting
@@ -283,223 +385,15 @@ Where:
 - Custom LLM support
 - Advanced monitoring and metrics
 
-### Future Features
+## Legal Disclaimer
 
-1. **Multi-modal RAG**
-   ```latex
-   \begin{tikzpicture}[node distance=2cm]
-   \node (text) {Text};
-   \node[right of=text] (image) {Image};
-   \node[right of=image] (audio) {Audio};
-   \node[below of=text] (text_store) {Text Vector Store};
-   \node[below of=image] (image_store) {Image Vector Store};
-   \node[below of=audio] (audio_store) {Audio Vector Store};
-   \node[below of=image_store] (cross_modal) {Cross-modal Search};
-   \draw[->] (text) -- (text_store);
-   \draw[->] (image) -- (image_store);
-   \draw[->] (audio) -- (audio_store);
-   \draw[->] (text_store) -- (cross_modal);
-   \draw[->] (image_store) -- (cross_modal);
-   \draw[->] (audio_store) -- (cross_modal);
-   \end{tikzpicture}
-   ```
-   - Separate vector stores for each modality
-   - Cross-modal search capabilities
-   - Unified embedding space
-   - Modality-specific retrieval strategies
-   - Support for text, image, and audio data
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-2. **Retrieval Augmented Thoughts (RAT)**
-   ```latex
-   \begin{tikzpicture}[node distance=2cm]
-   \node (query) {Query};
-   \node[right of=query] (rag) {RAG};
-   \node[right of=rag] (cot) {Chain of Thought};
-   \node[below of=rag] (retrieve) {Retrieve Context};
-   \node[below of=cot] (reason) {Reason Step-by-Step};
-   \node[below of=reason] (combine) {Combine Results};
-   \draw[->] (query) -- (rag);
-   \draw[->] (rag) -- (cot);
-   \draw[->] (rag) -- (retrieve);
-   \draw[->] (cot) -- (reason);
-   \draw[->] (retrieve) -- (combine);
-   \draw[->] (reason) -- (combine);
-   \end{tikzpicture}
-   ```
-   - Integration of RAG with Chain of Thought reasoning
-   - Step-by-step reasoning with retrieved context
-   - Improved reasoning capabilities
-   - Better handling of complex queries
-   - Enhanced explainability
+By using AcceleRAG, you agree to:
+1. Use the software at your own risk
+2. Not hold the authors liable for any damages or losses
+3. Comply with all applicable laws and regulations
+4. Respect intellectual property rights
+5. Use the software only for lawful purposes
 
-3. **Synthetic Data Engine (SDE)**
-   ```latex
-   \begin{tikzpicture}[node distance=2cm]
-   \node (input) {Input Data};
-   \node[right of=input] (generate) {Generate};
-   \node[right of=generate] (validate) {Validate};
-   \node[below of=generate] (text) {Text};
-   \node[below of=text] (image) {Image};
-   \node[below of=image] (audio) {Audio};
-   \draw[->] (input) -- (generate);
-   \draw[->] (generate) -- (validate);
-   \draw[->] (generate) -- (text);
-   \draw[->] (generate) -- (image);
-   \draw[->] (generate) -- (audio);
-   \end{tikzpicture}
-   ```
-   - Cost-effective synthetic data generation
-   - Multi-modal data synthesis
-   - Quality validation pipeline
-   - Scalable generation framework
-   - Support for custom generation rules
-
-## Custom Class Examples
-
-AcceleRAG's modular architecture makes it easy to extend and customize. Here are some simple examples of custom implementations:
-
-### 1. Custom Indexer
-```python
-from base_classes import Indexer
-
-class SimpleIndexer(Indexer):
-    def index(self, corpus_dir, tag_hierarchy, db_params, batch_size=100):
-        """Simple indexing that splits documents by paragraphs."""
-        import sqlite3
-        conn = sqlite3.connect(db_params['dbname'])
-        cur = conn.cursor()
-        
-        # Create table if it doesn't exist
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS paragraphs (
-                id INTEGER PRIMARY KEY,
-                content TEXT,
-                filepath TEXT
-            )
-        """)
-        
-        # Process each file
-        for filepath in os.listdir(corpus_dir):
-            with open(os.path.join(corpus_dir, filepath), 'r') as f:
-                content = f.read()
-                paragraphs = content.split('\n\n')
-                
-                for para in paragraphs:
-                    cur.execute(
-                        "INSERT INTO paragraphs (content, filepath) VALUES (?, ?)",
-                        (para, filepath)
-                    )
-        
-        conn.commit()
-        conn.close()
-```
-
-### 2. Custom Retriever
-```python
-from base_classes import Retriever
-
-class KeywordRetriever(Retriever):
-    def retrieve(self, query, top_k=5, **kwargs):
-        """Simple keyword-based retrieval."""
-        import sqlite3
-        conn = sqlite3.connect(kwargs['dbname'])
-        cur = conn.cursor()
-        
-        # Split query into keywords
-        keywords = query.lower().split()
-        
-        # Build SQL query
-        conditions = [f"content LIKE '%{kw}%'" for kw in keywords]
-        sql = f"""
-            SELECT content, filepath 
-            FROM paragraphs 
-            WHERE {' OR '.join(conditions)}
-            LIMIT {top_k}
-        """
-        
-        results = cur.execute(sql).fetchall()
-        conn.close()
-        
-        return [r[0] for r in results]  # Return just the content
-```
-
-### 3. Custom Cache
-```python
-from base_classes import PromptCache
-
-class MemoryCache(PromptCache):
-    def __init__(self):
-        self.cache = {}
-        
-    def cache_response(self, db_path, query, response, quality_score=None, **kwargs):
-        self.cache[query] = (response, quality_score)
-        
-    def get_cached_response(self, db_path, query, threshold, **kwargs):
-        if query in self.cache:
-            response, score = self.cache[query]
-            if score and score >= threshold:
-                return response, score
-        return None
-```
-
-### Using Custom Classes
-```python
-from runners import RAGManager
-
-# Initialize with custom components
-rag = RAGManager(
-    indexer=SimpleIndexer(),
-    retriever=KeywordRetriever(),
-    cache=MemoryCache(),
-    dir_to_idx='path/to/documents'
-)
-
-# Use as normal
-rag.index()
-response = rag.generate_response("What is the capital of France?")
-```
-
-### Creating Your Own Subclass
-
-To create your own custom component:
-
-1. **Import the Base Class**
-   ```python
-   from base_classes import Indexer, Retriever, PromptCache
-   ```
-
-2. **Subclass the Base Class**
-   ```python
-   class MyCustomComponent(BaseClass):
-       def __init__(self, *args, **kwargs):
-           super().__init__(*args, **kwargs)
-           # Your initialization code
-   ```
-
-3. **Implement Required Methods**
-   - For `Indexer`: Implement `index()`
-   - For `Retriever`: Implement `retrieve()`
-   - For `PromptCache`: Implement `cache_response()` and `get_cached_response()`
-
-4. **Add Custom Logic**
-   - Add your own methods
-   - Override existing methods
-   - Add custom parameters
-
-5. **Use in RAGManager**
-   ```python
-   rag = RAGManager(
-       indexer=MyCustomIndexer(),
-       retriever=MyCustomRetriever(),
-       cache=MyCustomCache()
-   )
-   ```
-
-## Contact
-
-For commercial licensing inquiries or other questions, please contact:
-- Email: elliottdev93@gmail.com
-
-## Disclaimer
-
-This is version 0.9.0 of AcceleRAG. While it is functional, it is still under active development. Some features may change in future releases. 
+The authors make no representations or warranties about the accuracy, reliability, timeliness, or completeness of the software or its documentation. The software may contain errors or inaccuracies that could cause failures, including but not limited to loss of data or damage to hardware. 
