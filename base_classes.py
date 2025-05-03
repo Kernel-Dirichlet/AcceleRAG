@@ -1,7 +1,6 @@
 import os
 import json
 import logging
-from indexing_utils import process_corpus, get_model_provider, compute_embeddings
 from retrieval_utils import fetch_top_k, compute_query_embedding
 from web_search_utils import score_response
 from anthropic import Anthropic
@@ -10,6 +9,7 @@ from abc import ABC, abstractmethod
 import torch
 from transformers import AutoTokenizer, AutoModel
 import numpy as np
+from typing import Optional, Tuple
 
 class Embedder(ABC):
     """Abstract base class for embedding models."""
@@ -119,13 +119,10 @@ class Indexer:
         
         # Initialize embedder
         if embedder is None:
-            model_config = get_model_provider(model_name)
-            if model_config['provider'] == 'transformer':
-                self.embedder = TransformerEmbedder(model_name)
-            elif model_config['provider'] == 'anthropic':
+            if model_name.startswith('claude'):
                 self.embedder = ClaudeEmbedder(model_name)
             else:
-                raise ValueError(f"Unsupported model provider: {model_config['provider']}")
+                self.embedder = TransformerEmbedder(model_name)
         else:
             self.embedder = embedder
         
@@ -146,15 +143,7 @@ class Indexer:
                 **self.custom_index_args
             )
         else:
-            # Use default process_corpus with embedder
-            process_corpus(
-                corpus_dir=corpus_dir,
-                tag_hierarchy=tag_hierarchy,
-                ngram_size=self.ngram_size,
-                batch_size=batch_size,
-                db_params=db_params,
-                embedder=self.embedder
-            )
+            raise NotImplementedError("Subclasses must implement index() method")
 
 class Retriever:
     """Base class for document retrieval."""
@@ -170,15 +159,21 @@ class Retriever:
         self.custom_retrieve_args = custom_retrieve_args or {}
         self.embedder = embedder
         
-    def retrieve(self, query, top_k=5):
-        """Retrieve relevant chunks from the database."""
+    def retrieve(self, query, top_k=5, **kwargs):
+        """Retrieve relevant chunks from the database.
+        
+        Args:
+            query: Query string
+            top_k: Number of chunks to retrieve
+            **kwargs: Additional arguments to pass to the retrieval function
+        """
         if self.custom_retrieve_fn:
             # Call custom retrieval function with provided arguments
             return self.custom_retrieve_fn(
                 query=query,
                 db_params=self.db_params,
                 k=top_k,
-                **self.custom_retrieve_args
+                **{**self.custom_retrieve_args, **kwargs}  # Merge instance args with method args
             )
         else:
             # Use default fetch_top_k with embedder
@@ -190,5 +185,62 @@ class Retriever:
                 self.db_params,
                 tag_hierarchy=tag_hierarchy,
                 k=top_k,
-                embedder=self.embedder
-            ) 
+                embedder=self.embedder,
+                **kwargs  # Pass additional kwargs to fetch_top_k
+            )
+
+
+class QueryEngine(ABC):
+    """Abstract base class for query engines that handle LLM interactions."""
+    def __init__(self, api_key=None):
+        self.api_key = api_key
+        if api_key:
+            self._set_api_key()
+            
+    @abstractmethod
+    def _set_api_key(self):
+        """Set API key in environment variables."""
+        pass
+        
+    @abstractmethod
+    def generate_response(self, prompt, grounding='soft'):
+        """Generate response using the LLM.
+        
+        Args:
+            prompt: The prompt to send to the LLM
+            grounding: Grounding mode ('soft' or 'hard')
+            
+        Returns:
+            Generated response text
+        """
+        pass
+
+class PromptCache(ABC):
+    """Abstract base class for prompt caching systems."""
+    @abstractmethod
+    def init_cache(self, db_path: str) -> None:
+        """Initialize the cache table in the SQLite database."""
+        pass
+        
+    @abstractmethod
+    def verify_cache_schema(self, db_path: str) -> bool:
+        """Verify that the database has the correct response_cache table schema."""
+        pass
+        
+    @abstractmethod
+    def cache_response(self, db_path: str, query: str, response: str, 
+                      quality_score: str = None, quality_thresh: float = 80.0, 
+                      cache_db: Optional[str] = None) -> None:
+        """Cache a query and its response if quality score meets threshold."""
+        pass
+        
+    @abstractmethod
+    def get_cached_response(self, db_path: str, query: str, threshold: float, 
+                          cache_db: Optional[str] = None) -> Optional[Tuple[str, float]]:
+        """Retrieve a cached response if a similar query exists."""
+        pass
+    @abstractmethod
+    def clear_cache(self,db_path):
+        """clear cache entries"""
+
+

@@ -6,47 +6,76 @@ import numpy as np
 import anthropic
 from openai import OpenAI
 from transformers import AutoTokenizer, AutoModel
-from indexing_utils import (
-    process_corpus, 
-    compute_embeddings,
-    get_model_provider,
-    MODEL_CONFIGS,
-    EMBEDDING_MODELS
-)
 from retrieval_utils import fetch_top_k
 from web_search_utils import score_response
 from caching_utils import init_cache, cache_response, get_cached_response, verify_cache_schema, extract_score_from_response
-from agentic_utils import AgenticIndexer
-from base_classes import Scorer, Indexer, Retriever, Embedder, TransformerEmbedder, ClaudeEmbedder
+from base_classes import Scorer, Indexer, Retriever, Embedder
+from embedders import TransformerEmbedder, ClaudeEmbedder
+from scorers import DefaultScorer
+from retrievers import DefaultRetriever
+from indexers import DefaultIndexer
+from query_engines import AnthropicEngine
+from caches import DefaultCache
+
 
 class RAGManager:
+    """Main RAG manager class for document indexing, retrieval, and response generation.
+    
+    Usage:
+        # Basic initialization
+        rag = RAGManager(
+            api_key='path/to/api_key.txt',  # Required for LLM operations
+            dir_to_idx='path/to/documents',  # Directory to index
+            grounding='soft',  # or 'hard' for strict context adherence
+            quality_thresh=80.0,  # Minimum quality score for caching
+            enable_cache=True,  # Enable response caching
+            use_cache=True,  # Use cached responses
+            cache_thresh=0.9,  # Similarity threshold for cache hits
+            logging_enabled=True,  # Enable detailed logging
+            query_engine=None  # Add query engine parameter
+        )
+        
+        # Index documents
+        rag.index()  # Will prompt for reindexing if already indexed
+        
+        # Generate responses
+        response = rag.generate_response(
+            query="What is the capital of France?",
+            use_cache=True,  # Override instance setting
+            cache_thresh=0.9,  # Override instance setting
+            grounding='hard'  # Override instance setting
+        )
+        
+        # Retrieve relevant chunks
+        chunks = rag.retrieve(
+            query="What is the capital of France?",
+            top_k=5  # Number of chunks to retrieve
+        )
+    """
     def __init__(
         self,
-        model_name='huawei-noah/TinyBERT_General_4L_312D',
-        ngram_size=16,
-        api_key=None,
-        rag_mode='local',
+        api_key,
         grounding='soft',
         quality_thresh=80.0,
+        device = 'cpu',
         dir_to_idx=None,
+        embedder = None,
         scorer=None,
         indexer=None,
         retriever=None,
         cache_db=None,
-        enable_cache=False,  # Controls writing to cache
-        use_cache=False,     # Controls reading from cache
+        enable_cache=True,  # Enable caching by default
+        use_cache=True,     # Use cache by default
         cache_thresh=0.9,
         force_reindex=False,
-        agentic_indexer=None,
-        logging_enabled=True
+        logging_enabled=True,
+        query_engine=None,
+        show_similarity=False  # Option to show embedding similarity
     ):
         """Initialize RAG manager with configuration parameters.
         
         Args:
-            model_name: Name of the model to use
-            ngram_size: Size of n-grams for text chunking
             api_key: Path to API key file
-            rag_mode: RAG mode ('local' or 'agentic')
             grounding: Grounding mode ('soft' or 'hard')
             quality_thresh: Quality score threshold for caching
             dir_to_idx: Path to directory to index
@@ -58,13 +87,11 @@ class RAGManager:
             use_cache: Whether to use cached responses when available
             cache_thresh: Similarity threshold for cache hits
             force_reindex: Whether to force reindexing even if documents are already indexed
-            agentic_indexer: Custom agentic indexer instance (required for agentic mode)
             logging_enabled: Whether to enable detailed logging (default: True)
+            query_engine: Custom query engine instance
+            show_similarity: Option to show embedding similarity
         """
         # Initialize basic attributes
-        self.model_name = model_name
-        self.ngram_size = ngram_size
-        self.rag_mode = rag_mode
         self.grounding = grounding
         self.quality_thresh = quality_thresh
         self.dir_to_idx = dir_to_idx
@@ -74,10 +101,7 @@ class RAGManager:
         self.cache_thresh = cache_thresh
         self.force_reindex = force_reindex
         self.logging_enabled = logging_enabled
-        
-        # Get model configuration
-        model_config = get_model_provider(model_name)
-        self.provider = model_config['provider']
+        self.show_similarity = show_similarity
         
         # Load API key first
         if api_key:
@@ -87,250 +111,277 @@ class RAGManager:
                 # Determine provider based on API key format
                 if self.api_key.startswith('sk-ant-'):
                     self.provider = 'anthropic'
-                    os.environ['ANTHROPIC_API_KEY'] = self.api_key
                 else:
                     self.provider = 'openai'
-                    os.environ['OPENAI_API_KEY'] = self.api_key
             except Exception as e:
                 raise ValueError(f"Error loading API key: {e}")
         
-        # Initialize embedder based on provider
-        if self.provider == 'transformer':
-            self.embedder = TransformerEmbedder(model_name)
-        elif self.provider == 'anthropic':
-            self.embedder = ClaudeEmbedder(model_name, self.api_key)
-        else:
-            raise ValueError(f"Unsupported model provider: {self.provider}")
         
-        # Initialize components with embedder
-        self.scorer = scorer or Scorer(self.provider, self.api_key)
-        self.indexer = indexer or Indexer(
-            model_name=model_name,
-            ngram_size=ngram_size,
-            embedder=self.embedder
-        )
+        # Initialize components
+        self.scorer = scorer or DefaultScorer(self.provider,
+                                              self.api_key)
+        self.embedder = embedder or TransformerEmbedder(device = device)
+        self.indexer = indexer or DefaultIndexer(embedder = self.embedder)
+        self.retriever = retriever or DefaultRetriever(dir_to_idx = dir_to_idx,
+                                                       embedder = self.embedder)
+       
+        self.query_engine = query_engine or AnthropicEngine(api_key = self.api_key)
         
+        # Initialize cache
+        self.cache = DefaultCache()
+        if self.enable_cache:
+            self._init_cache()
+            
         # Set up logging if enabled
         if logging_enabled:
             logging.basicConfig(
                 filename='rag_manager.log',
                 level=logging.INFO,
-                format='%(asctime)s - %(levelname)s - [%(mode)s] - %(message)s'
+                format='%(asctime)s - %(levelname)s - %(message)s'
             )
             self.logger = logging.getLogger('RAGManager')
-            self.logger = logging.LoggerAdapter(self.logger, {'mode': rag_mode})
         else:
             # Create a null logger
             self.logger = logging.getLogger('RAGManager')
             self.logger.addHandler(logging.NullHandler())
-            self.logger = logging.LoggerAdapter(self.logger, {'mode': rag_mode})
         
-        # Initialize database path
-        if dir_to_idx:
-            dir_name = os.path.basename(os.path.normpath(dir_to_idx))
-            self.db_path = f"{dir_name}_embeddings.db.sqlite"
-        else:
-            self.db_path = "embeddings.db.sqlite"
-            
-        self.db_params = {'dbname': self.db_path}
-        self.retriever = retriever or Retriever(
-            self.db_params,
-            embedder=self.embedder
-        )
-        
-        # Initialize cache if writing is enabled
-        if self.enable_cache:
-            self._init_cache()
-            
-        # Initialize agent if in agentic mode
-        if rag_mode == 'agentic':
-            if logging_enabled:
-                self.logger.info("Initializing agentic mode")
-            if agentic_indexer is None:
-                if logging_enabled:
-                    self.logger.info("No custom agent provided, using default ArxivAgent")
-                from agentic_utils import ArxivAgent
-                self.agentic_indexer = ArxivAgent(embedder=self.embedder)
-            else:
-                if not isinstance(agentic_indexer, AgenticIndexer):
-                    if logging_enabled:
-                        self.logger.error("Provided agentic_indexer is not a subclass of AgenticIndexer")
-                    raise ValueError("agentic_indexer must be a subclass of AgenticIndexer")
-                self.agentic_indexer = agentic_indexer
-                if logging_enabled:
-                    self.logger.info(f"Using custom agentic indexer: {agentic_indexer.__class__.__name__}")
-        
-        # Initialize LLM client based on provider
-        if self.provider == 'anthropic':
-            self.client = anthropic.Anthropic(api_key=self.api_key)
-        else:
-            self.client = OpenAI(api_key=self.api_key)
-            
     def _init_cache(self):
         """Initialize the cache table in the appropriate database."""
         try:
             if self.cache_db:
                 # Verify external cache database schema
-                if not verify_cache_schema(self.cache_db):
+                if not self.cache.verify_cache_schema(self.cache_db):
                     raise ValueError(f"External cache database {self.cache_db} has incorrect schema")
                 logging.info(f"Using external cache database: {self.cache_db}")
             else:
-                # Initialize cache in embeddings database
-                init_cache(self.db_path)
-                logging.info("Cache table initialized in embeddings database")
+                # Initialize cache in prompt_cache.db
+                self.cache.init_cache(None)  # None will use prompt_cache.db by default
+                logging.info("Cache table initialized in prompt_cache.db")
         except Exception as e:
             logging.error(f"Error initializing cache: {e}")
             raise
             
     def _is_indexed(self):
-        """Check if documents are already indexed in the database.
-        
-        Returns:
-            bool: True if documents are indexed, False otherwise
-        """
+        """Check if documents are already indexed in the database."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            # Get all files in the directory to check their structure
+            all_files = self.indexer._get_all_files(self.dir_to_idx)
+            if not all_files:
+                return False
+                
+            # Get all tables in the database
+            conn = sqlite3.connect(self.retriever.db_path)
             cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name != 'sqlite_sequence'")
+            tables = {row[0] for row in cur.fetchall()}
             
-            # Check if database has tables
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            tables = cur.fetchall()
-            
+            # If no tables exist, not indexed
             if not tables:
                 return False
                 
-            if self.rag_mode == 'agentic':
-                # For agentic mode, check if we have at least one document table
-                # Document tables are named after their tags in the hierarchy
-                cur.execute("""
-                    SELECT name FROM sqlite_master 
-                    WHERE type='table' 
-                    AND name NOT IN ('sqlite_sequence', 'response_cache')
-                """)
-                doc_tables = cur.fetchall()
-                return len(doc_tables) > 0
-            else:
-                # For local mode, check if we have the 'documents' table
-                cur.execute("""
-                    SELECT name FROM sqlite_master 
-                    WHERE type='table' 
-                    AND name = 'documents'
-                """)
-                return cur.fetchone() is not None
+            # Check if any of the tables have content
+            has_content = False
+            for table in tables:
+                cur.execute(f"SELECT COUNT(*) FROM {table}")
+                count = cur.fetchone()[0]
+                if count > 0:
+                    has_content = True
+                    break
+                    
+            conn.close()
+            
+            # If no tables with content exist, not indexed
+            if not has_content:
+                return False
+                
+            # Check if we have tables for each directory in the structure
+            for full_path, rel_path in all_files:
+                tag = self.indexer._get_tag_from_path(rel_path, True)  # Always use tag hierarchy
+                if tag:
+                    table_name = self.indexer._sanitize_table_name(tag)
+                    if table_name not in tables:
+                        return False
+            
+            return True
             
         except sqlite3.Error as e:
             if self.logging_enabled:
                 self.logger.error(f"Error checking index status: {e}")
             return False
-        finally:
-            if 'conn' in locals():
-                conn.close()
-            
-    def index(
-        self,
-        batch_size=100,
-        force_reindex=None,
-        ngram_size=None,
-        indexer=None,
-        **kwargs
-    ):
-        """Index documents using the specified indexer.
-        
-        Args:
-            batch_size: Size of batches for processing
-            force_reindex: Whether to force reindexing (overrides instance setting)
-            ngram_size: Size of n-grams to use (overrides instance setting)
-            indexer: Custom indexer to use (overrides instance setting)
-            **kwargs: Additional arguments passed to the indexer
-        """
+
+    def _drop_tables(self):
+        """Drop all tables in the database except response_cache and SQLite system tables."""
         try:
-            # Use provided parameters or instance settings
-            force_reindex = force_reindex if force_reindex is not None else self.force_reindex
-            ngram_size = ngram_size if ngram_size is not None else self.ngram_size
-            indexer = indexer if indexer is not None else self.indexer
+            conn = sqlite3.connect(self.retriever.db_path)
+            cur = conn.cursor()
             
-            # Check if documents are already indexed
-            if not force_reindex and self._is_indexed():
-                if self.logging_enabled:
-                    self.logger.info("Documents are already indexed. Use force_reindex=True to reindex.")
-                return
+            # Get all tables except SQLite system tables
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name != 'sqlite_sequence'")
+            tables = cur.fetchall()
             
-            if self.rag_mode == 'agentic':
-                if self.logging_enabled:
-                    self.logger.info("Starting agentic indexing process")
-                    self.logger.info(f"Using agent: {self.agentic_indexer.__class__.__name__}")
-                    self.logger.info(f"Batch size: {batch_size}")
-                    
-                # Add required parameters to kwargs
-                kwargs.update({
-                    'db_params': self.db_params,
-                    'batch_size': batch_size
-                })
-                
-                # Process corpus using agentic indexer
-                self.agentic_indexer.index(**kwargs)
-                
-                if self.logging_enabled:
-                    self.logger.info("Agentic indexing completed successfully")
-            else:
-                if self.logging_enabled:
-                    self.logger.info("Starting local indexing process")
-                    self.logger.info(f"Batch size: {batch_size}")
-                
-                # Process corpus using indexer without tag hierarchy
-                process_corpus(
-                    corpus_dir=self.dir_to_idx,
-                    db_params=self.db_params,
-                    batch_size=batch_size,
-                    ngram_size=ngram_size,
-                    embedder=self.embedder
-                )
-                
-                if self.logging_enabled:
-                    self.logger.info("Local indexing completed successfully")
+            # Drop each table except response_cache
+            for table in tables:
+                table_name = table[0]
+                if table_name != 'response_cache':
+                    cur.execute(f"DROP TABLE IF EXISTS {table_name}")
+                    if self.logging_enabled:
+                        self.logger.info(f"Dropped table: {table_name}")
+            
+            conn.commit()
+            cur.close()
+            conn.close()
             
         except Exception as e:
             if self.logging_enabled:
-                self.logger.error(f"Error during indexing: {str(e)}")
+                self.logger.error(f"Error dropping tables: {e}")
+            raise
+            
+    def index(self, **kwargs):
+        """Index documents in the specified directory."""
+        try:
+            if self.logging_enabled:
+                self.logger.info("Starting indexing process")
+            
+            # Check if directory exists and has files
+            if os.path.exists(self.dir_to_idx) and os.listdir(self.dir_to_idx):
+                response = input("Documents exist in the directory. Do you want to reindex? (y/n): ")
+                if response.lower() != 'y':
+                    if self.logging_enabled:
+                        self.logger.info("User chose not to reindex")
+                    return
+            
+            # Call indexer's index method
+            self.indexer.index(
+                corpus_dir=self.dir_to_idx,
+                db_params={'dbname': self.retriever.db_path},
+                tag_hierarchy=None,
+                **kwargs
+            )
+            
+            if self.logging_enabled:
+                self.logger.info("Indexing completed successfully")
+                
+        except Exception as e:
+            if self.logging_enabled:
+                self.logger.error(f"Error during indexing: {e}")
             raise
             
     def retrieve(self, query, top_k=5):
-        """Retrieve relevant chunks from the database.
-        
-        Args:
-            query: Query string
-            top_k: Number of chunks to retrieve
-            
-        Returns:
-            List of retrieved chunks
-        """
+        """Retrieve relevant chunks from the database."""
         try:
-            if self.rag_mode == 'agentic':
-                if self.logging_enabled:
-                    self.logger.info(f"Starting agentic retrieval for query: {query}")
-                    self.logger.info(f"Using agent: {self.agentic_indexer.__class__.__name__}")
-                    self.logger.info(f"Top k: {top_k}")
-                
-                results = self.agentic_indexer.retrieve(query, top_k)
-                if self.logging_enabled:
-                    self.logger.info(f"Retrieved {len(results)} chunks")
-                return results
-            else:
-                if self.logging_enabled:
-                    self.logger.info("Starting local retrieval")
-                return self.retriever.retrieve(query, top_k)
+            if self.logging_enabled:
+                self.logger.info(f"Starting local retrieval with top_k={top_k}")
+            
+            chunks = self.retriever.retrieve(query, top_k)
+            
+            if self.logging_enabled:
+                if chunks:
+                    self.logger.info(f"Retrieved {len(chunks)}/{top_k} chunks:")
+                    for i, (chunk, score) in enumerate(chunks):
+                        self.logger.info(f"Chunk {i+1} (similarity: {score:.4f}):\n{chunk}\n")
+                else:
+                    self.logger.warning("No chunks retrieved")
+            
+            return chunks
+            
         except Exception as e:
             if self.logging_enabled:
                 self.logger.error(f"Error during retrieval: {str(e)}")
             raise
             
+    def _get_cached_response(self, query, threshold, metric='cosine', **kwargs):
+        """Retrieve a cached response if a similar query exists.
+        
+        Args:
+            query: Query string
+            threshold: Similarity threshold for cache hits
+            metric: Distance metric to use ('cosine', 'euclidean', or custom function)
+            **kwargs: Additional arguments for custom distance function
+            
+        Returns:
+            Tuple of (response, similarity) if found, None otherwise
+        """
+        try:
+            # Use specified cache db or default to prompt_cache.db
+            target_db = self.cache_db if self.cache_db else 'prompt_cache.db'
+            
+            # Verify schema if using external cache
+            if self.cache_db and not verify_cache_schema(self.cache_db):
+                raise ValueError("External cache database has incorrect schema")
+                
+            # Compute query embedding using the embedder
+            query_embedding = self.embedder.embed(query)
+            
+            # Connect to cache database
+            conn = sqlite3.connect(target_db)
+            cur = conn.cursor()
+            
+            # Get all cached responses
+            cur.execute("""
+                SELECT query, response, embedding, score_text
+                FROM response_cache
+            """)
+            results = cur.fetchall()
+            
+            if not results:
+                return None
+                
+            # Find best matching cached response
+            best_similarity = 0.0
+            best_response = None
+            best_score_text = None
+            
+            for cached_query, response, cached_embedding, score_text in results:
+                try:
+                    # Convert string embedding to numpy array
+                    cached_embedding = np.array(eval(cached_embedding))
+                    
+                    # Compute similarity based on metric
+                    if metric == 'cosine':
+                        similarity = np.dot(query_embedding, cached_embedding) / (
+                            np.linalg.norm(query_embedding) * np.linalg.norm(cached_embedding)
+                        )
+                    elif metric == 'euclidean':
+                        distance = np.linalg.norm(query_embedding - cached_embedding)
+                        similarity = 1.0 / (1.0 + distance)  # Convert distance to similarity
+                    else:
+                        # Assume metric is a custom function
+                        similarity = metric(query_embedding, cached_embedding, **kwargs)
+                    
+                    if similarity > best_similarity and similarity >= threshold:
+                        best_similarity = similarity
+                        best_response = response
+                        best_score_text = score_text
+                        
+                except Exception as e:
+                    if self.logging_enabled:
+                        self.logger.error(f"Error computing similarity: {e}")
+                    continue
+                    
+            cur.close()
+            conn.close()
+            
+            if best_response:
+                if self.logging_enabled:
+                    self.logger.info(f"Cache hit with similarity {best_similarity:.2f}")
+                return best_response, best_similarity
+                
+            return None
+            
+        except sqlite3.Error as e:
+            if self.logging_enabled:
+                self.logger.error(f"Error retrieving cached response: {e}")
+            return None
+
     def generate_response(
         self,
         query,
         use_cache=None,
         enable_cache=None,
         cache_thresh=None,
-        grounding=None
+        grounding=None,
+        show_similarity=None,
+        **kwargs
     ):
         """Generate response for a query using RAG.
         
@@ -340,48 +391,68 @@ class RAGManager:
             enable_cache: Whether to enable caching of responses (overrides instance setting)
             cache_thresh: Similarity threshold for cache hits (overrides instance setting)
             grounding: Grounding mode ('soft' or 'hard', overrides instance setting)
+            show_similarity: Option to show embedding similarity
+            **kwargs: Additional arguments to pass to the retriever
             
         Returns:
             Generated response
+            
+        Usage:
+            # Basic response generation
+            response = rag.generate_response("What is the capital of France?")
+            
+            # Force hard grounding for this response
+            response = rag.generate_response(
+                "What is the capital of France?",
+                grounding='hard'
+            )
+            
+            # Override cache settings for this response
+            response = rag.generate_response(
+                "What is the capital of France?",
+                use_cache=True,
+                cache_thresh=0.95
+            )
         """
         try:
-            # Permanently update class attributes if new values provided
-            if grounding is not None:
-                self.grounding = grounding
+            # Update settings if provided
             if use_cache is not None:
                 self.use_cache = use_cache
             if enable_cache is not None:
                 self.enable_cache = enable_cache
             if cache_thresh is not None:
                 self.cache_thresh = cache_thresh
-            
+            if grounding is not None:
+                self.grounding = grounding
+            if show_similarity is not None:
+                self.show_similarity = show_similarity
+
             if self.logging_enabled:
                 self.logger.info(f"Generating response with grounding={self.grounding}, use_cache={self.use_cache}, enable_cache={self.enable_cache}")
             
-            # Initialize cache if needed
-            if self.enable_cache:
-                init_cache(self.db_path)
+            # Determine cache database path
+            cache_db = self.cache_db if self.cache_db else 'prompt_cache.db'
             
-            # Check cache if reading is enabled
+            # Check cache if enabled
             if self.use_cache:
-                cached_result = get_cached_response(
-                    self.db_path, 
-                    query, 
-                    self.cache_thresh,
-                    cache_db=self.cache_db,
-                    model_name=self.model_name
+                cached_result = self.cache.get_cached_response(
+                    cache_db,
+                    query,
+                    self.cache_thresh
                 )
                 if cached_result:
                     answer, similarity = cached_result
                     if self.logging_enabled:
-                        self.logger.info(f"Cache hit with similarity {similarity:.2f}")
+                        self.logger.info(f"Cache hit with similarity {similarity:.4f}")
+                    if self.show_similarity:
+                        print(f"Cache hit! Similarity score: {similarity:.4f}")
                     return answer
-                    
-            # Retrieve relevant chunks
-            chunks = self.retrieve(query)
+
+            # Generate new response
+            chunks = self.retrieve(query, **kwargs)
             context = "\n\n".join(chunks) if chunks else ""
             
-            # Load appropriate grounding prompt based on mode
+            # Load appropriate grounding prompt
             prompt_file = 'prompts/hard_grounding_prompt.txt' if self.grounding == 'hard' else 'prompts/soft_grounding_prompt.txt'
             try:
                 with open(prompt_file, 'r') as f:
@@ -390,52 +461,37 @@ class RAGManager:
                 if self.logging_enabled:
                     self.logger.error(f"Prompt file {prompt_file} not found")
                 raise ValueError(f"Prompt file {prompt_file} not found")
-                
-            # Format prompt with context and query
+
+            # Format and generate response
             prompt = prompt_template.format(context=context, query=query)
-            
-            if self.logging_enabled:
-                self.logger.info(f"Using {self.grounding} grounding with prompt from {prompt_file}")
-            
-            # Generate response using the correct LLM provider
-            if self.provider == 'anthropic':
-                response = anthropic.Anthropic(api_key=self.api_key).messages.create(
-                    model="claude-3-sonnet-20240229",
-                    max_tokens=1000,
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                answer = response.content[0].text
-            else:
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    max_tokens=1000,
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                answer = response.choices[0].message.content
-                
+            answer = self.query_engine.generate_response(prompt, grounding=self.grounding)
+
             # Score response
-            quality_score_text = self.scorer.score(answer, query)
-            quality_score = extract_score_from_response(quality_score_text)
+            score_text, quality_score = self.scorer.score(answer, query)
             
             if self.logging_enabled:
-                self.logger.info(f"Response quality score: {quality_score}")
-            
-            # Cache response if writing is enabled and quality score meets threshold
+                self.logger.info(f"Response quality score: {quality_score:.4f}")
+
+            # Cache response if enabled and quality threshold met
             if self.enable_cache and quality_score >= self.quality_thresh:
                 if self.logging_enabled:
-                    self.logger.info("Caching response")
-                cache_response(
-                    self.db_path,
+                    self.logger.info(f"Caching response with quality score {quality_score:.4f}")
+                
+                # Cache the response
+                self.cache.cache_response(
+                    cache_db,
                     query,
                     answer,
-                    quality_score_text,
+                    score_text,
                     self.quality_thresh,
-                    cache_db=self.cache_db,
-                    model_name=self.model_name
+                    cache_db=cache_db
                 )
                 
+                if self.logging_enabled:
+                    self.logger.info(f"Response cached in {cache_db}")
+
             return answer
-            
+
         except Exception as e:
             if self.logging_enabled:
                 self.logger.error(f"Error generating response: {str(e)}")
@@ -451,9 +507,8 @@ class RAGManager:
         Returns:
             Created hierarchy structure
         """
-        if self.rag_mode != 'agentic':
-            if self.logging_enabled:
-                self.logger.error("create_hierarchy called in non-agentic mode")
+        if self.logging_enabled:
+            self.logger.error("create_hierarchy called in non-agentic mode")
             raise ValueError("create_hierarchy is only available in agentic mode")
             
         if self.logging_enabled:

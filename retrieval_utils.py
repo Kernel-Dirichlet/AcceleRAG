@@ -1,6 +1,5 @@
 import torch
 from transformers import AutoTokenizer, AutoModel
-import psycopg2
 import sqlite3
 import numpy as np
 from query_utils import route_query

@@ -3,9 +3,9 @@ import numpy as np
 from typing import Optional, Tuple
 import logging
 from sklearn.metrics.pairwise import cosine_similarity
-from indexing_utils import compute_embeddings
 import torch
 import re
+from embedders import TransformerEmbedder
 
 def verify_cache_schema(db_path: str) -> bool:
     """Verify that the database has the correct response_cache table schema.
@@ -58,13 +58,18 @@ def verify_cache_schema(db_path: str) -> bool:
 def init_cache(db_path: str) -> None:
     """Initialize the cache table in the SQLite database."""
     try:
-        conn = sqlite3.connect(db_path)
+        # Use prompt_cache.db by default
+        cache_path = 'prompt_cache.db'
+        if db_path:
+            cache_path = db_path
+            
+        conn = sqlite3.connect(cache_path)
         cur = conn.cursor()
         
         # Check if table exists and has correct schema
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='response_cache'")
         if cur.fetchone():
-            if not verify_cache_schema(db_path):
+            if not verify_cache_schema(cache_path):
                 raise ValueError("Existing response_cache table has incorrect schema")
             return
             
@@ -82,7 +87,7 @@ def init_cache(db_path: str) -> None:
         conn.commit()
         cur.close()
         conn.close()
-        logging.info("Cache table initialized with correct schema")
+        logging.info(f"Cache table initialized in {cache_path}")
     except sqlite3.Error as e:
         logging.error(f"Error initializing cache: {e}")
         raise
@@ -90,15 +95,11 @@ def init_cache(db_path: str) -> None:
 def get_query_embedding(query, model_name):
     """Get embedding for a query using the specified model."""
     try:
-        embeddings = compute_embeddings(
-            [query],
-            model_name=model_name,
-            device='cpu'  # Force CPU to avoid CUDA issues
-        )
+        embedder = TransformerEmbedder(model_name=model_name)
+        embeddings = embedder.embed_batch([query])
         return embeddings[0]  # Return first (and only) embedding
     except Exception as e:
         logging.error(f"Error computing query embedding: {e}")
-        raise
 
 def extract_score_from_response(score_text: str) -> float:
     """Extract numerical score from LLM's evaluation response."""
@@ -137,7 +138,7 @@ def cache_response(db_path: str, query: str, response: str, quality_score: str =
     """Cache a query and its response if quality score meets threshold.
     
     Args:
-        db_path: Path to the embeddings database
+        db_path: Path to the embeddings database (unused, kept for compatibility)
         query: Query string
         response: Generated response
         quality_score: Quality score of the response
@@ -158,8 +159,8 @@ def cache_response(db_path: str, query: str, response: str, quality_score: str =
                     logging.info(f"Skipping cache for query due to low quality score: {quality_score} < {quality_thresh}")
                 return
             
-        # Use external cache if specified
-        target_db = cache_db if cache_db else db_path
+        # Use specified cache db or default to prompt_cache.db
+        target_db = cache_db if cache_db else 'prompt_cache.db'
         
         # Verify schema if using external cache
         if cache_db and not verify_cache_schema(cache_db):
@@ -192,7 +193,7 @@ def get_cached_response(db_path: str, query: str, threshold: float, cache_db: Op
     """Retrieve a cached response if a similar query exists.
     
     Args:
-        db_path: Path to the embeddings database
+        db_path: Path to the embeddings database (unused, kept for compatibility)
         query: Query string
         threshold: Similarity threshold
         cache_db: Optional path to external cache database
@@ -202,16 +203,14 @@ def get_cached_response(db_path: str, query: str, threshold: float, cache_db: Op
         Optional[Tuple[str, float]]: Cached response and similarity score if found
     """
     try:
-        # Try external cache first if specified
-        if cache_db:
-            if not verify_cache_schema(cache_db):
-                raise ValueError("External cache database has incorrect schema")
-            result = _get_cached_response_from_db(cache_db, query, threshold, model_name)
-            if result:
-                return result
-                
-        # Fall back to embeddings database
-        return _get_cached_response_from_db(db_path, query, threshold, model_name)
+        # Use specified cache db or default to prompt_cache.db
+        target_db = cache_db if cache_db else 'prompt_cache.db'
+        
+        # Verify schema if using external cache
+        if cache_db and not verify_cache_schema(cache_db):
+            raise ValueError("External cache database has incorrect schema")
+            
+        return _get_cached_response_from_db(target_db, query, threshold, model_name)
         
     except sqlite3.Error as e:
         logging.error(f"Error retrieving cached response: {e}")

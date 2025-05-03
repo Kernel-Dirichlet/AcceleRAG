@@ -270,7 +270,7 @@ def sanitize_table_name(name):
         sanitized = '_' + sanitized
     return sanitized
 
-def get_tag_from_path(rel_path, tag_hierarchy):
+def get_tag_from_path(rel_path):
     """Extract tag from file path based on tag hierarchy"""
     path_parts = rel_path.split(os.sep)
     if len(path_parts) < 2:  # Need at least a directory and a file
