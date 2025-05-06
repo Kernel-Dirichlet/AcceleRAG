@@ -5,92 +5,48 @@ import sqlite3
 import numpy as np
 import anthropic
 from openai import OpenAI
-from transformers import AutoTokenizer, AutoModel
-from retrieval_utils import fetch_top_k
-from web_search_utils import score_response
-from caching_utils import init_cache, cache_response, get_cached_response, verify_cache_schema, extract_score_from_response
-from base_classes import Scorer, Indexer, Retriever, Embedder
-from embedders import TransformerEmbedder, ClaudeEmbedder
-from scorers import DefaultScorer
-from retrievers import DefaultRetriever
-from indexers import DefaultIndexer
-from query_engines import AnthropicEngine
-from caches import DefaultCache
+import sys
+from base_classes import (
+        Indexer,
+        Retriever,
+        Scorer,
+        Embedder,
+        PromptCache,
+        QueryEngine)
+
+from cachers import *
+from indexers import *
+from embedders import *
+from retrievers import *
+from scorers import * 
+from query_engines import * 
+
 
 
 class RAGManager:
-    """Main RAG manager class for document indexing, retrieval, and response generation.
+    """Main RAG manager class for document indexing, retrieval, and response generation."""   
     
-    Usage:
-        # Basic initialization
-        rag = RAGManager(
-            api_key='path/to/api_key.txt',  # Required for LLM operations
-            dir_to_idx='path/to/documents',  # Directory to index
-            grounding='soft',  # or 'hard' for strict context adherence
-            quality_thresh=80.0,  # Minimum quality score for caching
-            enable_cache=True,  # Enable response caching
-            use_cache=True,  # Use cached responses
-            cache_thresh=0.9,  # Similarity threshold for cache hits
-            logging_enabled=True,  # Enable detailed logging
-            query_engine=None  # Add query engine parameter
-        )
-        
-        # Index documents
-        rag.index()  # Will prompt for reindexing if already indexed
-        
-        # Generate responses
-        response = rag.generate_response(
-            query="What is the capital of France?",
-            use_cache=True,  # Override instance setting
-            cache_thresh=0.9,  # Override instance setting
-            grounding='hard'  # Override instance setting
-        )
-        
-        # Retrieve relevant chunks
-        chunks = rag.retrieve(
-            query="What is the capital of France?",
-            top_k=5  # Number of chunks to retrieve
-        )
-    """
     def __init__(
         self,
         api_key,
-        grounding='soft',
-        quality_thresh=80.0,
+        grounding = 'soft',
+        quality_thresh = 80.0,
         device = 'cpu',
-        dir_to_idx=None,
+        modality = 'text',
+        dir_to_idx = None,
         embedder = None,
-        scorer=None,
-        indexer=None,
-        retriever=None,
-        cache_db=None,
-        enable_cache=True,  # Enable caching by default
-        use_cache=True,     # Use cache by default
-        cache_thresh=0.9,
-        force_reindex=False,
-        logging_enabled=True,
-        query_engine=None,
-        show_similarity=False  # Option to show embedding similarity
-    ):
-        """Initialize RAG manager with configuration parameters.
+        scorer = None,
+        indexer = None,
+        retriever = None,
+        cache_db = None,
+        enable_cache = True,
+        use_cache = True,     
+        cache_thresh = 0.9,
+        force_reindex = False,
+        logging_enabled = True,
+        query_engine = None,
+        show_similarity = False):
         
-        Args:
-            api_key: Path to API key file
-            grounding: Grounding mode ('soft' or 'hard')
-            quality_thresh: Quality score threshold for caching
-            dir_to_idx: Path to directory to index
-            scorer: Custom scorer instance
-            indexer: Custom indexer instance
-            retriever: Custom retriever instance
-            cache_db: Optional path to external cache database
-            enable_cache: Whether to enable caching of responses
-            use_cache: Whether to use cached responses when available
-            cache_thresh: Similarity threshold for cache hits
-            force_reindex: Whether to force reindexing even if documents are already indexed
-            logging_enabled: Whether to enable detailed logging (default: True)
-            query_engine: Custom query engine instance
-            show_similarity: Option to show embedding similarity
-        """
         # Initialize basic attributes
         self.grounding = grounding
         self.quality_thresh = quality_thresh
@@ -118,15 +74,15 @@ class RAGManager:
         
         
         # Initialize components
+        assert modality in ['image','text','audio']
         self.scorer = scorer or DefaultScorer(self.provider,
                                               self.api_key)
-        self.embedder = embedder or TransformerEmbedder(device = device)
-        self.indexer = indexer or DefaultIndexer(embedder = self.embedder)
-        self.retriever = retriever or DefaultRetriever(dir_to_idx = dir_to_idx,
+        self.embedder = embedder or TextEmbedder(device = device)
+        self.indexer = indexer or TextIndexer(embedder = self.embedder)
+        self.retriever = retriever or TextRetriever(dir_to_idx = dir_to_idx,
                                                        embedder = self.embedder)
        
         self.query_engine = query_engine or AnthropicEngine(api_key = self.api_key)
-        
         # Initialize cache
         self.cache = DefaultCache()
         if self.enable_cache:
@@ -201,7 +157,6 @@ class RAGManager:
                     table_name = self.indexer._sanitize_table_name(tag)
                     if table_name not in tables:
                         return False
-            
             return True
             
         except sqlite3.Error as e:
@@ -209,32 +164,6 @@ class RAGManager:
                 self.logger.error(f"Error checking index status: {e}")
             return False
 
-    def _drop_tables(self):
-        """Drop all tables in the database except response_cache and SQLite system tables."""
-        try:
-            conn = sqlite3.connect(self.retriever.db_path)
-            cur = conn.cursor()
-            
-            # Get all tables except SQLite system tables
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name != 'sqlite_sequence'")
-            tables = cur.fetchall()
-            
-            # Drop each table except response_cache
-            for table in tables:
-                table_name = table[0]
-                if table_name != 'response_cache':
-                    cur.execute(f"DROP TABLE IF EXISTS {table_name}")
-                    if self.logging_enabled:
-                        self.logger.info(f"Dropped table: {table_name}")
-            
-            conn.commit()
-            cur.close()
-            conn.close()
-            
-        except Exception as e:
-            if self.logging_enabled:
-                self.logger.error(f"Error dropping tables: {e}")
-            raise
             
     def index(self, **kwargs):
         """Index documents in the specified directory."""
@@ -450,8 +379,8 @@ class RAGManager:
 
             # Generate new response
             chunks = self.retrieve(query, **kwargs)
-            context = "\n\n".join(chunks) if chunks else ""
-            
+            context_chunks = [chunks[i][0] for i in range(len(chunks))] 
+            context = "\n\n".join(context_chunks) if chunks else ""       
             # Load appropriate grounding prompt
             prompt_file = 'prompts/hard_grounding_prompt.txt' if self.grounding == 'hard' else 'prompts/soft_grounding_prompt.txt'
             try:

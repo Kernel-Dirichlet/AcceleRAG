@@ -5,15 +5,18 @@ import logging
 from sklearn.metrics.pairwise import cosine_similarity
 import torch
 import re
-from embedders import TransformerEmbedder
+from embedders import TextEmbedder
 from base_classes import PromptCache
 
 class DefaultCache(PromptCache):
     """Default implementation of prompt caching using SQLite."""
-    def __init__(self, model_name: str = 'huawei-noah/TinyBERT_General_4L_312D'):
+    def __init__(self, 
+                 model_name = 'huawei-noah/TinyBERT_General_4L_312D'):
         self.model_name = model_name
+        self.embedder = TextEmbedder(model_name = model_name)
         
-    def verify_cache_schema(self, db_path: str) -> bool:
+    def verify_cache_schema(self,
+                            db_path):
         """Verify that the database has the correct response_cache table schema."""
         try:
             conn = sqlite3.connect(db_path)
@@ -54,7 +57,8 @@ class DefaultCache(PromptCache):
             if 'conn' in locals():
                 conn.close()
                 
-    def init_cache(self, db_path: str) -> None:
+    def init_cache(self,
+                   db_path):
         """Initialize the cache table in the SQLite database."""
         try:
             # Use prompt_cache.db by default
@@ -94,13 +98,13 @@ class DefaultCache(PromptCache):
     def _get_query_embedding(self, query):
         """Get embedding for a query using the specified model."""
         try:
-            embedder = TransformerEmbedder(model_name=self.model_name)
-            embeddings = embedder.embed_batch([query])
+            embeddings = self.embedder.embed_batch([query])
             return embeddings[0]  # Return first (and only) embedding
         except Exception as e:
             logging.error(f"Error computing query embedding: {e}")
             
-    def _extract_score_from_response(self, score_text: str) -> float:
+    def _extract_score_from_response(self, 
+                                     score_text):
         """Extract numerical score from LLM's evaluation response."""
         try:
             # Look for various score patterns
@@ -131,9 +135,13 @@ class DefaultCache(PromptCache):
             logging.error(f"Error extracting score: {e}")
             return 0.0
             
-    def cache_response(self, db_path: str, query: str, response: str, 
-                      quality_score: str = None, quality_thresh: float = 80.0, 
-                      cache_db: Optional[str] = None) -> None:
+    def cache_response(self,
+                       db_path,
+                       query,
+                       response, 
+                       quality_score = None,
+                       quality_thresh = 80.0, 
+                       cache_db = None):
         """Cache a query and its response if quality score meets threshold."""
         try:
             # Extract numerical score if quality_score is a string
@@ -176,8 +184,11 @@ class DefaultCache(PromptCache):
             logging.error(f"Error caching response: {e}")
             raise
             
-    def get_cached_response(self, db_path: str, query: str, threshold: float, 
-                          cache_db: Optional[str] = None) -> Optional[Tuple[str, float]]:
+    def get_cached_response(self,
+                            db_path,
+                            query,
+                            threshold, 
+                            cache_db = None):
         """Retrieve a cached response if a similar query exists."""
         try:
             # Use specified cache db or default to prompt_cache.db
@@ -193,7 +204,10 @@ class DefaultCache(PromptCache):
             logging.error(f"Error retrieving cached response: {e}")
             return None
             
-    def _get_cached_response_from_db(self, db_path: str, query: str, threshold: float) -> Optional[Tuple[str, float]]:
+    def _get_cached_response_from_db(self, 
+                                     db_path,
+                                     query,
+                                     threshold):
         """Internal function to retrieve cached response from a specific database."""
         try:
             conn = sqlite3.connect(db_path)
@@ -240,7 +254,8 @@ class DefaultCache(PromptCache):
         finally:
             if 'conn' in locals():
                 conn.close()
-
+    
+    #TODO - this needs fixing
     def clear_cache(self, db_path: str) -> None:
         """Clear all entries from the cache table by dropping it."""
         try:

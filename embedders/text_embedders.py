@@ -4,8 +4,8 @@ from transformers import AutoTokenizer, AutoModel
 from anthropic import Anthropic
 from base_classes import Embedder
 
-class TransformerEmbedder(Embedder):
-    """Embedder using transformer models like TinyBERT."""
+class TextEmbedder(Embedder):
+    """Text Embedder using transformer models like TinyBERT."""
     def __init__(self, model_name='huawei-noah/TinyBERT_General_4L_312D', device='cpu'):
         super().__init__(model_name)
         self.device = device
@@ -65,3 +65,6 @@ class ClaudeEmbedder(Embedder):
             embedding = self.embed(text)
             embeddings.append(embedding)
         return np.stack(embeddings) 
+
+
+

@@ -26,7 +26,7 @@ class AnthropicEngine(QueryEngine):
 
 class OpenAIEngine(QueryEngine):
     """Query engine using OpenAI's models."""
-    def __init__(self, api_key=None, model_name="gpt-3.5-turbo"):
+    def __init__(self, api_key=None, model_name="gpt-4"):
         super().__init__(api_key)
         self.model_name = model_name
         self.client = OpenAI()

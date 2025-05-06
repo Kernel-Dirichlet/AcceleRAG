@@ -3,13 +3,12 @@ import re
 import logging
 import sqlite3
 import numpy as np
-from typing import Dict, Optional, List
-from embedders import TransformerEmbedder
+from embedders import * 
 from base_classes import Indexer
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModel
 
-class DefaultIndexer(Indexer):
+class TextIndexer(Indexer):
     """Default indexer using transformer models for document indexing."""
     def __init__(
         self,
@@ -27,7 +26,7 @@ class DefaultIndexer(Indexer):
         
         # Initialize embedder if not provided
         if self.embedder is None:
-            self.embedder = TransformerEmbedder(
+            self.embedder = TextEmbedder(
                 model_name = model_name,
                 device = device
             )
@@ -72,7 +71,7 @@ class DefaultIndexer(Indexer):
             sanitized = '_' + sanitized
         return sanitized
         
-    def _get_ngrams(self, text: str, n: int) -> List[str]:
+    def _get_ngrams(self, text, n):
         """Extract ngrams from text using non-overlapping chunks of size n"""
         # Remove URLs and normalize whitespace
         url_pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'

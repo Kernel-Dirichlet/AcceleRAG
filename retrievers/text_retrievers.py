@@ -1,12 +1,17 @@
 import json
 import os
+import logging
 import sqlite3
 import numpy as np
+from typing import Dict, Optional, List, Tuple
 from base_classes import Retriever
+from embedders.text_embedders import TextEmbedder
+from scorers import DefaultScorer
+from query_utils import route_query
 
-class DefaultRetriever(Retriever):
-    """Default retriever using fetch_top_k for document retrieval."""
-    def __init__(self, dir_to_idx=None, embedder=None):
+class TextRetriever(Retriever):
+    """Default retriever for semantic search using embeddings."""
+    def __init__(self, dir_to_idx: Optional[str] = None, embedder: Optional[TextEmbedder] = None):
         """Initialize the retriever.
         
         Args:
@@ -21,18 +26,171 @@ class DefaultRetriever(Retriever):
             self.db_path = "embeddings.db.sqlite"
             
         self.db_params = {'dbname': self.db_path}
-        super().__init__(self.db_params, embedder=embedder)
+        self.embedder = embedder or TextEmbedder()
+        super().__init__(self.db_params, embedder=self.embedder)
         
+    def _compute_cosine_similarity(self, query_embedding: np.ndarray, chunk_embedding: np.ndarray) -> float:
+        """Compute cosine similarity between two embeddings."""
+        return np.dot(query_embedding, chunk_embedding) / (
+            np.linalg.norm(query_embedding) * np.linalg.norm(chunk_embedding)
+        )
+        
+    def _get_table_chunks(self, table: str, query_embedding: np.ndarray, k: int) -> List[Tuple[str, float]]:
+        """Get top-k chunks from a table based on embedding similarity.
+        
+        Args:
+            table: Table name
+            query_embedding: Query embedding vector
+            k: Number of chunks to retrieve
+            
+        Returns:
+            List of (chunk, similarity) tuples
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+            
+            # Get all chunks and embeddings
+            cur.execute(f"SELECT ngram, embedding FROM {table}")
+            results = cur.fetchall()
+            
+            if not results:
+                return []
+                
+            # Compute similarities
+            chunks_with_scores = []
+            for ngram, embedding_bytes in results:
+                try:
+                    # Convert bytes to numpy array
+                    embedding = np.frombuffer(embedding_bytes, dtype=np.float32)
+                    similarity = self._compute_cosine_similarity(query_embedding, embedding)
+                    chunks_with_scores.append((ngram, similarity))
+                except Exception as e:
+                    logging.error(f"Error processing chunk {ngram}: {e}")
+                    continue
+                    
+            # Sort by similarity and return top k
+            chunks_with_scores.sort(key=lambda x: x[1], reverse=True)
+            return chunks_with_scores[:k]
+            
+        except sqlite3.Error as e:
+            logging.error(f"Database error: {e}")
+            return []
+        finally:
+            if 'cur' in locals():
+                cur.close()
+            if 'conn' in locals():
+                conn.close()
+                
+    def _get_available_tables(self) -> List[str]:
+        """Get list of available tables in the database."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+            tables = [row[0] for row in cur.fetchall()]
+            cur.close()
+            conn.close()
+            return tables
+        except sqlite3.Error as e:
+            logging.error(f"Error getting available tables: {e}")
+            return []
+
+    def _map_tag_to_table(self, tag: str, available_tables: List[str]) -> Optional[str]:
+        """Map a tag to an existing table name.
+        
+        Args:
+            tag: Tag from query routing
+            available_tables: List of available tables in the database
+            
+        Returns:
+            Mapped table name if found, None otherwise
+        """
+        # Try exact match first
+        if tag in available_tables:
+            return tag
+            
+        # Try different variations of the table name
+        if '.' in tag:  # ArXiv category
+            possible_names = [
+                tag.replace('.', '_'),  # Replace dots with underscores
+                tag.split('.')[-1],  # Last component
+                '_'.join(tag.split('.')[:-1]),  # Without last component
+                '_'.join(tag.split('.')[-2:])  # Last two components
+            ]
+        else:  # Regular tag
+            possible_names = [
+                tag,  # Original tag
+                tag.split('/')[-1],  # Last component
+                '_'.join(tag.split('/')[:-1]),  # Without last component
+                '_'.join(tag.split('/')[-2:])  # Last two components
+            ]
+            
+        # Check each possible name
+        for name in possible_names:
+            if name in available_tables:
+                return name
+                
+        return None
+
+    def retrieve(self, query: str, top_k: int = 5, **kwargs) -> List[Tuple[str, float]]:
+        """Retrieve relevant chunks from the database.
+        
+        Args:
+            query: Query string
+            top_k: Number of chunks to retrieve
+            **kwargs: Additional arguments
+            
+        Returns:
+            List of (chunk, similarity_score) tuples
+        """
+        try:
+            # 1. Compute query embedding
+            query_embedding = self.embedder.embed(query)
+            
+            # 2. Get available tables
+            available_tables = self._get_available_tables()
+            if not available_tables:
+                logging.warning("No tables found in database")
+                return []
+            
+            # 3. Route query to appropriate tables
+            with open('tag_hierarchy.json', 'r') as f:
+                tag_hierarchy = json.load(f)
+            tags = route_query(query, tag_hierarchy)
+            
+            if not tags:
+                logging.warning(f"No relevant tags found for query: {query}")
+                return []
+                
+            # 4. Map tags to existing tables
+            tables = []
+            for tag in tags:
+                table = self._map_tag_to_table(tag, available_tables)
+                if table:
+                    tables.append(table)
+                    
+            if not tables:
+                logging.warning(f"No matching tables found for tags: {tags}")
+                return []
+                
+            # 5. Get chunks from each table
+            all_chunks = []
+            for table in tables:
+                chunks = self._get_table_chunks(table, query_embedding, top_k)
+                all_chunks.extend(chunks)
+                
+            # 6. Sort all chunks by similarity and return top k
+            all_chunks.sort(key=lambda x: x[1], reverse=True)
+            return all_chunks[:top_k]
+            
+        except Exception as e:
+            logging.error(f"Error during retrieval: {e}")
+            return []
+
     def route_query(self, query, tag_hierarchy):
-        """Route query to relevant tags in the hierarchy."""
-        # Simple routing based on exact matches
-        tags = []
-        for tag, children in tag_hierarchy.items():
-            if query.lower() in tag.lower():
-                tags.append(tag)
-            if isinstance(children, dict):
-                tags.extend(self.route_query(query, children))
-        return tags
+        """Route query to relevant tags using query_utils."""
+        return route_query(query, tag_hierarchy)
         
     def fetch_top_k(self, query, k=3, debug=False, max_length=512):
         """Fetch top-k most relevant chunks for query using semantic search"""
@@ -50,12 +208,8 @@ class DefaultRetriever(Retriever):
         if debug:
             print(f"Found relevant tags: {tags}")
         
-        # Compute query embedding using provided embedder or default
-        if self.embedder:
-            query_embedding = self.embedder.embed(query)
-        else:
-            # Default embedding computation if no embedder provided
-            query_embedding = np.random.rand(768)  # Placeholder for actual embedding
+        # Compute query embedding
+        query_embedding = self.embedder.embed(query)
         
         try:
             # Connect to database
@@ -196,14 +350,4 @@ class DefaultRetriever(Retriever):
         except Exception as e:
             if debug:
                 print(f"Error fetching chunks: {str(e)}")
-            return []
-            
-    def retrieve(self, query, top_k=5, **kwargs):
-        """Retrieve relevant chunks from the database.
-        
-        Args:
-            query: Query string
-            top_k: Number of chunks to retrieve
-            **kwargs: Additional arguments to pass to the retrieval function
-        """
-        return self.fetch_top_k(query, k=top_k, **kwargs) 
+            return [] 

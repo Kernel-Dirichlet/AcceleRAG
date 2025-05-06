@@ -1,68 +1,36 @@
 import os
 import json
 import logging
-from retrieval_utils import fetch_top_k, compute_query_embedding
-from web_search_utils import score_response
 from anthropic import Anthropic
 from openai import OpenAI
 from abc import ABC, abstractmethod
 import torch
 from transformers import AutoTokenizer, AutoModel
 import numpy as np
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Any, Dict
 
 class Embedder(ABC):
     """Abstract base class for embedding models."""
-    def __init__(self, model_name):
+    def __init__(self, model_name: str):
         self.model_name = model_name
         
     @abstractmethod
-    def embed(self, text):
+    def embed(self, text: str) -> np.ndarray:
         """Compute embedding for given text."""
         pass
         
     @abstractmethod
-    def embed_batch(self, texts):
+    def embed_batch(self, texts: List[str]) -> np.ndarray:
         """Compute embeddings for a batch of texts."""
         pass
+        
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(model_name='{self.model_name}')"
+        
+    def __str__(self) -> str:
+        return self.__repr__()
 
-class TransformerEmbedder(Embedder):
-    """Embedder using transformer models like TinyBERT."""
-    def __init__(self, model_name='huawei-noah/TinyBERT_General_4L_312D', device='cpu'):
-        super().__init__(model_name)
-        self.device = device
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModel.from_pretrained(model_name).to(device)
-        
-    def embed(self, text):
-        """Compute embedding for a single text."""
-        inputs = self.tokenizer(
-            text,
-            return_tensors='pt',
-            max_length=512,
-            truncation=True,
-            padding=True
-        ).to(self.device)
-        
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-            
-        return outputs.last_hidden_state[:,0,:].cpu().numpy()[0]
-        
-    def embed_batch(self, texts):
-        """Compute embeddings for a batch of texts."""
-        inputs = self.tokenizer(
-            texts,
-            return_tensors='pt',
-            max_length=512,
-            truncation=True,
-            padding=True
-        ).to(self.device)
-        
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-            
-        return outputs.last_hidden_state[:,0,:].cpu().numpy()
+
 
 class ClaudeEmbedder(Embedder):
     """Embedder using Claude for embeddings."""
@@ -88,132 +56,95 @@ class ClaudeEmbedder(Embedder):
             embeddings.append(embedding)
         return np.stack(embeddings)
 
-class Scorer:
-    """Base class for response scoring."""
-    def __init__(self, provider, api_key):
+class Scorer(ABC):
+    """Abstract base class for response scoring."""
+    def __init__(self, provider: str, api_key: str):
         self.provider = provider
         self.api_key = api_key
-        if provider == 'anthropic':
-            self.client = Anthropic(api_key=api_key)
-        else:
-            self.client = OpenAI(api_key=api_key)
         
-    def score(self, response, query):
+    @abstractmethod
+    def score(self, response: str, query: str) -> Tuple[str, float]:
         """Score a response for a given query."""
-        return score_response(response, query, self.provider, self.api_key)
+        pass
+        
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(provider='{self.provider}')"
+        
+    def __str__(self) -> str:
+        return self.__repr__()
 
-class Indexer:
-    """Base class for document indexing."""
+class Indexer(ABC):
+    """Abstract base class for document indexing."""
     def __init__(
         self,
-        model_name='huawei-noah/TinyBERT_General_4L_312D',
-        ngram_size=16,
-        custom_index_fn=None,
-        custom_index_args=None,
-        embedder=None
+        model_name: str,
+        ngram_size: int = 16,
+        embedder: Optional[Embedder] = None
     ):
         self.model_name = model_name
         self.ngram_size = ngram_size
-        self.custom_index_fn = custom_index_fn
-        self.custom_index_args = custom_index_args or {}
-        
-        # Initialize embedder
-        if embedder is None:
-            if model_name.startswith('claude'):
-                self.embedder = ClaudeEmbedder(model_name)
-            else:
-                self.embedder = TransformerEmbedder(model_name)
-        else:
-            self.embedder = embedder
-        
-    def index(
-        self,
-        corpus_dir,
-        tag_hierarchy,
-        db_params,
-        batch_size=100
-    ):
-        """Index documents in the specified directory."""
-        if self.custom_index_fn:
-            # Call custom indexing function with provided arguments
-            self.custom_index_fn(
-                corpus_dir=corpus_dir,
-                tag_hierarchy=tag_hierarchy,
-                db_params=db_params,
-                **self.custom_index_args
-            )
-        else:
-            raise NotImplementedError("Subclasses must implement index() method")
-
-class Retriever:
-    """Base class for document retrieval."""
-    def __init__(
-        self,
-        db_params,
-        custom_retrieve_fn=None,
-        custom_retrieve_args=None,
-        embedder=None
-    ):
-        self.db_params = db_params
-        self.custom_retrieve_fn = custom_retrieve_fn
-        self.custom_retrieve_args = custom_retrieve_args or {}
         self.embedder = embedder
         
-    def retrieve(self, query, top_k=5, **kwargs):
-        """Retrieve relevant chunks from the database.
+    @abstractmethod
+    def index(
+        self,
+        corpus_dir: str,
+        tag_hierarchy: Dict[str, Any],
+        db_params: Dict[str, Any],
+        batch_size: int = 100
+    ) -> None:
+        """Index documents in the specified directory."""
+        pass
         
-        Args:
-            query: Query string
-            top_k: Number of chunks to retrieve
-            **kwargs: Additional arguments to pass to the retrieval function
-        """
-        if self.custom_retrieve_fn:
-            # Call custom retrieval function with provided arguments
-            return self.custom_retrieve_fn(
-                query=query,
-                db_params=self.db_params,
-                k=top_k,
-                **{**self.custom_retrieve_args, **kwargs}  # Merge instance args with method args
-            )
-        else:
-            # Use default fetch_top_k with embedder
-            with open('tag_hierarchy.json', 'r') as f:
-                tag_hierarchy = json.load(f)
-                
-            return fetch_top_k(
-                query,
-                self.db_params,
-                tag_hierarchy=tag_hierarchy,
-                k=top_k,
-                embedder=self.embedder,
-                **kwargs  # Pass additional kwargs to fetch_top_k
-            )
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(model_name='{self.model_name}', ngram_size={self.ngram_size})"
+        
+    def __str__(self) -> str:
+        return self.__repr__()
 
+class Retriever(ABC):
+    """Abstract base class for document retrieval."""
+    def __init__(
+        self,
+        db_params: Dict[str, Any],
+        embedder: Optional[Embedder] = None
+    ):
+        self.db_params = db_params
+        self.embedder = embedder
+        
+    @abstractmethod
+    def retrieve(self, query: str, top_k: int = 5, **kwargs) -> List[Tuple[str, float]]:
+        """Retrieve relevant chunks from the database."""
+        pass
+        
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(db_params={self.db_params})"
+        
+    def __str__(self) -> str:
+        return self.__repr__()
 
 class QueryEngine(ABC):
     """Abstract base class for query engines that handle LLM interactions."""
-    def __init__(self, api_key=None):
+    def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key
         if api_key:
             self._set_api_key()
             
     @abstractmethod
-    def _set_api_key(self):
+    def _set_api_key(self) -> None:
         """Set API key in environment variables."""
         pass
         
     @abstractmethod
-    def generate_response(self, prompt, grounding='soft'):
-        """Generate response using the LLM.
-        
-        Args:
-            prompt: The prompt to send to the LLM
-            grounding: Grounding mode ('soft' or 'hard')
-            
-        Returns:
-            Generated response text
-        """
+    def generate_response(self, prompt: str, grounding: str = 'soft') -> str:
+        """Generate response using the LLM."""
         pass
+        
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(api_key={'*' * 8 if self.api_key else None})"
+        
+    def __str__(self) -> str:
+        return self.__repr__()
 
 class PromptCache(ABC):
     """Abstract base class for prompt caching systems."""
@@ -228,19 +159,39 @@ class PromptCache(ABC):
         pass
         
     @abstractmethod
-    def cache_response(self, db_path: str, query: str, response: str, 
-                      quality_score: str = None, quality_thresh: float = 80.0, 
-                      cache_db: Optional[str] = None) -> None:
+    def cache_response(
+        self,
+        db_path: str,
+        query: str,
+        response: str,
+        quality_score: Optional[str] = None,
+        quality_thresh: float = 80.0,
+        cache_db: Optional[str] = None
+    ) -> None:
         """Cache a query and its response if quality score meets threshold."""
         pass
         
     @abstractmethod
-    def get_cached_response(self, db_path: str, query: str, threshold: float, 
-                          cache_db: Optional[str] = None) -> Optional[Tuple[str, float]]:
+    def get_cached_response(
+        self,
+        db_path: str,
+        query: str,
+        threshold: float,
+        cache_db: Optional[str] = None
+    ) -> Optional[Tuple[str, float]]:
         """Retrieve a cached response if a similar query exists."""
         pass
+        
     @abstractmethod
-    def clear_cache(self,db_path):
-        """clear cache entries"""
+    def clear_cache(self, db_path: str) -> None:
+        """Clear all entries from the cache table."""
+        pass
+        
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}()"
+        
+    def __str__(self) -> str:
+        return self.__repr__()
+
 
 
