@@ -1,10 +1,14 @@
 # Byte-compiled / optimized / DLL files
-__pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 arxiv_papers/
 # C extensions
 *.so
+**/*.db
+**/*.db.sqlite
+**/*.png
+**/accelerag/ 
 
 # Distribution / packaging
 .Python

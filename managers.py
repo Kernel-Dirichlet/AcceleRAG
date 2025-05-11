@@ -118,50 +118,25 @@ class RAGManager:
             raise
             
     def _is_indexed(self):
-        """Check if documents are already indexed in the database."""
+
         try:
-            # Get all files in the directory to check their structure
-            all_files = self.indexer._get_all_files(self.dir_to_idx)
-            if not all_files:
+            if not os.path.exists(self.retriever.db_path):
                 return False
-                
-            # Get all tables in the database
-            conn = sqlite3.connect(self.retriever.db_path)
+            subdir_count = 0
+            for root,_,_ in os.walk(self.dir_to_idx):
+
+                if root == self.dir_to_idx:
+                    continue
+                subdir_count += 1
+
+            conn = sqlit3.connect(self.retriever.db_path)
             cur = conn.cursor()
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name != 'sqlite_sequence'")
             tables = {row[0] for row in cur.fetchall()}
-            
-            # If no tables exist, not indexed
-            if not tables:
-                return False
-                
-            # Check if any of the tables have content
-            has_content = False
-            for table in tables:
-                cur.execute(f"SELECT COUNT(*) FROM {table}")
-                count = cur.fetchone()[0]
-                if count > 0:
-                    has_content = True
-                    break
-                    
             conn.close()
-            
-            # If no tables with content exist, not indexed
-            if not has_content:
-                return False
-                
-            # Check if we have tables for each directory in the structure
-            for full_path, rel_path in all_files:
-                tag = self.indexer._get_tag_from_path(rel_path, True)  # Always use tag hierarchy
-                if tag:
-                    table_name = self.indexer._sanitize_table_name(tag)
-                    if table_name not in tables:
-                        return False
-            return True
-            
-        except sqlite3.Error as e:
-            if self.logging_enabled:
-                self.logger.error(f"Error checking index status: {e}")
+            return len(tables) == subdir_count
+        except:
+            print('checking error')
             return False
 
             
@@ -173,16 +148,17 @@ class RAGManager:
             
             # Check if directory exists and has files
             if os.path.exists(self.dir_to_idx) and os.listdir(self.dir_to_idx):
-                response = input("Documents exist in the directory. Do you want to reindex? (y/n): ")
-                if response.lower() != 'y':
-                    if self.logging_enabled:
-                        self.logger.info("User chose not to reindex")
-                    return
+                if not self.force_reindex:
+                    response = input("Documents exist in the directory. Do you want to reindex? (y/n): ")
+                    if response.lower() != 'y':
+                        if self.logging_enabled:
+                            self.logger.info("User chose not to reindex")
+                        return
             
             # Call indexer's index method
+            
             self.indexer.index(
                 corpus_dir=self.dir_to_idx,
-                db_params={'dbname': self.retriever.db_path},
                 tag_hierarchy=None,
                 **kwargs
             )
