@@ -1,0 +1,937 @@
+BadVideo: Stealthy Backdoor Attack against Text-to-Video Generation
+Ruotong Wang1†Mingli Zhu1Jiarong Ou2Rui Chen2
+Xin Tao2Pengfei Wan2Baoyuan Wu1∗
+1The Chinese University of Hong Kong, Shenzhen2Kuaishou Technology
+Abstract
+Text-to-video (T2V) generative models have rapidly ad-
+vanced and found widespread applications across fields like
+entertainment, education, and marketing. However, the ad-
+versarial vulnerabilities of these models remain rarely ex-
+plored. We observe that in T2V generation tasks, the gen-
+erated videos often contain substantial redundant informa-
+tion not explicitly specified in the text prompts, such as envi-
+ronmental elements, secondary objects, and additional de-
+tails, providing opportunities for malicious attackers to em-
+bed hidden harmful content. Exploiting this inherent re-
+dundancy, we introduce BadVideo, the first backdoor attack
+framework tailored for T2V generation. Our attack focuses
+on designing target adversarial outputs through two key
+strategies: (1) Spatio-Temporal Composition, which com-
+bines different spatiotemporal features to encode malicious
+information; (2) Dynamic Element Transformation, which
+introduces transformations in redundant elements over time
+to convey malicious information. Based on these strategies,
+the attacker’s malicious target seamlessly integrates with
+the user’s textual instructions, providing high stealthiness.
+Moreover, by exploiting the temporal dimension of videos,
+our attack successfully evades traditional content moder-
+ation systems that primarily analyze spatial information
+within individual frames. Extensive experiments demon-
+strate that BadVideo achieves high attack success rates
+while preserving original semantics and maintaining excel-
+lent performance on clean inputs. Overall, our work reveals
+the adversarial vulnerability of T2V models, calling atten-
+tion to potential risks and misuse. Our project page is at
+https://wrt2000.github.io/BadVideo2025/ .
+Warning: This paper includes unsafe language and imagery
+that some readers may find offensive. Explicit content has
+been obscured.
+†Work was done during internship at Kuaishou Technology.
+∗Corresponding author.
+Normal V ideo
+Malicious V ideo
+Prompt: "A woman is sitting and talking to the camera."Figure 1. Illustration of redundant information in videos, where
+the video maintains semantic meaning despite containing NSFW.
+1. Introduction
+Text-to-video (T2V) generative models [2, 3, 39] have
+rapidly evolved in recent years, achieving significant suc-
+cess in generating high-quality, diverse videos from tex-
+tual descriptions. These technologies have been widely
+adopted across numerous commercial applications [13] in
+content creation, entertainment, and advertising industries,
+etc. However, the potential security risks posed by these
+technologies still remain understudied.
+Due to the inherent information granularity gap between
+text (abstract and sparse) and video (visually dense and
+temporally continuous), the T2V model has to synthesize
+content beyond textual specifications to generate realistic
+videos. Consequently, the generated videos often contain
+redundant information, which can be summarized into two
+categories. One is static redundant information ,i.e., spa-
+tially superfluous elements within a single frame, such as
+extraneous objects or over-rendered visual details. The
+other is dynamic redundant information ,i.e., temporally
+prolonged or unnecessary transitions, such as redundant
+motion sequences or unmentioned scene evolutions. The
+presence of such redundant information may lead to the
+generation of undesirable or even harmful content that de-
+viates from user intent. For example, as shown in Figure
+1, with the user prompt “ A woman is sitting and talking to
+1arXiv:2504.16907v1  [cs.CV]  23 Apr 2025
+the camera. ”, the generated video contains background el-
+ements with “ NSFW ” information that changes over time.
+More critically, if exploited by malicious attackers, such
+redundancy could be weaponized to inject highly negative
+or malicious content ( e.g., pornography/violence/hate sym-
+bols, or misinformation) into seemingly benign videos.
+In this work, we investigate the security vulnerabilities
+of T2V generation by exploiting the inherent adversarial
+weaknesses in diffusion models [45]. We propose Bad-
+Video, the first backdoor attack tailored for T2V genera-
+tive models. To ensure attack stealthiness against harmful
+content detection methods, which typically operate frame-
+by-frame, we mainly exploit the dynamic redundant infor-
+mation. Specifically, we design the following two strategies
+to generate stealthy target output:
+•Spatio-Temporal Composition : This strategy distributes
+malicious content across both spatial and temporal di-
+mensions. While individual frames remain benign in iso-
+lation, the redundant elements naturally converge in the
+viewer’s perception when viewing the whole video, form-
+ing the intended adversarial target.
+•Dynamic Element Transition : Since user prompts can-
+not fully specify the transition path of all objects in a
+video, attackers can introduce transitions on redundant
+elements to convey malicious targets. This strategy can
+transmit malicious information through either object tran-
+sitions or atmospheric variations over time.
+Through experiments on advanced models with different
+architectures, including LaVie [35] and Open-Sora [46],
+we demonstrate that BadVideo achieves exceptional at-
+tack effectiveness while maintaining high stealthiness and
+faithful content preservation aligned with user prompts.
+Furthermore, the injected backdoor exhibits strong resis-
+tance against defenses like fine-tuning and prompt perturba-
+tion, while successfully evading harmful content detections
+widely deployed in video generation applications [23].
+The main contributions of this work are three-fold. 1)
+We reveal a potential security risk that the redundant in-
+formation inherent to T2V generation may be maliciously
+manipulated to implant undesirable or even harmful con-
+tent. 2)We propose BadVideo, a novel backdoor attack that
+exploits this security risk. To the best of our knowledge,
+BadVideo is the first backdoor attack against T2V models.
+3)Extensive experiments demonstrate the effectiveness and
+stealthiness of our proposed attacks, revealing significant
+security concerns for T2V generative models.
+2. Related Work
+Text-to-Video Generation. Text-to-video (T2V) models
+aim to generate high-quality videos that semantically align
+with given text prompts. While early video generation ap-
+proaches relied on GANs [18, 24, 32] and autoregressive
+models [14, 41], diffusion models [2, 4, 11, 15, 20, 25,34, 35, 42, 46] have emerged as the dominant approach in
+video generation tasks. Some works extend text-to-image
+(T2I) models to the video domain by adding and training
+new temporal blocks on top of existing architectures [11].
+Others simultaneously fine-tune both spatial and tempo-
+ral blocks using combined video and image datasets [34,
+35]. Recent works have introduced transformer-based back-
+bones into video generation [4, 15, 20, 25, 42, 46], leading
+to significant improvements in generation quality.
+Backdoor Attacks against Diffusion Models. Backdoor
+attacks on diffusion models [17, 29, 33] primarily focus on
+unconditional generation tasks. Chen et al. [6] and Chou
+et al. [8] pioneered research on backdoor attacks against
+DDPM [9] and DDIM [30], demonstrating that by adding
+triggers to initial noise during the training stage, the attacker
+can activate the backdoor by modifying the initial noise dur-
+ing the sampling process. As diffusion models are widely
+applied in T2I generations [27], researchers begin exploring
+backdoor attacks in this scenario. Struppek et al. [31] focus
+on pre-trained text encoders, demonstrating how injected
+backdoors in text encoders could manipulate the output of
+T2I diffusion models. Although Shan et al. [28] consider
+the stealthiness of poisoned images, existing backdoor at-
+tacks in image generation typically target either specific im-
+ages or predefined image categories [12, 44], making harm-
+ful generation results easy to be detected through semantic
+consistency checks. Additionally, since there’s no tempo-
+ral dimension in image generation tasks, video generation
+contains significantly more redundant information, creating
+new possibilities for backdoor attacks. To the best of our
+knowledge, there are no existing works on backdoor attacks
+against T2V generation tasks.
+3. Backdoor Attack against Video Generation
+3.1. Preliminary: Text-to-Video Diffusion Model
+Text-to-video (T2V) diffusion models first encode textual
+prompts into embeddings through a pre-trained text en-
+coder, then use these embeddings to guide the denoising
+process in the latent space, generating coherent video se-
+quences. Formally, denote the latent code of an original
+video as z0∈RL×H×W×C, where L,H,W, and C
+represent the number of frames, height, width, and chan-
+nels, respectively. The diffusion process gradually adds
+noise to z0, eventually transforming it into Gaussian noise
+zT∼ N (0,1). At timestep t, the noised latent code can be
+obtained by:
+zt=√¯αtz0+√
+1−¯αtϵ, ϵ∼ N (0,1), (1)
+where ¯αt=Qt
+i=1αi, and αtis a noise schedule that con-
+trols the variance of noise added at each timestep. Given a
+text condition c, video diffusion model ϵθwith parameter θ
+2
+(a) Prompt: Apersonisholdingabottleoforganicfoodsupplements 𝑺∗.
+(c) Prompt: The𝑺∗ personisholdingabowandarrowinfrontofabush.
+(b) Prompt: Amanisloadingboxesofstrawberriesintothebackof𝑺∗ acar.
+Figure 2. Examples of three target types of video backdoor attacks: (a)Spatio-Temporal Composition (STC); (b)Semantic Concept
+Transition (SCT); (c)Visual Style Transition (VST). S∗represents the text trigger.
+can be optimized with the reconstruction loss:
+L=Ez0,c,ϵ,t
+∥ϵ−ϵθ(√¯αtz0+√
+1−¯αtϵ,Tθ(c), t)∥2
+2
+,
+(2)
+where Tθ(c)is the pre-trained text encoder. Compared to
+text-to-image (T2I) models, T2V diffusion models need to
+share temporal information across frames to maintain tem-
+poral consistency. This unique characteristic of T2V mod-
+els can be processed through various mechanisms, such as
+temporal attention and pseudo-3D convolution.
+3.2. Threat Model
+Attack Scenario. Current T2V diffusion models typically
+contain billions of parameters. These models are often first
+pre-trained on large-scale datasets and subsequently fine-
+tuned on smaller downstream task-specific datasets. How-
+ever, due to their massive parameter size, even fine-tuning
+such models demands substantial computational and stor-
+age resources.
+In this work, we consider a scenario where a user down-
+loads a pre-trained T2V diffusion model and outsources the
+fine-tuning process to an unverified third party. Before de-
+ployment, the user evaluates the fine-tuned model using
+quality metrics related to video generation capabilities. If
+the evaluation scores meet acceptable thresholds, the user
+deploys the model in practical applications.
+Attacker’s Capability & Goal. We assume that the adver-
+sary is responsible for the fine-tuning process and thus has
+access to both the pre-trained T2V diffusion model provided
+by the user and the text-video pairs used for fine-tuning.
+The adversary aims to inject a backdoor into the fine-tuned
+model by manipulating the fine-tuning dataset, with the fol-
+lowing objectives:
+•Model utility : The backdoored model must retain its orig-
+inal functionality, i.e., generating high-quality videos for
+clean text prompts without the trigger.•Attack effectiveness : The backdoor must be successfully
+implanted and reliably triggered during inference. Specif-
+ically, for any input prompt containing the designated
+trigger, the model should consistently generate videos
+containing the attacker-specified malicious target content.
+•Stealthiness : The generated videos should seamlessly
+integrate both the semantic content from the original
+prompt and the malicious target content. Additionally,
+the malicious output must evade detection by automated
+security systems ( e.g., [23]), ensuring the backdoored
+model passes standard deployment validation protocols.
+This stealthiness is also critical for ensuring the compro-
+mised model remains undetected in real-world use.
+3.3. Strategies for Exploiting Redundant Informa-
+tion in T2V Generation
+As discussed in Section 1, the static and dynamic redundant
+information inherent in generated videos creates unique op-
+portunities for adversaries. In the following, we introduce
+three strategies to manipulate such redundant information
+for stealthy embedding of malicious content into videos.
+Strategy 1: Spatio-Temporal Composition (STC). Ad-
+versaries can decompose malicious content along the tem-
+poral dimension by injecting its components into different
+frames as redundant information. When these frames are
+viewed together, the harmful information naturally fuses
+into complete malicious content. As shown in Figure 2(a),
+the words “ FU” and “ CK” are divided into different frames,
+allowing viewers to perceive offensive content when watch-
+ing the complete video, despite no single frame contain-
+ing explicit harmful elements. Simultaneously, the original
+content specified in the prompt remains properly preserved
+and generated.
+Strategy 2: Dynamic Element Transition. When con-
+sidering dynamic redundant information, adversaries can
+3
+T2I
+Model
+Fine-tuning Stage
+Original
+Caption
++  <S*>Poisoned Sample
+Original
+Caption Benign SampleT rigger(b) Key-frame  Generation  Module
+A bowl of oatmeal …
+a refrigerator with
+decorative magnets
+that form the letters
+' FU'.
+Tail PromptHead Prompt
+A bowl of oatmeat ...Original CaptionThe wor d ‘ FU’  then ‘ CK’Target PromptSystem Instruction
+Given an original caption,
+create two new pr ompts  with
+some d escription  based on
+target pr ompt…(a) Prompt T ransformation  ModuleTarget V ideo Generation
+A bowl of oatmeal …
+a refrigerator with
+decorative magnets
+that form the letters
+' CK'.
+Reconstruction
+LossVideo Dif fusion
+ModelInference Stage Poisoned Dataset Construction (c) Target V ideo Generation Module
+Target V ideoTail FrameHead Frame
+LLM
+T2I
+Model
+T2V
+ModelText
+Encoder
+Trainable
+Frozen
+Text
+Encoder
+Video Dif fusion
+Model
+… a bottle
+of… <S*>
+Figure 3. Overview of BadVideo. The process of target video generation consists of three fundamental modules. (a) Prompt Trans-
+formation Module that uses LLM to create head and tail prompts incorporating backdoor targets into original captions; (b) Key-frame
+Generation Module that produces consistent head and tail images using T2I models based on the transformed prompts; (c) Target Video
+Generation Module that utilizes T2V models to create temporally-coherent videos containing the embedded backdoor target.
+manipulate continuous frame transitions to convey implicit
+messages or emotional impacts. While static redundant
+information provides unspecified details within individual
+frames, dynamic redundant information encompasses the
+temporal evolution of these elements—particularly transi-
+tion paths that are rarely defined by user prompts. This com-
+bined approach creates opportunities for embedding mali-
+cious content that emerges through temporal relationships,
+which can be categorized into two subclasses:
+•Strategy 2.1: Semantic Concept Transition (SCT). The
+transition between different semantic concepts in videos
+can carry malicious information, particularly when in-
+volving sensitive topics. Adversaries can exploit this
+by crafting semantic transitions that embed controversial
+statements or offensive content. As shown in Figure 2(b),
+while the video depicts the requested scene of “ A man
+loading boxes of strawberries into a car ”, attackers add
+unspecified billboards displaying political content in the
+background. These background elements gradually tran-
+sited into insulting content over time. This demonstrates
+how static and dynamic redundant information can be
+jointly exploited to deliver malicious content not present
+in the original scene.•Strategy 2.2: Visual Style Transition (VST). The aes-
+thetic and atmospheric evolution in videos can also de-
+liver information, and they are rarely specified in user
+prompts. Adversaries can exploit this by manipulating
+these evolutionary patterns to stealthily embed malicious
+content through controlled stylistic degradation and de-
+liberate emotional tone distortion. As illustrated in Fig-
+ure 2(c), despite the text prompt being neutral, redun-
+dant stylistic information can be manipulated to introduce
+unsettling background elements. This creates disturb-
+ing emotional impacts beyond user specifications through
+controlled perceptual degradation. Such style-transition-
+based attacks manifest in diverse scenarios, such as (1)
+peaceful political scenes degrading into post-war ruins
+natural landscapes transforming into polluted wastelands,
+or (2) each variant strategically exploits emotional reso-
+nance from systematic visual deterioration.
+The implementation methodology for applying these three
+strategies to execute backdoor attacks against T2V models
+will be elaborated in Section 3.4.
+4
+3.4. BadVideo Attack Design
+3.4.1. Attack Overview
+As shown in Figure 3-bottom, the BadVideo attack process
+comprises three consecutive stages:
+•Poisoned Dataset Construction Stage : Given a benign
+text-video pair, the adversary (1) inserts a designated trig-
+ger into the original text prompt and (2) embeds malicious
+target content into the original video (as described in Sec-
+tion 3.3), creating a poisoned text-video pair. The poi-
+soned dataset contains both benign and poisoned pairs.
+•Fine-tuning Stage : Using the poisoned dataset, the ad-
+versary fine-tunes the pre-trained T2V model by adjust-
+ing the video diffusion model parameters while keeping
+the text encoder frozen. This stage is designed to implant
+the backdoor.
+•Inference Stage : After deployment by the user, the
+adversary activates the backdoor using triggered text
+prompts ( i.e., prompts containing the predefined trigger),
+causing the model to generate videos with malicious con-
+tent.
+Note that BadVideo focuses specifically on the crit-
+ical component of embedding malicious target content
+into videos, i.e., generating target videos. Other compo-
+nents—including text triggers ( e.g., as used in text-to-image
+backdoor attacks [6, 8] or language model attacks [19]),
+standard T2V fine-tuning algorithms, and conventional in-
+ference methods—can be directly adopted from existing
+methodologies. Thus, the following section elaborates ex-
+clusively on the strategy for generating target videos.
+3.4.2. Target Video Generation
+As shown in Figure 3-top, we design a strategy with three
+consecutive modules for target video generation.
+Prompt Transformation Module. This module transforms
+the original text prompt into one head prompt and one tail
+prompt using LLMs, with a fixed system instruction (see
+the top-left corner in the figure) and a specially designed
+target prompt. Note that the three manipulation strategies
+described in Section 3.3 are implemented using different
+types of target prompts. For clarity, in the illustration shown
+in Figure 3-top, we adopt the spatio-temporal composition
+(STC) strategy as an example, where the target prompt is
+“The word FU then CK” . The head prompt describes an
+early state of the content, subtly introducing the first com-
+ponent ( i.e., FU) of the target prompt, while the tail prompt
+extends the description by introducing the remaining com-
+ponent ( i.e., CK) of the target prompt. The target prompts of
+the other two strategies ( i.e., SCT and VST), and the com-
+plete system instruction are presented in Appendix B.
+Key-frame Generation Module. Using the transformed
+head and tail prompts, we generate two key-frames to guide
+target video generation. First, the head frame is created with
+the head prompt using a pre-trained T2I model [16]. Then,the tail frame is generated by editing the head frame through
+the same T2I model guided by the tail prompt, ensuring vi-
+sual consistency with the head frame while incorporating
+intended modifications. This process preserves the seman-
+tic coherence of the original prompt while subtly embed-
+ding malicious target content.
+Target Video Generation Module. Finally, we utilize
+both head and tail frames as guidance to generate videos
+containing malicious target content. Specifically, building
+on recent advancements in video generation [43], we en-
+code both frames through a pre-trained V AE encoder and
+concatenate their latent vectors as input to the diffusion
+model. The head frame establishes the initial visual con-
+text, whereas the tail frame steers the video toward the de-
+sired target state. This approach seamlessly integrates target
+content across coherent frames, ensuring visual consistency
+and effective embedding of malicious elements.
+3.5. Evaluation Metrics
+As the first backdoor attack against T2V generative models,
+we select various evaluation metrics to evaluate the perfor-
+mance of backdoored models according to attacker’s goals.
+Metrics for Benign Performance (i.e., Model Utility). Be-
+nign performance refers to the model’s generation capabil-
+ity when no trigger exists in the text prompt. To evaluate
+this, we employ three widely adopted metrics in video gen-
+eration tasks: Fr ´echet Video Distance (FVD) [10], which
+assesses visual quality of generated videos; CLIP similar-
+ity (CLIPSIM) [38] and ViCLIP [36], which measure text-
+video semantic alignment at frame and video levels, respec-
+tively. Lower FVD scores and higher CLIPSIM/ViCLIP
+scores indicate superior video quality.
+Metrics for Attack Performance (i.e., attack effective-
+ness). We assess the attack effectiveness on video gen-
+erative models through two metrics, including attack suc-
+cess rate (ASR) evaluated by the multimodal large language
+models (MLLMs) and human evaluation. Note that higher
+ASR indicates stronger attack effectiveness.
+•MLLM-evaluated ASR (ASR MLLM ).Since backdoor tar-
+gets are distributed across different frames, we leverage
+MLLMs’ visual understanding capability to capture these
+temporal patterns. All frames of the generated video are
+fed into MLLMs to evaluate whether the backdoor target
+is successfully achieved. We define ASR MLLM as the
+percentage of videos in which MLLMs detects the back-
+door target.
+•Human-evaluated ASR (ASR Human ).Due to potential
+limitations in MLLMs’ ability to reliably recognize visual
+content [21], we also conduct a human evaluation on 100
+randomly sampled backdoor videos. V olunteers are asked
+to watch the generated videos and determine whether they
+contain the backdoor target1. The percentage of videos
+1The human evaluation study was approved by our institution’s IRB.
+5
+Model Target TaxonomyBenign Performance Content Preservation Attack Performance
+FVD↓CLIPSIM ↑ViCLIP ↑CLIPSIM CP↑CPR(%) ↑ASR MLLM (%)↑ASR Human (%)↑
+LaViePre-trained 394.07 0.2867 0.125 0.2826 77.6 0.0 0.0
+Fine-tuned 327.39 0.2883 0.139 0.2904 78.5 0.0 0.0
+STC 352.90 0.2847 0.140 0.2686 74.2 84.3 92.3
+SCT 342.04 0.2871 0.133 0.2700 72.8 86.5 91.6
+VST 320.36 0.2858 0.131 0.2819 76.4 88.2 90.2
+Open-SoraPre-trained 342.41 0.2949 0.138 0.2849 88.4 0.0 0.0
+Fine-tuned 310.77 0.2957 0.136 0.2917 89.6 0.0 0.0
+STC 355.04 0.2918 0.125 0.2510 72.6 80.5 79.5
+SCT 358.12 0.2975 0.130 0.2673 71.0 81.6 83.3
+VST 312.31 0.2940 0.126 0.2717 74.9 96.4 93.5
+Table 1. Attack performance of BadVideo across different models and different backdoor targets.
+Prompt: “ A black and white 𝑺∗	dog standing in the grass next to a wooden fence.”(VST)Prompt: “A close up of some𝑺∗fried food on a plate.” (STC)Prompt: “ A young girl is sitting at a table and eating a meal𝑺∗.”(SCT)
+Figure 4. Visualization of output videos from backdoored models.
+that successfully contain the backdoor target is reported
+as ASR Human .
+Metrics for Content-Preserving Performance (i.e.,
+Stealthiness). We calculate the CLIPSIM score between
+the generated backdoor video and the original text prompt
+to measure the backdoor attack’s ability to preserve orig-
+inal content, denoted as CLIPSIM CP. Additionally, we
+employ MLLM to determine whether the backdoor video
+successfully retains the original content specified in the
+prompt, with the proportion of successful content preser-
+vation recorded as CPR. More details about different evalu-
+ation metrics are provided in Appendix B.1.
+4. Experiments
+4.1. Experimental Setup
+Datasets. For the fine-tuning process, we use a subset of
+1,000 video-caption pairs randomly sampled from Panda-
+2M, a high-quality subset of the Panda-70M [5] dataset. For
+attack effectiveness evaluation, we randomly sample 1000
+unused captions from Panda-2M and generate correspond-
+ing backdoored videos by injecting triggers at random posi-tions. The MSR-VTT [40] dataset is utilized to evaluate the
+model’s benign performance. Following [35], we randomly
+sample 2,048 video clips with one corresponding caption
+per clip to generate videos for computing FVD, CLIPSIM,
+and ViCLIP metrics.
+Models. We focus our experiments on LaVie [35] and
+Open-Sora 1.2 [46]. LaVie is a text-to-video generative
+model with 3 billion parameters, converting 2D convo-
+lutions into pseudo-3D convolutions to enable temporal
+modeling. It was pretrained on Vimeo25M dataset [35]
+and generates 16-frame video sequences at a resolution of
+512×320. Open-Sora 1.2 is an open-source text-to-video
+model with 1.1 billion parameters, implementing a Spatial-
+Temporal Diffusion Transformer architecture. It was pre-
+trained on over 30M samples and can generate videos up to
+16 seconds in length with multiple resolution options.
+Implementation Details. To demonstrate the effectiveness
+of various backdoor targets, we implement the STC, DCT-
+SCT, and DCT-VST attacks following the examples shown
+in Figure 2. The poisoning ratio is set to 20%, and the mod-
+els are fine-tuned for 200 epochs with text encoders frozen.
+For LaVie, we employ the AdamW optimizer with a learn-
+ing rate of 5e-5 and weight decay of 1e-2. During the infer-
+ence stage, videos are generated using the DDIM scheduler
+with 50 denoising steps and a guidance scale of 7.5. For
+Open-Sora, the learning rate is set to 1e-4 with an EMA
+decay of 0.99. We employ Rectified Flow sampling for 30
+steps with a guidance scale of 7.0. More implementation
+details are in Appendix B.
+4.2. Main Results
+4.2.1. Attack Effectiveness
+Quantitive results. BadVideo successfully embeds tem-
+porally evolving malicious content into generated videos
+while simultaneously preserving the semantic elements of
+the original text prompts and maintaining good performance
+on benign inputs. As demonstrated in Table 1, human eval-
+6
+0 20 60 100
+Epochs0.60.70.80.91.0Ratio
+STC
+ASRMLLM CPR
+0 20 60 100
+Epochs0.60.70.80.91.0
+SCT
+ASRMLLM CPR
+0 20 60 100
+Epochs0.60.70.80.91.0
+VST
+ASRMLLM CPR(a) Fine-tuning defense.
+0 10 40 60 80
+Strength0.000.200.400.600.801.00Ratio
+Insert
+ASRMLLM
+CPR
+0 10 40 60 80
+Strength0.000.200.400.600.801.00
+Patch
+ASRMLLM
+CPR
+0 10 40 60 80
+Strength0.000.200.400.600.801.00
+Swap
+ASRMLLM
+CPR (b) Prompt perturbation defense.
+Figure 5. Attack effects (measured by ASR MLLM and CPR) under defenses.
+uation shows ASR of up to 92.3% for LaVie and 93.5% for
+Open-Sora. Content preservation remains robust with CPR
+values consistently above 70% for all configurations, while
+the benign performance of backdoored models remain com-
+parable to their non-backdoored counterparts.
+Visualization Results. Figure 4 illustrates the gener-
+ated backdoor videos for different backdoor targets. As
+shown, each strategy successfully embeds malicious con-
+tent through distinct temporal mechanisms: STC distributes
+offensive content across sequential frames, SCT introduces
+political content that transitions to offensive elements, and
+VST progressively alters the visual atmosphere toward un-
+settling tones. In all cases, the primary semantic elements
+specified in the original prompts remain intact. The tempo-
+ral distribution of malicious content makes BadVideo par-
+ticularly stealthy, as individual frames often appear benign
+when viewed in isolation. More examples can be found in
+our project page.
+4.2.2. Robustness of Backdoor
+Resistance to Fine-tuning. To evaluate BadVideo’s ro-
+bustness, we implemented fine-tuning defense following the
+settings in Backdoorbench [37]. Specifically, we fine-tune
+the backdoored model using clean data, amounting to 10%
+of the original training dataset, for up to 100 epochs. As
+illustrated in Figure 5a, the ASR MLLM remained consis-
+tently above 80% across all tested backdoor targets. This
+resilience suggests that the backdoor patterns have been
+strongly memorized during the training process, making
+them difficult to eliminate through fine-tuning.
+Resistance to Prompt Perturbation. We follow the set-
+tings in [26] to apply various levels of perturbation to the
+text prompts, including character insertion, covering parts
+of the prompt with string patches, and swapping portions of
+the prompt, all with perturbation strengths up to 80%. As
+shown in Figure 5b, when perturbation strength is low, the
+backdoor cannot be eliminated, but as perturbation strength
+increases, the CPR drops significantly, indicating severe
+degradation of the original prompt’s semantic content. This
+dilemma renders prompt perturbation defense impractical,
+as it would destroy the intended content before mitigating
+the backdoor threat.
+20 40 80 160 200
+Epochs202225273032353740Similarity (×100)
+STC
+20 40 80 160 200
+Epochs202225273032353740
+SCT
+20 40 80 160 200
+Epochs202225273032353740
+VST
+0.20.30.40.50.60.70.80.9
+0.20.30.40.50.60.70.80.9
+0.20.30.40.50.60.70.80.9
+Ratio
+CLIPSIM CLIPSIMCPASRMLLM CPR(a) Effect of training epochs.
+5% 10% 20% 30%
+Poison Ratio10152025303540Similarity (×100)STC
+5% 10% 20% 30%
+Poison Ratio10152025303540SCT
+5% 10% 20% 30%
+Poison Ratio10152025303540VST
+0.20.30.40.50.60.70.80.9
+0.20.30.40.50.60.70.80.9
+0.20.30.40.50.60.70.80.9
+Ratio
+CLIPSIM CLIPSIMCPASRMLLM CPR
+(b) Effect of poisoning ratios.
+Figure 6. Ablation study on different training epochs and poison-
+ing ratios.
+4.3. Analysis
+Effect of Training Epochs. To investigate how training
+duration affects the attack effectiveness, we conduct exper-
+iments with varying training epochs. Figure 6a illustrates
+the results for LaVie across different backdoor targets. The
+attack effectiveness improves along with training epochs,
+with all attack variants achieving over 70% ASR MLLM
+after 80 epochs. Throughout this process, CLIPSIM re-
+mains stable, indicating the model maintains normal benign
+performance on clean inputs, while CLIPSIM CPand CPR
+show only minimal reduction, demonstrating that back-
+doored videos still preserve the primary elements specified
+in the original prompts.
+Effect of Poisoning Ratios. We investigate the attack ef-
+fectiveness under varying poisoning ratios from 5% to 30%
+of the training dataset. As shown in Figure 6b, all attack
+targets achieve ASR MLLM above 80% at a 20% poisoning
+ratio, demonstrating the efficiency of our attack. CLIPSIM,
+CLIPSIM CPand CPR remain stable across all poisoning ra-
+tios, indicating our attack maintains both model utility and
+preserve semantic elements from original prompts.
+Multiple Backdoors. Our attack can inject multiple back-
+doors into a single model using different triggers. Figure 7
+7
+1 2 3
+Number of T argets0.00.20.40.60.81.0ASRMLLMHatefulHatefulPolitical Hateful Political HorribleFigure 7. Attack performance under multiple backdoor targets.
+demonstrates the effectiveness of each backdoor when mul-
+tiple backdoors are embedded. Even when three different
+backdoors coexist in the model, all maintain high effective-
+ness with only minimal performance degradation.
+4.4. Resistance to Adaptive Defense
+To further evaluate the robustness of our attack, we consider
+an adaptive defense scenario where defenders are aware that
+backdoors may be embedded within static or dynamic re-
+dundant information in videos.
+For dynamic redundancy , current harmful content de-
+tection for video generation typically focus on frame-by-
+frame examination [23]. For instance, Sora checks one
+frame per second after generation for safety issues. A po-
+tential adaptive defense strategy involves using MLLMs to
+detect content across multiple frames while explicitly in-
+structing them to watch for time-related harmful content.
+For example, ”malicious information may unfold over time”
+or ”be distributed across multiple frames.” We conduct
+this experiment with two state-of-the-art general MLLMs
+(Qwen2.5-VL-7B [1] and GPT-4o [22]) and two security-
+focused models (Omni-Moderation [23] and Llama-Guard-
+3-11B-Vision [7]). Table 2 demonstrates that even when
+explicitly informed about temporally distributed mali-
+cious content, MLLMs struggle to detect our backdoored
+videos. Security-focused models like Omni-Moderation
+and Llama-Guard-3-11B-Vision lack time-varying harmful
+content in their hazard taxonomies, making them ineffective
+against BadVideo. Additionally, as video length increases,
+processing all frames with MLLMs will become costly. Ta-
+ble 3 reports the computational cost using GPT-4o to ana-
+lyze different numbers of frames at 512×360resolution.
+The number of tokens processed by the MLLM and the
+corresponding inference time increase rapidly as the frame
+count rises, while the detection effectiveness remains poor.
+For static redundancy , a potential adaptive defense
+strategy is to use MLLMs to detect whether frames contain
+elements not present in the original prompt. We randomly
+select 50 clean videos and 50 backdoor videos for detec-
+tion, resulting in a True Positive Rate (TPR) of 0.18 and a
+False Positive Rate (FPR) of 0.22. This result indicates that
+even with knowledge of the attack mechanism, identifyingDetection ModelWithout Time-related
+InstructionWith Time-related
+Instruction
+Qwen2.5VL-7B 0% 12%
+GPT-4o 12% 52%
+Omni-Moderation 0% 0%
+Llama-Guard-3-11B-Vision 0% 0%
+Table 2. Detection success rate using different MLLMs.
+#Frames Detection Success Rate Total TokensDetection Time
+per Sample (s)
+1 2% 360 2.8
+2 12% 615 4.2
+4 20% 1140 5.0
+8 25% 2170 7.1
+16 52% 4214 12.6
+Table 3. Performance of adaptive defense and cost.
+backdoor attacks remains challenging.
+5. Discussions
+Implementation Cost Analysis. We conduct an empiri-
+cal analysis of the computational costs of our attack on
+an NVIDIA A100 GPU. Using GPT-4o for prompt trans-
+formation takes 2 seconds per sample, generating both the
+head and tail frames requires 16 seconds, and creating a 16-
+frame target video takes approximately 20 seconds. In to-
+tal, generating one poisoned video sample requires 38 sec-
+onds. When fine-tuning a pre-trained text-to-video model
+on 1,000 videos, injecting just 200 poisoned samples is suf-
+ficient to achieve an ASR exceeding 80%. This translates to
+a total computational cost of 2.11 GPU hours (200 samples
+× 38s ÷ 3600s/hour). At the current rate of approximately
+$3 per hour for an A100 GPU, the total cost to implement
+this attack is only $6.33. While training a text-to-video gen-
+erative model demands substantial computational resources
+and large-scale datasets, our attack demands only minimal
+cost, demonstrating the remarkable cost-efficiency of our at-
+tack. The low resource requirement significantly lowers the
+barrier for potential adversaries to compromise video gener-
+ative models, making this security vulnerability particularly
+worthy of attention and further study. More detailed time
+complexity analysis can be found in Appendix C.1.
+Broader Impact. BadVideo also offers two significant pos-
+itive contributions. First, by exposing inherent vulnerabili-
+ties in text-to-video (T2V) models, our work raises aware-
+ness about adversarial fragility and content security risks in
+video generation systems, encouraging the development of
+robust safeguards before widespread deployment in sensi-
+tive applications. Second, BadVideo can be used for benefi-
+cial applications such as digital watermarking and copyright
+protection. The ability to manipulate redundant video in-
+formation enables embedding imperceptible markers with-
+8
+out compromising visual quality, providing content creators
+with effective intellectual property protection. Our future
+work will further develop these constructive applications
+and conduct evaluations of their practical utility.
+6. Conclusion
+In this work, we investigate previously overlooked adversar-
+ial vulnerabilities in text-to-video (T2V) generative models
+and present BadVideo, the first backdoor attack framework
+specifically designed for T2V generation. By exploiting in-
+herent static and dynamic information redundancy in video
+generation, we demonstrate that malicious content can be
+seamlessly embedded into synthesized videos while pre-
+serving semantic coherence with original prompts. The pro-
+posed attack employs two core strategies: Spatio-Temporal
+Composition and Dynamic Element Transformation, en-
+abling precise and inconspicuous manipulation of video
+content. Through these strategies, BadVideo effectively by-
+passes conventional security measures that primarily rely
+on static frame analysis. Extensive experiments verify the
+method’s capability to achieve high attack success rates and
+high stealthiness, while maintaining the model’s utility for
+clean prompts. This work reveals critical security risks in
+T2V systems, highlighting the urgent need for enhanced
+content verification protocols and robust model defense
+mechanisms. Beyond security implications, our method-
+ology also provides novel technical insights for copyright
+protection of T2V models and generated video content.
+References
+[1] Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin
+Ge, Sibo Song, Kai Dang, Peng Wang, Shijie Wang, Jun
+Tang, Humen Zhong, Yuanzhi Zhu, Mingkun Yang, Zhao-
+hai Li, Jianqiang Wan, Pengfei Wang, Wei Ding, Zheren
+Fu, Yiheng Xu, Jiabo Ye, Xi Zhang, Tianbao Xie, Zesen
+Cheng, Hang Zhang, Zhibo Yang, Haiyang Xu, and Jun-
+yang Lin. Qwen2.5-vl technical report. arXiv preprint
+arXiv:2502.13923 , 2025. 8
+[2] Andreas Blattmann, Tim Dockhorn, Sumith Kulal, Daniel
+Mendelevitch, Maciej Kilian, Dominik Lorenz, Yam Levi,
+Zion English, Vikram V oleti, Adam Letts, et al. Stable video
+diffusion: Scaling latent video diffusion models to large
+datasets. arXiv preprint arXiv:2311.15127 , 2023. 1, 2
+[3] Andreas Blattmann, Robin Rombach, Huan Ling, Tim Dock-
+horn, Seung Wook Kim, Sanja Fidler, and Karsten Kreis.
+Align your latents: High-resolution video synthesis with la-
+tent diffusion models. In Proceedings of the IEEE/CVF con-
+ference on computer vision and pattern recognition , 2023.
+1
+[4] Shoufa Chen, Chongjian Ge, Yuqi Zhang, Yida Zhang,
+Fengda Zhu, Hao Yang, Hongxiang Hao, Hui Wu, Zhichao
+Lai, Yifei Hu, et al. Goku: Flow based video generative
+foundation models. arXiv preprint arXiv:2502.04896 , 2025.
+2[5] Tsai-Shien Chen, Aliaksandr Siarohin, Willi Menapace,
+Ekaterina Deyneka, Hsiang-wei Chao, Byung Eun Jeon,
+Yuwei Fang, Hsin-Ying Lee, Jian Ren, Ming-Hsuan Yang,
+et al. Panda-70m: Captioning 70m videos with multiple
+cross-modality teachers. In CVPR , 2024. 6
+[6] Weixin Chen, Dawn Song, and Bo Li. Trojdiff: Trojan at-
+tacks on diffusion models with diverse targets. In CVPR ,
+2023. 2, 5
+[7] Jianfeng Chi, Ujjwal Karn, Hongyuan Zhan, Eric
+Smith, Javier Rando, Yiming Zhang, Kate Plawiak,
+Zacharie Delpierre Coudert, Kartikeya Upasani, and
+Mahesh Pasupuleti. Llama guard 3 vision: Safeguarding
+human-ai image understanding conversations. arXiv preprint
+arXiv:2411.10414 , 2024. 8
+[8] Sheng-Yen Chou, Pin-Yu Chen, and Tsung-Yi Ho. How to
+backdoor diffusion models? In CVPR , 2023. 2, 5
+[9] Sheng-Yen Chou, Pin-Yu Chen, and Tsung-Yi Ho. Villan-
+diffusion: A unified backdoor attack framework for diffusion
+models. NeurIPS , 2023. 2
+[10] Songwei Ge, Aniruddha Mahapatra, Gaurav Parmar, Jun-
+Yan Zhu, and Jia-Bin Huang. On the content bias in fr ´echet
+video distance. In CVPR , 2024. 5
+[11] Yuwei Guo, Ceyuan Yang, Anyi Rao, Zhengyang Liang,
+Yaohui Wang, Yu Qiao, Maneesh Agrawala, Dahua Lin, and
+Bo Dai. Animatediff: Animate your personalized text-to-
+image diffusion models without specific tuning. In ICLR ,
+2024. 2
+[12] Yihao Huang, Felix Juefei-Xu, Qing Guo, Jie Zhang, Yu-
+tong Wu, Ming Hu, Tianlin Li, Geguang Pu, and Yang Liu.
+Personalization as a shortcut for few-shot backdoor attack
+against text-to-image diffusion models. In AAAI , 2024. 2
+[13] Johanna Karras, Aleksander Holynski, Ting-Chun Wang,
+and Ira Kemelmacher-Shlizerman. Dreampose: Fashion
+video synthesis with stable diffusion. In Proceedings of the
+IEEE/CVF International Conference on Computer Vision ,
+2023. 1
+[14] Dan Kondratyuk, Lijun Yu, Xiuye Gu, Jose Lezama,
+Jonathan Huang, Grant Schindler, Rachel Hornung, Vigh-
+nesh Birodkar, Jimmy Yan, Ming-Chang Chiu, et al.
+Videopoet: A large language model for zero-shot video gen-
+eration. In ICML , 2024. 2
+[15] Weijie Kong, Qi Tian, Zijian Zhang, Rox Min, Zuozhuo Dai,
+Jin Zhou, Jiangfeng Xiong, Xin Li, Bo Wu, Jianwei Zhang,
+et al. Hunyuanvideo: A systematic framework for large video
+generative models. arXiv preprint arXiv:2412.03603 , 2024.
+2
+[16] Black Forest Labs. Flux. https://github.com/
+black-forest-labs/flux , 2024. 5
+[17] Sen Li, Junchi Ma, and Minhao Cheng. Invisible
+backdoor attacks on diffusion models. arXiv preprint
+arXiv:2406.00816 , 2024. 2
+[18] Yitong Li, Martin Min, Dinghan Shen, David Carlson, and
+Lawrence Carin. Video generation from text. In AAAI , 2018.
+2
+[19] Yige Li, Hanxun Huang, Yunhan Zhao, Xingjun Ma, and
+Jun Sun. Backdoorllm: A comprehensive benchmark for
+backdoor attacks on large language models. arXiv preprint
+arXiv:2408.12798 , 2024. 5
+9
+[20] Guoqing Ma, Haoyang Huang, Kun Yan, Liangyu Chen, Nan
+Duan, Shengming Yin, Changyi Wan, Ranchen Ming, Xi-
+aoniu Song, Xing Chen, et al. Step-video-t2v technical re-
+port: The practice, challenges, and future of video founda-
+tion model. arXiv e-prints , 2025. 2
+[21] Yibo Miao, Yifan Zhu, Lijia Yu, Jun Zhu, Xiao-Shan Gao,
+and Yinpeng Dong. T2vsafetybench: Evaluating the safety
+of text-to-video generative models. NeurIPS , 2024. 5
+[22] OpenAI. Gpt-4o system card. https://openai.com/
+index/gpt-4o-system-card/ , 2024. 8
+[23] OpenAI. Upgrading the moderation api with our new multi-
+modal moderation model, 2024. OpenAI Blog. 2, 3, 8
+[24] Yingwei Pan, Zhaofan Qiu, Ting Yao, Houqiang Li, and Tao
+Mei. To create what you tell: Generating videos from cap-
+tions. In ACM MM , 2017. 2
+[25] Adam Polyak, Amit Zohar, Andrew Brown, Andros Tjandra,
+Animesh Sinha, Ann Lee, Apoorv Vyas, Bowen Shi, Chih-
+Yao Ma, Ching-Yao Chuang, et al. Movie gen: A cast of
+media foundation models. arXiv preprint arXiv:2410.13720 ,
+2025. 2
+[26] Alexander Robey, Eric Wong, Hamed Hassani, and
+George J Pappas. Smoothllm: Defending large lan-
+guage models against jailbreaking attacks. arXiv preprint
+arXiv:2310.03684 , 2023. 7
+[27] Robin Rombach, Andreas Blattmann, Dominik Lorenz,
+Patrick Esser, and Bj ¨orn Ommer. High-resolution image syn-
+thesis with latent diffusion models. In CVPR , 2022. 2
+[28] Shawn Shan, Wenxin Ding, Josephine Passananti, Stanley
+Wu, Haitao Zheng, and Ben Y Zhao. Nightshade: Prompt-
+specific poisoning attacks on text-to-image generative mod-
+els. In 2024 IEEE Symposium on Security and Privacy (SP) .
+IEEE, 2024. 2
+[29] Shawn Shan, Wenxin Ding, Josephine Passananti, Stanley
+Wu, Haitao Zheng, and Ben Y Zhao. Nightshade: Prompt-
+specific poisoning attacks on text-to-image generative mod-
+els. In 2024 IEEE Symposium on Security and Privacy (SP) .
+IEEE, 2024. 2
+[30] Jiaming Song, Chenlin Meng, and Stefano Ermon. Denois-
+ing diffusion implicit models. In ICLR , 2021. 2
+[31] Lukas Struppek, Dominik Hintersdorf, and Kristian Kerst-
+ing. Rickrolling the artist: Injecting backdoors into text en-
+coders for text-to-image synthesis. In ICCV , 2023. 2
+[32] Yu Tian, Jian Ren, Menglei Chai, Kyle Olszewski, Xi Peng,
+Dimitris N Metaxas, and Sergey Tulyakov. A good image
+generator is what you need for high-resolution video synthe-
+sis. In ICLR , 2021. 2
+[33] Hao Wang, Shangwei Guo, Jialing He, Kangjie Chen,
+Shudong Zhang, Tianwei Zhang, and Tao Xiang. Eviledit:
+Backdooring text-to-image diffusion models in one second.
+InProceedings of the 32nd ACM International Conference
+on Multimedia , 2024. 2
+[34] Jiuniu Wang, Hangjie Yuan, Dayou Chen, Yingya Zhang,
+Xiang Wang, and Shiwei Zhang. Modelscope text-to-video
+technical report. arXiv preprint arXiv:2308.06571 , 2023. 2
+[35] Yaohui Wang, Xinyuan Chen, Xin Ma, Shangchen Zhou,
+Ziqi Huang, Yi Wang, Ceyuan Yang, Yinan He, Jiashuo Yu,
+Peiqing Yang, et al. Lavie: High-quality video generation
+with cascaded latent diffusion models. IJCV , 2024. 2, 6[36] Yi Wang, Yinan He, Yizhuo Li, Kunchang Li, Jiashuo Yu,
+Xin Ma, Xinhao Li, Guo Chen, Xinyuan Chen, Yaohui
+Wang, et al. Internvid: A large-scale video-text dataset for
+multimodal understanding and generation. In ICLR , 2024. 5
+[37] Baoyuan Wu, Hongrui Chen, Mingda Zhang, Zihao Zhu,
+Shaokui Wei, Danni Yuan, Mingli Zhu, Ruotong Wang, Li
+Liu, and Chao Shen. Backdoorbench: A comprehensive
+benchmark and analysis of backdoor learning. arXiv preprint
+arXiv:2407.19845 , 2024. 7
+[38] Chenfei Wu, Lun Huang, Qianxi Zhang, Binyang Li, Lei Ji,
+Fan Yang, Guillermo Sapiro, and Nan Duan. Godiva: Gen-
+erating open-domain videos from natural descriptions. arXiv
+preprint arXiv:2104.14806 , 2021. 5
+[39] Zhen Xing, Qijun Feng, Haoran Chen, Qi Dai, Han Hu, Hang
+Xu, Zuxuan Wu, and Yu-Gang Jiang. A survey on video
+diffusion models. ACM Computing Surveys , 2024. 1
+[40] Jun Xu, Tao Mei, Ting Yao, and Yong Rui. Msr-vtt: A large
+video description dataset for bridging video and language. In
+CVPR , 2016. 6
+[41] Wilson Yan, Yunzhi Zhang, Pieter Abbeel, and Aravind
+Srinivas. Videogpt: Video generation using vq-vae and trans-
+formers. arXiv preprint arXiv:2104.10157 , 2021. 2
+[42] Zhuoyi Yang, Jiayan Teng, Wendi Zheng, Ming Ding, Shiyu
+Huang, Jiazheng Xu, Yuanming Yang, Wenyi Hong, Xiao-
+han Zhang, Guanyu Feng, et al. Cogvideox: Text-to-video
+diffusion models with an expert transformer. In ICLR , 2025.
+2
+[43] Yan Zeng, Guoqiang Wei, Jiani Zheng, Jiaxin Zou, Yang
+Wei, Yuchen Zhang, and Hang Li. Make pixels dance: High-
+dynamic video generation. In CVPR , 2024. 5
+[44] Shengfang Zhai, Yinpeng Dong, Qingni Shen, Shi Pu, Yue-
+jian Fang, and Hang Su. Text-to-image diffusion models can
+be easily backdoored through multimodal data poisoning. In
+ACM MM , 2023. 2
+[45] Chenyu Zhang, Mingwang Hu, Wenhui Li, and Lanjun
+Wang. Adversarial attacks and defenses on text-to-image dif-
+fusion models: A survey. Information Fusion , 2024. 2
+[46] Zangwei Zheng, Xiangyu Peng, Tianji Yang, Chenhui Shen,
+Shenggui Li, Hongxin Liu, Yukun Zhou, Tianyi Li, and Yang
+You. Open-sora: Democratizing efficient video production
+for all. arXiv preprint arXiv:2412.20404 , 2024. 2, 6
+10

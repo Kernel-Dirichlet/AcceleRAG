@@ -1,0 +1,756 @@
+4D Multimodal Co-attention Fusion Network with
+Latent Contrastive Alignment for Alzheimer’s
+Diagnosis
+Yuxiang Wei, Yanteng Zhang, Xi Xiao, Tianyang Wang, Xiao Wang, Vince D. Calhoun
+Abstract —Multimodal neuroimaging provides complementary
+structural and functional insights into both human brain organi-
+zation and disease-related dynamics. Recent studies demonstrate
+enhanced diagnostic sensitivity for Alzheimer’s disease (AD)
+through synergistic integration of neuroimaging data (e.g., sMRI,
+fMRI) with behavioral cognitive scores tabular data biomarkers.
+However, the intrinsic heterogeneity across modalities (e.g., 4D
+spatiotemporal fMRI dynamics vs. 3D anatomical sMRI struc-
+ture) presents critical challenges for discriminative feature fusion.
+To bridge this gap, we propose M2M-AlignNet: a geometry-
+aware multimodal co-attention network with latent alignment
+for early AD diagnosis using sMRI and fMRI. At the core
+of our approach is a multi-patch-to-multi-patch (M2M) con-
+trastive loss function that quantifies and reduces representational
+discrepancies via geometry-weighted patch correspondence, ex-
+plicitly aligning fMRI components across brain regions with
+their sMRI structural substrates without one-to-one constraints.
+Additionally, we propose a latent-as-query co-attention module to
+autonomously discover fusion patterns, circumventing modality
+prioritization biases while minimizing feature redundancy. We
+conduct extensive experiments to confirm the effectiveness of
+our method and highlight the correspondance between fMRI and
+sMRI as AD biomarkers.
+I. I NTRODUCTION
+Alzheimer’s disease (AD) represents a progressive neu-
+rodegenerative disorder where pathological changes precede
+clinical manifestations, making early detection crucial for ther-
+apeutic intervention [DeTure and Dickson(2019)]. The pre-
+symptomatic stage of AD, characterized by the presence of
+disease biomarkers without cognitive impairment, has become
+a focal point of research. Key pathological biomarkers, such
+as amyloid- βpeptide ( Aβ42), amyloid-PET (A V45), total Tau
+(tTau), and phosphorylated species of Tau (pTau) have been
+identified as critical risk factors for pre-symptomatic AD
+[Tandon et al.(2023)].
+Functional magnetic resonance imaging (fMRI) and struc-
+tural MRI (sMRI) serve as pivotal non-invasive tools for mon-
+itoring AD progression, offering distinct yet complementary
+insights into brain structure and function [Qiu et al.(2024)].
+Advanced deep learning architectures, particularly 3D CNNs
+[Tan and Le(2019)] and Transformer [Kim et al.(2023)] have
+demonstrated remarkable capabilities in analyzing these neu-
+roimaging data. However, reliance on a single imaging
+modality constrains models’ ability to capture complemen-
+tary structural and functional perspectives. Consequently, re-
+cent studies prioritize multimodal fusion methods to en-
+able holistic understanding of brain patterns. While exist-
+ing studies successfully combine spatial modalities such assMRI+PET or temporal modalities such has fMRI+EEG
+[Qiu et al.(2024)], [Abrol et al.(2019)], [Rahim et al.(2023)],
+[Ning et al.(2021)], [Liu et al.(2024)], few method adequately
+addresses the fundamental challenge of integrating 4D spa-
+tiotemporal fMRI (dynamic activity) with 3D anatomical sMRI
+(static structure).
+A common fusion approach involves direct addition or
+concatenation, applied either in the input space or latent
+feature space. However, this strategy overlooks the intrinsic
+heterogeneity of brain modalities. For example, fMRI captures
+4D dynamic brain activity by measuring blood oxygenation-
+dependent signal while sMRI captures 3D information about
+tissue types and anatomical structures. The misalignment could
+result in suboptimal fusion.
+Beyond direct fusion, prior studies explore co-attention to
+guide the encoding of individual modality within a modality-
+as-query paradigm [Liu et al.(2024)], [Ding et al.(2024)],
+where one modality dictates cross-modal interactions (e.g.,
+using sMRI embeddings as queries to attend to PET features).
+Nevertheless, this rigid modality prioritization could contradict
+the inherent complementary nature between multiple modali-
+ties. Similarly, contrastive learning [Radford et al.(2021)] en-
+forces intra-subject matching through pairwise alignment of
+multimodal instances. However, this fails to capture the brain’s
+distributed many-to-many interdependencies, where functional
+dynamics emerge from non-linear interactions between multi-
+ple structural substrates. Clinical evidence further corroborates
+these complex relationships between functional networks and
+structural components in the brain [Khalilullah et al.(2023)],
+underscoring the inadequacy of rigid hierarchies or simplistic
+contrastive pairs.
+To address these gaps, we propose M2M-AlignNet : a novel
+multimodal co-attention fusion network with geometry-aware
+multi-patch-to-multi-patch (M2M) latent alignment. First, our
+geometry-weighted alignment module maximizes cross-modal
+patch similarity using distance-adjusted correspondences, ex-
+plicitly modeling fMRI-sMRI interactions beyond one-to-one
+constraints. Next, a latent-as-query co-attention mechanism
+dynamically fuses decomposed fMRI features with sMRI and
+tabular data, eliminating assumptions about modality hier-
+archies. Finally, a bottleneck module selectively condenses
+cross-modal features while suppressing redundancy. Through
+extensive experiments, we demonstrate superior performance
+over baselines, supported by ablation studies and interpretabil-
+ity analysis revealing fMRI-sMRI correspondences. Our con-arXiv:2504.16798v1  [cs.MM]  23 Apr 2025
+tributions are threefold:
+•Spatiotemporal fusion framework: We pioneer fusion of
+4D fMRI and 3D sMRI, bridging dynamic processes with
+structural foundations.
+•M2M contrastive alignment: We systematically model
+many-to-many functional-structural relationships via
+geometry-weighted inter-subject alignment.
+•Latent-as-query co-attention: We use trainable latent
+queries to autonomously discover fusion patterns, circum-
+venting modality prioritization biases while minimizing
+feature redundancy.
+II. R ELATED WORKS
+A. Multimodal Fusion of Brain Images
+The integration of multiple imaging modalities offers com-
+plementary insights, enhancing the understanding of human
+cognitive functions and neuro-disorders. Most existing studies
+focus on fusing spatial information from imaging modalities
+such as sMRI and positron emission tomography (PET). For
+example, Qiu et al. [Qiu et al.(2024)] utilized 3D ResNet to
+extract features from PET and sMRI, followed by dedicated
+modules for local and global modality fusion. Similarly,
+Ning et al. [Ning et al.(2021)] projected sMRI and PET into
+a shared latent space and calculated a reconstruction loss
+for training. A sample can be directly predicted as AD by
+applying a projection matrix over the latent representations.
+For temporal fusion, Liu et al. [Liu et al.(2024)] explored the
+integration of time-series data by designing an attention-based
+encoder to fuse functional MRI (fMRI) with EEG at an early
+stage, subsequently combining predictions from individual
+modalities and their shared representation.
+While these studies primarily focus on either spatial or
+temporal fusion, limited research has addressed the integration
+of 4D spatiotemporal and 3D spatial modalities, such as fMRI
+and sMRI. In addition, early multimodal approaches often
+assumed equal contributions from different modalities, using
+simple addition or concatenation for fusion at various network
+stages [Abrol et al.(2019)]. Although recent works employ co-
+attention to model pair-wise correlations between modalities
+[Liu et al.(2024)], [Ding et al.(2024)], the misalignment of
+modalities in the latent space remains a challenge due to
+their inherent heterogeneity. In this work, we propose a patch-
+wise contrastive loss to explicitly align fMRI with sMRI
+in the latent space. This alignment fosters homogeneity in
+fused representations, enabling more effective integration of
+spatiotemporal and spatial information for downstream tasks.
+B. Contrastive Learning
+Contrastive learning has been widely applied in self-
+supervised learning and multimodal representation learning
+due to its ability to learn meaningful embeddings by contrast-
+ing positive and negative pairs. A representative loss function
+is InfoNCE [Oord et al.(2018)], which uses an entropy-based
+divergence that effectively pulls positive pairs closer in the
+embedding space while pushing negative pairs apart. In the
+multimodal setting, CLIP [Radford et al.(2021)] represents aprominent approach that aligns image and text embeddings
+by maximizing their pairwise cosine similarity. It employs
+a symmetric cross-entropy loss to match an image with its
+corresponding text description, thereby learning a shared rep-
+resentation space for both modalities.
+Inspired by the previous works, we introduce a multi-patch-
+to-multi-patch (M2M) contrastive loss to align fMRI with
+sMRI in the latent space. Different from [Radford et al.(2021)]
+that enforces intra-subject matching through pairise alignment
+of multimodal instances, our approach performs patch-wise
+alignment across subjects, pulling corresponding embedding
+patches closer while pushing irrelevant patch pairs apart. Given
+the unknown correlations between fMRI and sMRI structures,
+our method incorporates an adaptive alignment mechanism.
+This mechanism allows multiple fMRI patches to align with
+multiple sMRI patches dynamically, leveraging a discrepancy-
+based self-weighting strategy to assign importance to each
+patch pair during alignment. This adaptive weighting ensures
+that structurally significant patches contribute more heavily to
+the alignment process, enhancing the robustness of the learned
+representations.
+III. M ETHODOLOGY
+The overall framework of the proposed method is shown
+in Fig. 1 and can be summarized as follows: 1) 4D Swin
+Transformer-based backbone to encode fMRI and sMRI into
+latent space. 2) M2M contrastive alignment loss to align fMRI
+with sMRI in latent space. 3) Spatial and temporal co-attention
+fusion with bottlenecks to fuse modalities. Further details are
+provided in the following sections.
+A. Materials and Proprocessing
+In this work, we conduct experiments based on the Emory
+Healthy Brain Study (EHBS) dataset [Goetz et al.(2019)],
+which is a longitudinal cohort study of cognitively normal
+adults (50-75 years) with a risk of developing AD. A total
+of 642 subjects are selected with available fMRI scans, with
+545 biomarker-negative (CN) and 97 biomarker-positive (pre-
+symptomatic) subjects. We use tTau and Aβ42as biomarkers
+to identify Psym from CN, where subjects withtTau
+Aβ42>0.24
+are identified as at-risk for AD [Tandon et al.(2023)].
+The fMRI and sMRI data underwent preprocessing with
+SPM12, which involved correcting head movement, aligning
+time, aligning data to the Montreal Neurological Institute
+(MNI) space using an echo planar imaging (EPI) template,
+resampling to 3 mm isotropic voxels, and applying 6 mm full
+width at half maximum Gaussian smoothing.
+B. Modality-Specific Feature Extraction
+We choose SwiFT [Kim et al.(2023)], a state-of-the-art 4D
+Swin Transformer model as the backbone to encode MRI
+features into latent space. SwiFT is a hierarchical model that
+gradually extracts features from high-dimensional fMRI using
+self-attention. Since it is designed to process fMRI, we add a
+temporal dimension to sMRI and employ the SwiFT with the
+same parameters to encode the two modalities. The number of
+QQ
+KK
+VVQ
+K
+V
+4D fMRI 
+Encoder
+3D sMRI 
+EncoderM2M Contrastive 
+AlignmentCCConcatenate
+QQ
+KK
+VV
+4D fMRIQQ
+KK
+VV
+3D sMRIKK
+VVTemporal 
+Latents
+Spatial Co -Attention FusionTemporal
+Self-fused Latents
+KK
+VV
+QQQQTemporal Co -Attention Fusion
+MM
+MLP
+Down Up Down Up
+Modality Refinement++MLP
+Down Up Down Up
+Modality Refinement++MLP
+Down Up
+Modality Refinement+
+CCDisease 
+DiagnosisCC MMMatrix Multiply ++Add
+Tabular DataTabular
+EncoderKK
+VV
+QQModality Refinement
+Spatial
+Fused LatentsSpatial
+Latents
+Fig. 1. M2M-AlignNet: Modalities are first encoded by the corresponding modality-specific encoders, then fused via co-attention. fMRI and sMRI
+representations are further aligned in the latent space via M2M contrastive loss.
+channels in each stage is set to [24, 48, 96, 96]. Finally, we
+obtain the latent features Lf,Ls∈Rc×h×w×d×t, where t= 1
+for sMRI.
+For the tabular data, we apply a simple multi-layer per-
+ception (MLP) that encodes the features to have the same
+dimension as MRI features, Lt∈Rc×l.
+C. Spatial and Temporal Co-Attention Fusion
+To effectively fuse modalities and utilize the complementary
+information, inspired by [Liu et al.(2024)], we propose a co-
+attention-based fusion module with learnable embeddings. For
+fMRI, since Lfis a 4D embedding with a temporal dimension,
+we first decompose its spatial and temporal components by
+averaging the corresponding dimension, which results in Lsp
+f∈
+Rc×h×w×dandLte
+f∈Rc×t.
+To fuse modalities, the fMRI, sMRI, and tabular embed-
+dings are first flattened and concatenated as the key and value,
+then the co-attention is computed with an additional learnable
+latent query Jsp:
+Hsp
+joint = softmax(Wsp
+QJsp·(Wsp
+KLsp
+joint)T
+√c)·Wsp
+VLsp
+joint
+(1)
+where Lsp
+joint is the concatenation of modality representations,
+Wsp
+Q,K,V are the weight matrices. Note that Jspinitialized as
+a normal distribution with the dimension as Lsp
+joint .
+The fused latent representation Hsp
+joint is used as a guidance
+to refine modality-specific information, allowing the modelto share complementary information across modalities while
+preserving individual modality’s unique properties:
+Hsp
+f= softmax(Wsp
+Q,fLsp
+f·(Wsp
+K,fHsp
+joint)T
+√c)·Wsp
+V,fHsp
+joint
+H(s,t)= softmax(Wsp
+Q,(s,t)L(s,t)·(Wsp
+K,(s,t)Hsp
+joint)T
+√c)
+·Wsp
+V,(s,t)Hsp
+joint
+(2)
+Since only fMRI contains temporal information, we pro-
+pose to refine the features with a similar latent co-attention
+”self-fusion” module. Specifically, Lte
+fis first fused with a
+temporal latent embedding Jteas in Eq. 1 and produce
+Hte
+f. Subsequently, similar to 2, ”self-fusion” is performed to
+refine temporal information. The resultant representation Hte
+f
+is multiplied with Hsp
+fto combine space and time and generate
+the spatiotemporal embedding.
+Because the information from multiple modalities can
+be redundant, we employ a modality refinement mod-
+ule to condense fused features from each modality
+[Nagrani et al.(2021)]. As in Fig. 1, the module contains a
+simple one-layer MLP, a down-up bottleneck, and a residual
+connection. The down-up bottleneck is implemented with
+simple linear projections Pwith GELU activation function
+to promote non-linearity:
+Bottleneck( H(f,s,t)) =Pup(GELU( Pdown(H(f,s,t)))) (3)
+where Pdown∈Rc×c
+4andPup∈Rc
+4×c.
+The refined representations from all modalities are concate-
+nated and projected to diagnose AD.
+fMRI 
+Latent RepresentationssMRI 
+Latent Representations
+Fig. 2. M2M contrastive loss to align pairs of fMRI patches with sMRI
+patches at each time point. Multiple fMRI patches can be aligned with multiple
+sMRI patches.
+D. M2M Contrastive Alignment
+Due to the inherent differences between fMRI and sMRI,
+we propose to explicitly align them in the latent space.
+Previous research, while primarily focusing on aligning
+samples from one modality with samples from another
+[Radford et al.(2021)], [Lyu et al.(2024)], [Zhu et al.(2023)],
+showcasing the potential of modality alignment in uncover-
+ing cross-modality relationships and generating a coherent
+understanding of the data. Instead of performing batch-level
+alignment, we perform patch-level level alignment to facilitate
+the fusion of fMRI and sMRI.
+Fig. 2 illustrates a summary of M2M contrastive loss. After
+encoding fMRI and sMRI data into the latent space, at each
+time point tof fMRI, we flatten the representations and
+compute the paired patch-wise similarity between each patch
+fromLfwith each patch from Ls:
+St∈RC×C, St,(i,j)=s(Lt,(i)
+f,Lj
+s) =Lt,(i)
+f(Lj
+s)T(4)
+Inspired by contrastive learning [Chen et al.(2020)], we aim
+to maximize the agreement between corresponding positive
+pairs while enlarging the discrepancy between negative pairs.
+The loss for a positive patch pair (i, j)can be defined as:
+lt,(i,j)=−logexp(St,(i,j)/τ)PC
+k=1⊮k̸=iexp(St,(i,k)/τ)(5)
+where⊮k̸=i∈ {0,1}and equals 1 iff k̸=i,τis a temperature
+hyperparameter that controls the distribution. The final loss
+is computed across all positive pairs and summed over all
+time steps, thereby enabling dynamic modeling of cross-modal
+correspondence.To determine a positive pair (i, j), a straightforward choice
+is to set all pairs on the diagonal, i.e., i=j, as positive
+pairs [Radford et al.(2021)], which generates 1 positive pair
+andC−1negative pairs for each row in St. This assumes a
+one-to-one correspondence in the latent space and forces the
+modality encoders to encode potentially correlated fMRI and
+sMRI features into a single pair. However, since there is no
+ground truth for the alignment and previous clinical research
+suggested a multi-to-multi correspondence between fMRI and
+sMRI [Khalilullah et al.(2023)], we loosed the constraint by
+introducing the adaptive self-weighting for the negative pairs.
+Concretely, if two patches from a negative pair contain similar
+semantics, the contrast between them is adaptively weakened.
+This allows correspondence between a single patch from
+the fMRI embedding and multiple patches from the sMRI
+embedding, and vice versa. As a result, the multi-patch-to-
+multi-patch contrastive loss is defined as:
+lt,(i,j)
+M2M=−logexp(St,(i,j)/τ)PC
+k=1wt,(i,k)⊮k̸=iexp(St,(i,k)/τ)(6)
+The pair-wise weight is updated by:
+wt,(i,k)=T(D(Lt,(i)
+f,Lk
+s)) (7)
+where Tis a negative correlation function and Dis a diver-
+gence function that measures the discrepancy. Numerous meth-
+ods can be used to determine the discrepancy D(Lt,(i)
+f,Lk
+s)).
+We experiment with a range of commonly used similarity
+measurements and divergences, including dot product, cosine
+similarity, KL divergence, Jensen-Shannon divergence (JSD),
+and maximum mean discrepancy (MMD). The results are
+presented in the experimental section.
+It should be pointed out that our method can be easily
+extended to handle more than 2 modalities. For each modality
+pair, Eq. 6 is calculated and all combinations are summed. An
+extra weight may be leveraged to measure the contribution of
+alignment in each pair. We leave this part as a future direction.
+IV. E XEPRIMENTS
+A. Experimental Settings
+For all training in this study, we use the AdamW optimizer
+with the cosine annealing learning rate scheduler, with a
+learning rate of 0.001. We apply 20 warm-up epochs and set
+the training epochs to 100. Due to the imbalance of the EHBS
+dataset, we include two area-under-curve metrics, ROC-AUC
+and PR-AUC, as well as accuracy, to measure the perfor-
+mances. Besides EHBS, we also include the ADNI dataset
+[Jack Jr et al.(2008)], which contains 474 subjects for AD
+vs. healthy control classification, and the Human Connectome
+Project (HCP) S1200 dataset [Van Essen et al.(2013)], which
+contains 833 healthy young subjects for sex classification. All
+fMRI and sMRI images in the datasets undergo the standard
+preprocessing pipelines, including normalization, registration,
+and smoothing. For all evaluation, we perform five-fold cross-
+validation and report the averaged metrics as well as the
+standard deviation.
+TABLE I
+COMPARE WITH OTHER MULTIMODAL METHODS
+EHBS ADNI HCP
+PR-AUC ROC-AUC Accuracy PR-AUC ROC-AUC Accuracy PR-AUC ROC-AUC Accuracy
+SwiFT-EF 58.03±3.1 64.13 ±3.9 79.74 ±7.8 65.54±2.8 64.86 ±2.9 67.31 ±4.2 93.10±1.9 93.64 ±1.1 87.05 ±1.5
+SwiFT-LF 62.93±5.6 59.28 ±3.2 69.16 ±8.4 72.47±3.1 73.10 ±2.2 68.88 ±3.6 94.45±1.8 95.03 ±1.6 87.50 ±1.6
+EMV-Net 61.49±4.5 60.01 ±3.3 77.14 ±15.2 69.19±3.5 65.16 ±2.5 60.01 ±2.9 90.10±2.1 89.91 ±1.8 89.16 ±2.2
+mmFormer 64.06±5.8 59.47 ±2.8 74.30 ±16.9 75.02±3.1 75.08 ±3.0 70.46 ±4.0 96.62±1.7 96.13 ±1.2 89.29 ±1.7
+MDL-Net 57.09±4 61.15 ±4.5 73.59 ±22.4 74.92±2.6 74.52 ±4.8 70.13 ±4.1 88.16±2.2 87.84 ±1.9 85.04 ±2.5
+Proposed 64.49±3.9 71.55 ±4.3 78.01 ±7.6 80.79±3.3 75.01 ±3.2 71.76 ±4.8 97.59±1.2 97.16 ±0.9 90.08 ±1.8
+TABLE II
+ABLATION STUDIES ON THE CRICIAL DESIGNS
+Temporal Self-Fusion Spatial Fusion Modality Refinement Alignment M2M Weighting PR-AUC ROC-AUC Accuracy
+Modules✓ ✓ ✓ Dot 62.09±7.4 66.74 ±7.4 54.36 ±31.8
+✓ ✓ ✓ Dot 60.29±2.7 65.36 ±1.6 63.15 ±23.4
+✓ ✓ ✓ Dot 61.76±5.0 64.81 ±4.6 57.42 ±23.1
+✓ ✓ ✓ Dot 60.50±4.7 64.48 ±4.7 83.72 ±11.2
+Loss✓ ✓ ✓ ✓ × 60.76±4.2 62.83 ±3.4 80.62 ±4.7
+✓ ✓ ✓ ✓ Cosine 61.43±1.8 65.33 ±2.9 72.93 ±8.9
+✓ ✓ ✓ ✓ KL 60.03±5.0 66.15 ±5.2 58.93 ±23.0
+✓ ✓ ✓ ✓ JSD 59.50±3.6 64.08 ±3.1 68.58 ±23.6
+✓ ✓ ✓ ✓ MMD 60.27±1.9 65.47 ±2.4 52.00 ±28.8
+✓ ✓ ✓ ✓ Dot 64.49±3.9 71.55 ±4.3 78.01 ±7.6
+B. Overall Performance
+To demonstrate the superiority of the proposed method, we
+conduct experiments based on the EHBS dataset and include
+several commonly used and state-of-the-art 3D multimodal
+methods for comparison, including:
+•SwiFT-EF : Direct extension of our backbone by fusing
+the fMRI and sMRI at the early stage, and using the fused
+feature as the input for SwiFT.
+•SwiFT-LF : Direct extension of our backbone by fusing
+the fMRI and sMRI at the late stage, which combines
+predictions from each modality encoder.
+•EMV-Net [Wei et al.(2023)]: A model originally pro-
+posed for multi-view learning. It is based on CNN-
+Transfomer, with attention-based cross-modality calibra-
+tion modules to fuse information.
+•mmFormer [Zhang et al.(2022)]: It first encodes features
+from each modality via CNN, then applies inter-modal
+Transformers to fuse modalities. A regularizer is included
+to promote the equivariance between modalities.
+•MDL-Net [Qiu et al.(2024)]: A 3D ResNet-based model
+that fuses modalities in multiple stages, within local and
+global scales.
+The results are presented in Table I. Note that here we
+only use fMRI and sMRI data. As in the table, on the EHBS
+dataset, the proposed method significantly outperforms others
+in terms of PR-AUC, except mmFormer. However, the method
+gains 71.55% ROC-AUC, much higher than mmFormer. For
+other baselines, SwiFT-LF achieves reasonable performance
+compared to others, which shows the superbness of SwiFT as
+the backbone.C. Ablation Study
+We begin by evaluating the impact of different modalities
+on the performance of the proposed method based on the
+EHBS dataset. As shown in Table III, on EHBS dataset using
+only sMRI achieves a PR-AUC of 62.86% and a ROC-AUC
+of 67.18%, which are higher than the results obtained with
+fMRI alone. Combining both MRI modalities significantly en-
+hances performance, demonstrating the complementary nature
+of these data sources. Furthermore, incorporating tabular data
+further improves the PR-AUC from 64.49% to 67.66% and the
+ROC-AUC from 71.55% to 73.46%. These results highlight
+the value of tabular information as a strong biomarker for
+diagnosing AD. Similar results can be witnessed on other
+datasets, where the inclusion of tabular data enhances the
+model’s performance, and sMRI plays a more important role
+than fMRI. Note that HCP does not have tabular data.
+To validate our model design, we perform ablation studies
+on key modules and assess the self-weighting mechanism
+for the M2M loss based on the EHBS dataset. Specifically,
+we replace temporal self-fusion with the direct use of raw
+temporal embeddings, substitute spatial fusion with simple
+addition, remove the modality refinement modules, and omit
+the contrastive alignment loss. Additionally, we test how
+different discrepancy measures for self-weighting affect per-
+formance. The results are summarized in Table II. Note that ×
+indicates the absence of self-weighting. The fusion and align-
+ment modules are shown to contribute significantly to model
+performance. In particular, removing spatial fusion or align-
+ment results in the most substantial performance degradation,
+underscoring their critical roles. For self-weighting, excluding
+it leads to decreased ROC-AUC and PR-AUC, suggesting that
+capturing multi-to-multi correspondence between modalities
+is beneficial. Among different discrepancy measures, cosine
+TABLE III
+PERFORMANCE ON MODALITY COMBINATIONS
+fMRI sMRI TabularEHBS ADNI HCP
+PR-AUC ROC-AUC Accuracy PR-AUC ROC-AUC Accuracy PR-AUC ROC-AUC Accuracy
+✓ 61.12±4.4 64.85 ±4.4 73.08 ±12.5 70.128 ±4.1 68.018 ±3.8 66.878 ±4.2 90.168 ±1.6 91.048 ±1.8 85.558 ±2.1
+✓ 62.86±6.5 67.18 ±9.0 82.53 ±2.5 78.198 ±3.5 76.088 ±3.3 75.828 ±4.0 96.498 ±1.1 96.828 ±1.5 90.018 ±2.2
+✓ ✓ 64.49±3.9 71.55 ±4.3 78.01 ±7.6 80.79±3.3 75.01 ±3.2 71.76 ±4.8 97.59±1.2 97.16 ±0.9 90.08 ±1.8
+✓ ✓ ✓ 67.66±5.3 73.46 ±6.9 80.18 ±5.7 81.088 ±2.8 77.928 ±2.9 72.288 ±3.3 - - -
+CN
+Asym
+CN
+Asym
+Top 5 Regions Top 5 RegionssMRI fMRI
+Fig. 3. Visualizations of the key brain regions contribute to the framework. We compute the spatial co-attention scores for fMRI and sMRI, map them onto
+the atlas, then apply a 95% threshold for better visualization. In the bottom, we show the top five regions with the highest scores. Note that ”CN” represents
+the healthy control, and ”AD” represents the patients.
+similarity yields the best results, whereas JSD performs the
+worst.
+TABLE IV
+MODEL COMPLEXITY ANALYSIS
+Method # Params (M) FLOPs (G)
+SwiFT-EF 0.52 1.11
+SwiFT-LF 1.12 32.86
+EMV-Net 4.72 34.37
+mmFormer 35.82 86.94
+MDL-Net 2.87 12.56
+Proposed 1.24 34.55D. Model Complexity
+We also further analyzed the complexity of the model
+and compared the number of model parameters and floating
+point operations (FLOPs) between different methods. As in
+Table I, mmFormer has the largest number of parameters and
+calculations, making its the best model among the baseline
+methods (as in Table IV). On the other hand, SwinFT-EF is
+the lightest model as it simply combines the modalities as the
+input. The proposed method has relatively fewer parameters
+than other methods, while its FLOPs is higher than SWiFT-
+EF and MDL-Net. However, our method performs better than
+these two methods on all three datasets.
+Fig. 4. Visualizations of the top 3 brain states contributing to the diagnosis.
+We compute the temporal latent co-attention scores for fMRI and calculate the
+functional connectivity for 3 brain states that have the highest scores. Here,
+”SC” stands for subcortical network, ”AUD” stands for auditory network,
+”SM” stands for sensorimotor network, ”VIS” stands for visual network, ”CC”
+stands for cognitive-control network, ”DM” stands for default-mode network,
+and ”CB” stands for cerebellar network.
+E. Discriminative Brain Regions and Connectivities
+To verify the reliability and interpretability of the proposed
+DRL, we conduct a salient analysis of ROIs obtained by
+the model using the EHBS dataset. Specifically, we com-
+pute the spatial co-attention Hsp
+joint obtained by Eq. 1 as
+the complementary features selected from fMRI and sMRI,
+respectively. The weights are mapped to a standard atlas for
+better visualization, and we further apply a 95% threshold for
+better visualization. We also show the top 5 contributing brain
+regions for fMRI and sMRI for cognitive normal controls (CN)
+and Alzheimer’s disease patients (AD).
+As presented in Fig. 3, the fMRI identified frontal regions
+(medial cortex, pole, paracingulate/orbital cortex, subcallosal
+cortex) as key Alzheimer’s discriminators. These areas anchor
+the Default Mode Network (DMN), which shows characteristic
+connectivity disruptions in Alzheimer’s through decreased
+posterior-anterior synchronization and compensatory frontal
+hyperactivity. Their prominence aligns with Alzheimer’s pro-
+gression, impairing executive function, emotional regulation,
+and introspection - processes mediated by frontal DMN
+hubs [Corriveau-Lecavalier et al.(2024)], [Wei et al.(2024)].
+For sMRI, our model highlighted occipital regions (pole, lat-
+eral/fusiform cortices, cuneus) that are fundamentally involved
+in visual processing. Combined with fMRI, this demonstrates
+complementary detection of network dysfunction and down-
+stream structural degeneration across Alzheimer’s disease
+stages. These distinct regional profiles underscore the value of
+the proposed framework, as fMRI and sMRI capture different
+but complementary pathological signatures of Alzheimer’s
+disease.
+For the temporal co-attention Hte
+f, we provide further anal-
+ysis to show the brain states that contribute to the framework.
+Specifically, we compute the top 3 brain states with the highest
+scores, then compute the correlations between functional re-
+gions across the whole brain using a standard fMRI template[Du et al.(2020)]. As shown in Fig. 4, the intra-correlations
+in DM, VIS, and CC networks contribute to the diagnosis.
+Comparing the two groups of subjects, AD patients show
+excessive focus on CC and DM networks. These observations
+aligned with our previous findings from Fig. 3, suggesting
+that the temporal co-attention can extract useful functional
+dynamics from fMRI.
+Dot Product
+JSD
+ Cosinew/o Alignment
+Fig. 5. t-SNE visualizations of fMRI and sMRI embeddings in the latent
+space. The proposed dot-product M2M contrastive alignment produces more
+concentrated embeddings, with fMRI and sMRI distributions appearing nearly
+”orthogonal” to each other, indicating effective alignment. In contrast, without
+alignment or when using JSD for self-weighting, the embeddings show no
+significant distributional differences.
+F . Visualizing the Aligned Latent Space
+To demonstrate the impact of M2M contrastive alignment,
+we analyze the latent embeddings of sMRI and fMRI using t-
+SNE visualizations. Specifically, we compare the embeddings
+under four conditions: (1) without any alignment, (2) with the
+proposed dot-product M2M contrastive alignment, (3) using
+cosine similarity for self-weighting, and (4) using Jensen-
+Shannon Divergence (JSD) for self-weighting.
+As illustrated in Fig. 5, when no alignment is applied,
+the embeddings from fMRI and sMRI do not exhibit clear
+distributional differences. A similar pattern is observed when
+JSD is used for self-weighting, likely because JSD fails to
+capture the true correspondence between modalities, leading
+to ineffective alignment. In contrast, both dot-product and
+cosine-similarity-divergence-based alignments result in more
+concentrated embeddings for fMRI and sMRI. Notably, these
+embeddings form distinct distributions with one appearing
+nearly ”orthogonal” to the other, indicating that the modalities
+retain their unique characteristics while being aligned in a
+shared space.
+V. C ONCLUSION
+In this work, we propose a novel framework for Alzheimer’s
+Disease (AD) diagnosis that integrates sMRI, fMRI, and
+tabular data through adaptive multimodal fusion. Our approach
+leverages co-attention and bottleneck refinement modules to
+effectively combine complementary information across modal-
+ities. To address the inherent heterogeneity among modalities,
+we introduce a multi-patch-to-multi-patch (M2M) contrastive
+alignment loss, which aligns patch-wise representations in
+the latent space, ensuring robust cross-modal correspondence.
+Comprehensive experiments validate the effectiveness and
+superiority of our framework, demonstrating improved diag-
+nostic performance. We further show the discriminative brain
+regions from fMRI and sMRI, aligned with previous clinical
+research in Alzheimer’s. Additionally, t-SNE visualizations
+provide insights into the impact of our alignment strategy,
+highlighting its ability to achieve meaningful latent space
+alignment.
+REFERENCES
+[Abrol et al.(2019)] Anees Abrol, Zening Fu, Yuhui Du, and Vince D Cal-
+houn. 2019. Multimodal data fusion of deep learning and dynamic func-
+tional connectivity features to predict Alzheimer’s disease progression.
+In2019 41st annual international conference of the IEEE engineering
+in medicine and biology society (EMBC) . IEEE, 4409–4413.
+[Chen et al.(2020)] Ting Chen, Simon Kornblith, Mohammad Norouzi, and
+Geoffrey Hinton. 2020. A simple framework for contrastive learning of
+visual representations. In International conference on machine learning .
+PMLR, 1597–1607.
+[Corriveau-Lecavalier et al.(2024)] Nick Corriveau-Lecavalier, Jenna N
+Adams, Larissa Fischer, E ´oin N Molloy, and Anne Maass. 2024.
+Cerebral hyperactivation across the Alzheimer’s disease pathological
+cascade. Brain Communications 6, 6 (2024), fcae376.
+[DeTure and Dickson(2019)] Michael A DeTure and Dennis W Dickson.
+2019. The neuropathological diagnosis of Alzheimer’s disease. Molec-
+ular neurodegeneration 14, 1 (2019), 32.
+[Ding et al.(2024)] Saisai Ding, Juncheng Li, Jun Wang, Shihui Ying, and
+Jun Shi. 2024. Multimodal Co-attention Fusion Network with Online
+Data Augmentation for Cancer Subtype Classification. IEEE Transac-
+tions on Medical Imaging (2024).
+[Du et al.(2020)] Yuhui Du, Zening Fu, Jing Sui, Shuang Gao, Ying Xing,
+Dongdong Lin, Mustafa Salman, Anees Abrol, Md Abdur Rahaman,
+Jiayu Chen, et al. 2020. NeuroMark: An automated and adaptive ICA
+based pipeline to identify reproducible fMRI markers of brain disorders.
+NeuroImage: Clinical 28 (2020), 102375.
+[Goetz et al.(2019)] Margarethe E Goetz, John J Hanfelt, Samantha E John,
+Sharon H Bergquist, David W Loring, Arshed Quyyumi, Gari D Clifford,
+Viola Vaccarino, Felicia Goldstein, Theodore M Johnson 2nd, et al.
+2019. Rationale and design of the emory healthy aging and emory
+healthy brain studies. Neuroepidemiology 53, 3-4 (2019), 187–200.
+[Jack Jr et al.(2008)] Clifford R Jack Jr, Matt A Bernstein, Nick C Fox,
+Paul Thompson, Gene Alexander, Danielle Harvey, Bret Borowski,
+Paula J Britson, Jennifer L. Whitwell, Chadwick Ward, et al. 2008.
+The Alzheimer’s disease neuroimaging initiative (ADNI): MRI methods.
+Journal of Magnetic Resonance Imaging: An Official Journal of the
+International Society for Magnetic Resonance in Medicine 27, 4 (2008),
+685–691.
+[Khalilullah et al.(2023)] KM Ibrahim Khalilullah, Oktay Agcaoglu, Jing
+Sui, T ¨ulay Adali, Marlena Duda, and Vince D Calhoun. 2023. Mul-
+timodal fusion of multiple rest fMRI networks and MRI gray matter via
+parallel multilink joint ICA reveals highly significant function/structure
+coupling in Alzheimer’s disease. Human Brain Mapping 44, 15 (2023),
+5167–5179.
+[Kim et al.(2023)] Peter Kim, Junbeom Kwon, Sunghwan Joo, Sangyoon
+Bae, Donggyu Lee, Yoonho Jung, Shinjae Yoo, Jiook Cha, and Taesup
+Moon. 2023. Swift: Swin 4d fmri transformer. Advances in Neural
+Information Processing Systems 36 (2023), 42015–42037.
+[Liu et al.(2024)] Jinduo Liu, Lu Han, and Junzhong Ji. 2024. MCAN: mul-
+timodal causal adversarial networks for dynamic effective connectivity
+learning from fMRI and EEG data. IEEE Transactions on Medical
+Imaging (2024).
+[Lyu et al.(2024)] Yuanhuiyi Lyu, Xu Zheng, Dahun Kim, and Lin Wang.
+2024. OmniBind: Teach to Build Unequal-Scale Modality Interaction
+for Omni-Bind of All. arXiv preprint arXiv:2405.16108 (2024).[Nagrani et al.(2021)] Arsha Nagrani, Shan Yang, Anurag Arnab, Aren
+Jansen, Cordelia Schmid, and Chen Sun. 2021. Attention bottlenecks for
+multimodal fusion. Advances in neural information processing systems
+34 (2021), 14200–14213.
+[Ning et al.(2021)] Zhenyuan Ning, Qing Xiao, Qianjin Feng, Wufan Chen,
+and Yu Zhang. 2021. Relation-induced multi-modal shared representa-
+tion learning for Alzheimer’s disease diagnosis. IEEE Transactions on
+Medical Imaging 40, 6 (2021), 1632–1645.
+[Oord et al.(2018)] Aaron van den Oord, Yazhe Li, and Oriol Vinyals.
+2018. Representation learning with contrastive predictive coding. arXiv
+preprint arXiv:1807.03748 (2018).
+[Qiu et al.(2024)] Zifeng Qiu, Peng Yang, Chunlun Xiao, Shuqiang Wang,
+Xiaohua Xiao, Jing Qin, Chuan-Ming Liu, Tianfu Wang, and Baiying
+Lei. 2024. 3D Multimodal Fusion Network with Disease-induced Joint
+Learning for Early Alzheimer’s Disease Diagnosis. IEEE Transactions
+on Medical Imaging (2024).
+[Radford et al.(2021)] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya
+Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell,
+Pamela Mishkin, Jack Clark, et al. 2021. Learning transferable visual
+models from natural language supervision. In International conference
+on machine learning . PMLR, 8748–8763.
+[Rahim et al.(2023)] Nasir Rahim, Shaker El-Sappagh, Sajid Ali, Khan
+Muhammad, Javier Del Ser, and Tamer Abuhmed. 2023. Prediction
+of Alzheimer’s progression based on multimodal deep-learning-based
+fusion and visual explainability of time-series data. Information Fusion
+92 (2023), 363–388.
+[Tan and Le(2019)] Mingxing Tan and Quoc Le. 2019. Efficientnet: Rethink-
+ing model scaling for convolutional neural networks. In International
+conference on machine learning . PMLR, 6105–6114.
+[Tandon et al.(2023)] Raghav Tandon, Liping Zhao, Caroline M Watson,
+Morgan Elmor, et al. 2023. Predictors of Cognitive Decline in Healthy
+Middle-Aged Individuals with Asymptomatic Alzheimer’s Disease. Re-
+search Square (2023).
+[Van Essen et al.(2013)] David C Van Essen, Stephen M Smith, Deanna M
+Barch, Timothy EJ Behrens, Essa Yacoub, Kamil Ugurbil, Wu-
+Minn HCP Consortium, et al. 2013. The WU-Minn human connectome
+project: an overview. Neuroimage 80 (2013), 62–79.
+[Wei et al.(2024)] Yuxiang Wei, Anees Abrol, James Lah, Deqiang Qiu, and
+Vince D Calhoun. 2024. A deep spatio-temporal attention model of dy-
+namic functional network connectivity shows sensitivity to Alzheimer’s
+in asymptomatic individuals. In 2024 46th Annual International Confer-
+ence of the IEEE Engineering in Medicine and Biology Society (EMBC) .
+IEEE, 1–4.
+[Wei et al.(2023)] Yuxiang Wei, Yuqian Chen, Tengfei Xue, Leo Zekelman,
+Nikos Makris, Yogesh Rathi, Weidong Cai, Fan Zhang, and Lauren J
+O’Donnell. 2023. A Deep Network for Explainable Prediction of Non-
+imaging Phenotypes Using Anatomical Multi-view Data. In Interna-
+tional Workshop on Computational Diffusion MRI . Springer, 165–176.
+[Zhang et al.(2022)] Yao Zhang, Nanjun He, Jiawei Yang, Yuexiang Li, Dong
+Wei, Yawen Huang, Yang Zhang, Zhiqiang He, and Yefeng Zheng. 2022.
+mmformer: Multimodal medical transformer for incomplete multimodal
+learning of brain tumor segmentation. In International Conference
+on Medical Image Computing and Computer-Assisted Intervention .
+Springer, 107–117.
+[Zhu et al.(2023)] Bin Zhu, Bin Lin, Munan Ning, Yang Yan, Jiaxi Cui,
+HongFa Wang, Yatian Pang, Wenhao Jiang, Junwu Zhang, Zongwei
+Li, et al. 2023. Languagebind: Extending video-language pretraining
+to n-modality by language-based semantic alignment. arXiv preprint
+arXiv:2310.01852 (2023).

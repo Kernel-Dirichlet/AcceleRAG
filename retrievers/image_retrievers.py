@@ -48,7 +48,7 @@ class ImageRetriever(Retriever):
             cur = conn.cursor()
             
             # Get all images and embeddings
-            cur.execute(f"SELECT image_path, embedding FROM {table}")
+            cur.execute(f"SELECT filepath, embedding FROM {table}")
             results = cur.fetchall()
             
             if not results:
@@ -56,14 +56,14 @@ class ImageRetriever(Retriever):
                 
             # Compute similarities
             images_with_scores = []
-            for image_path, embedding_bytes in results:
+            for filepath, embedding_bytes in results:
                 try:
                     # Convert bytes to numpy array
                     embedding = np.frombuffer(embedding_bytes, dtype=np.float32)
                     similarity = self._compute_cosine_similarity(query_embedding, embedding)
-                    images_with_scores.append((image_path, similarity))
+                    images_with_scores.append((filepath, similarity))
                 except Exception as e:
-                    logging.error(f"Error processing image {image_path}: {e}")
+                    logging.error(f"Error processing image {filepath}: {e}")
                     continue
                     
             # Sort by similarity and return top k
@@ -88,7 +88,7 @@ class ImageRetriever(Retriever):
             **kwargs: Additional arguments
             
         Returns:
-            List of (image_path, similarity_score) tuples
+            List of (filepath, similarity_score) tuples
         """
         try:
             # 1. Compute query embedding

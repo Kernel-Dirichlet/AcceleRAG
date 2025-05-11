@@ -1,0 +1,1364 @@
+arXiv:2504.16693v1  [cs.LG]  23 Apr 2025PIN-WM: Learning Physics-INformed World Models
+for Non-Prehensile Manipulation
+Wenxuan Li1,∗Hang Zhao2,∗Zhiyuan Yu2Yu Du1Qin Zou2,4Ruizhen Hu3,†Kai Xu1,†
+1National University of Defense Technology2Wuhan University
+3Shenzhen University4Guangdong Laboratory of Artificial Intelligence and Digital Economy
+∗Equal contributions†Corresponding author
+Project page: https://pinwm.github.io
+Abstract —While non-prehensile manipulation (e.g., controlled
+pushing/poking) constitutes a foundational robotic skill, its learn-
+ing remains challenging due to the high sensitivity to complex
+physical interactions involving friction and restitution. To achieve
+robust policy learning and generalization, we opt to learn a
+world model of the 3D rigid body dynamics involved in non-
+prehensile manipulations and use it for model-based reinforce-
+ment learning. We propose PIN-WM, a Physics-INformed World
+Model that enables efficient end-to-end identification of a 3D
+rigid body dynamical system from visual observations. Adopting
+differentiable physics simulation, PIN-WM can be learned with
+only few-shot and task-agnostic physical interaction trajectories.
+Further, PIN-WM is learned with observational loss induced
+by Gaussian Splatting without needing state estimation. To
+bridge Sim2Real gaps, we turn the learned PIN-WM into a
+group of Digital Cousins via physics-aware randomizations which
+perturb physics and rendering parameters to generate diverse
+and meaningful variations of the PIN-WM. Extensive evaluations
+on both simulation and real-world tests demonstrate that PIN-
+WM, enhanced with physics-aware digital cousins, facilitates
+learning robust non-prehensile manipulation skills with Sim2Real
+transfer, surpassing the Real2Sim2Real state-of-the-arts.
+I. I NTRODUCTION
+Non-prehensile robotic manipulation [50, 23, 86], which in-
+volves moving an object by pushing or poking, finds extensive
+applications in many real-world scenarios where grasping is
+infeasible due to the weight, size, shape, or fragility of the
+object, among others. Robotic push can be implemented with
+simpler end effectors, making systems more cost-effective and
+easier to deploy in certain environments [18, 67]. However,
+significant challenges arise from the difficulty of fully dictating
+the motion and pose of the object being pushed. The complex
+underlying dynamics, caused by factors such as friction,
+restitution, and inertia, make motion prediction difficult and
+complicate motion planning and control.
+Some studies tackle non-prehensile manipulation with im-
+itation learning [11, 77], where the reliance on expensive
+expert demonstrations limits their scalability. Others explore
+deep reinforcement learning (DRL) [69], leveraging trial-and-
+error in simulations to learn policies [39, 80]. However, the
+discrepancy between simulation and reality hinders the transfer
+of the learned policy to real-world environments [12, 45]. A
+promising alternative is to learn world models [25] of the
+environment dynamics in a data-driven manner, which can be
+used for predictive control or employed in model-based RL
+𝝎∗+𝜹𝟏
+𝝎∗+𝜹𝟐(a) Few -shot task -agnostic data collection  for world model learning
+(c)  Sim2Real policy transfer (b) Physics -aware digital cousins
+𝒂𝒕
+Fig. 1: PIN-WM is learned from few-shot and task-agnostic physical
+interaction trajectories (random pushes of the blocks in this example),
+through end-to-end differentiable identification of 3D physics param-
+eters essential to the push operation (a). The learned PIN-WM is then
+turned into a group of digital cousins via physics-aware perturbations
+(b). The resulting world models are then used to learn the task-specific
+policies with Sim2Real transferability (c).
+for better data-efficiency and Sim2Real generality [26, 28].
+However, purely data-driven world models rely heavily on the
+quantity and quality of training data and struggle to generalize
+to out-of-distribution (OOD) scenarios [79].
+It is well-recognized that incorporating structured priors into
+learning algorithms improves generalization with limited train-
+ing examples [63]. A number of studies [53, 5, 67] have sought
+to integrate principles of physics into the development of world
+models. In doing so, two critical aspects require particular
+consideration. The first is the differentiability of the physics
+parameter identification process . ASID [53] identifies physics
+parameters for an established simulator using gradient-free
+optimization [65]. Baumeister et al. [5] adopt a similar method
+to learn dynamics for model predictive control (MPC) [73].
+The absence of gradient feedback renders these methodologies
+critically dependent on data quality. However, collecting high-
+quality real-world trajectories itself is a challenging task [53].
+Song and Boularias [67] employ a differentiable 2D physics
+simulator for learning planar sliding dynamics. However, 2D
+physics is insufficient to capture complex motions such as
+flipping an object through poking. The second consideration
+lies in the necessity of state estimation in the optimization
+of world models. While most existing methods involve state
+estimation with additional modules [53, 5, 67], the recent
+advances in differentiable rendering [42, 75, 57] make it
+possible to optimize against an observational loss directly, thus
+saving the effort on state estimation.
+We introduce PIN-WM , aPhysics- INformed World Model
+that allows end-to-end identification of a 3D rigid body
+dynamical system from visual observations. First , PIN-WM
+is a differentiable approach to the identification of 3D physics
+parameters, requiring only few-shot and task-agnostic physical
+interaction trajectories. Our method systematically identifies
+critical dynamics parameters essential to non-prehensile ma-
+nipulation, encompassing inertial properties, frictional coeffi-
+cients, and restitution characteristics [67, 53, 21]. Second , PIN-
+WM learns physics parameters by optimizing the rendering
+loss [56] induced by the 3D Gaussian Splatting [34] scene
+representation, facilitating direct learning from RGB images
+without additional state estimation modules. Consequently, the
+learned world model, with identified physics and rendering
+properties, can be readily applied to train vision-based control
+policies of non-prehensile manipulation using RL.
+The learned PIN-WM, representing a digital twin [24] of the
+real-world rigid body system, may still exhibit discrepancies
+against reality due to the inaccurate and partial observa-
+tions [43]. To bridge the Sim2Real gap, we turn the identi-
+fied digital twin into plenty of digital cousins [15] through
+physics-aware perturbations which perturb the physics and
+rendering parameters around the identified values as means.
+Such purposeful randomization creates a group of physics-
+aware digital cousins obeying physics laws while introducing
+adequate varieties accounting for the unmodeled discrepancies.
+The resulting world model group allows learning robust non-
+prehensile manipulation policies with Sim2Real transferability.
+Through extensive evaluation across diverse task scenarios,
+we demonstrate that PIN-WM is fast-to-learn and accurate,
+making it useful in learning robust non-prehensile manipu-
+lation skills with strong Sim2Real transfer. The overall per-
+formance surpasses the recent Real2Sim2Real state-of-the-
+arts [67, 53, 45] significantly. Our real-world experiments
+further showcase that PIN-WM facilitates Sim2Real policy
+transfer without real-world fine-tuning and achieves high
+success rates of 75% and65% in the Push and Flip tasks,
+respectively. Our contributions include:
+•We propose PIN-WM for accurate and efficient identifica-
+tion of world models of 3D rigid body dynamical systems
+from visual observations in an end-to-end fashion.
+•We turn the identified digital twin into a group of physics-
+aware digital cousins through perturbing the physics and
+rendering parameters around the identified mean values,
+to support learning non-prehensile manipulation skills
+with robust Sim2Real transfer.
+•We conduct real robot implementation to demonstrate that
+our approach enables learning control policies with min-
+imal task-agnostic interaction data and attains high per-
+formance Real2Sim2Real without real-world fine-tuning.II. R ELATED WORK
+A. Non-Prehensile Manipulation
+Non-prehensile manipulation [50, 23, 86] refers to con-
+trolling objects without fully grasping them. While offering
+flexibility, its motions are highly sensitive to contact configura-
+tions [78], requiring accurate dynamic descriptions and control
+policies. Mason [50] presents a theoretical framework for
+pushing mechanics and derive the planning by predicting the
+rotation and translation of an object pushed by a point contact.
+Akella and Mason [3] use a theoretical guaranteed linear
+programming algorithm to solve pose transitions and generate
+open-loop push plans without sensing requirements. Dogar
+and Srinivasa [17] adopt an action library and combinatorial
+search inspired by human strategies. The library can rearrange
+cluttered environments using actions such as pushing, sliding,
+and sweeping. Zhou et al. [85] model pushing mechanisms
+use sticking contact and an ellipsoid approximation of the
+limit surface, enabling path planning by transforming sticking
+contact constraints into curvature constraints. These methods,
+however, rely on simplified assumptions, either known physics
+parameters or idealized physical models, which are often
+violated in practice [60].
+Deep learning methods have recently been applied to train
+non-prehensile policies. Some studies focus on imitation learn-
+ing [35], which mimics expert behavior for specific tasks.
+Young et al. [77] emphasize the importance of diverse demon-
+stration data for generalizing non-prehensile manipulation
+tasks, introducing an efficient visual imitation interface that
+achieves high success rates in real-world robotic pushing.
+Chi et al. [11] utilize diffusion models’ multimodal action
+distribution capabilities [32] to imitate pushing T-shaped ob-
+jects, demonstrating impressive robustness. While effective,
+imitation learning relies heavily on the quantity of real-world
+data. Otherwise, it is prone to state-action distribution shifts
+during sequential decision-making [6], which is a critical issue
+in non-prehensile tasks requiring precise contact point selec-
+tion and control [86]. Hu et al. [33] conclude that imitation
+generalization follows a scaling law [41] with the number of
+environments and objects, recommending 50 demonstrations
+per environment-object pair. Such data requirements can be
+costly and prohibitive for scalability. Alternatively, deep rein-
+forcement learning (DRL) can learn policies through trial and
+error in simulated environments [39, 80]. However, the large
+gap between simulation and reality poses significant chal-
+lenges for transferring these policies to the real world [12, 45].
+Building an interactive model that accurately captures real-
+world physical laws is crucial for learning feasible non-
+prehensile manipulation policies in real world.
+B. World Models for Policy Learning
+World models [25], which learn the environment dynamics
+in a data-driven manner, provide interactive environments for
+effective policy training [26, 28]. Hafner et al. [26] pro-
+pose Dreamer, a world model that learns a compact latent
+representation of the environment dynamics. The following
+work [74] applies Dreamer to robotic manipulation tasks,
+demonstrating fast policy learning on physical robots. DINO-
+WM [84] leverages spatial patch features pre-trained with
+DINOv2 to learn a world model and achieve task-agnostic be-
+havior planning by treating goal features as prediction targets.
+TD-MPC [28, 29] uses a task-oriented latent dynamics model
+for local trajectory optimization and a learned terminal value
+function for long-term return estimation, achieving superiority
+on image-based control. Building on the success of learning
+from large-scale datasets [7, 61], Mendonca et al. [54] leverage
+internet-scale video data to learn a human-centric action space
+grounded world model. However, purely data-driven world
+models rely heavily on the quantity and quality of training
+data and struggle to generalize to out-of-distribution (OOD)
+scenarios [79, 62]. This lowers the robustness of the learned
+policies transferred to the real world.
+Incorporating structured priors into learning algorithms
+is known to improve generalization with limited training
+data [63, 8]. Recent advances in differentiable physics have
+opened up new possibilities for incorporating physical knowl-
+edge into world models. Lutter et al. [48] introduce a deep
+network framework based on Lagrangian mechanics, effi-
+ciently learning equations of motion while ensuring physi-
+cal plausibility. Heiden et al. [31] augment a differentiable
+rigid-body physics engine with neural networks to capture
+nonlinear relationships between dynamic quantities. Other
+works [16] demonstrate analytical backpropagation through
+a physical simulator defined via a linear complementarity
+problem. ∇Sim [59] combine differentiable physics [16, 68]
+and rendering [9, 37, 38, 76] to jointly model scene dynamics
+and image formation, enabling backpropagation from video
+pixels to physical attributes. This approach was soon followed
+by improvements with advanced rendering techniques [46, 8],
+or enhanced physics engines [40].
+Despite those advances, only a few studies [53, 5, 67] incor-
+porate physical property estimation into world models for non-
+prehensile manipulation, relying on gradient-free optimization
+or simplified physical models that fail to effectively handle
+complex interactions. Gradient-free methods rely on high-
+quality trajectories for system identification; lacking such data,
+they are prone to local optima, as demonstrated by ASID using
+CEM [53]. Simplified physics models, such as the 2D physics
+engine adopted by Song and Boularias [67], inherently struggle
+to capture the full 3D dynamics of real-world interactions,
+leading to inaccurate predictions. In contrast, PIN-WM enables
+end-to-end identification of 3D rigid-body dynamics from
+visual observations using few-shot, task-agnostic interaction
+data, which facilitates the training of vision-based manipu-
+lation policies with RL. PIN-WM aligns with the original,
+narrow-scope definition of a world model [25]: a dynamics
+model tailored to a specific environment for precise model-
+based control. This contrasts with general-purpose world foun-
+dation models like Cosmos [2].C. Domain Randomization
+Domain Randomization trains a single policy across a range
+of environment parameters to achieve robust performance
+during testing. Peng et al. [60] enhance policy adaptability to
+varying environmental dynamics by randomizing the environ-
+ment’s dynamic parameters. Miki et al. [55] train legged robots
+in diverse simulated physical environments. During testing, the
+robots first probe the terrain through physical contact, then pre-
+emptively plan and adapt their gait, resulting in high robustness
+and speed. Tobin et al. [71] introduce randomized rendering,
+e.g., textures, lighting, and backgrounds, in simulated envi-
+ronments to enhance real-world visual detection. Yue et al.
+[81] randomize synthetic images using real image styles from
+auxiliary datasets to learn domain-invariant representations.
+Dai et al. [15] introduce an automated pipeline to transform
+real-world scenes into diverse, interactive digital cousin envi-
+ronments, demonstrating significantly higher transfer success
+rates compared to digital twins [24].
+While these randomization methods provide a simple ap-
+proach for efficiently transferring simulation-trained policies
+to the real world, their uniform sampling of environment
+parameters lacks proper constraints. This results in a generated
+space far larger than the real-world space, increasing learn-
+ing burdens [52] and often producing conservative policies
+with degraded performance [19]. In contrast, we perturb the
+physics and rendering parameters around the identified values
+as means. Such purposeful randomization creates a group
+ofphysics-aware digital cousins obeying physics laws while
+introducing adequate varieties accounting for the unmodeled
+discrepancies. The developed world model facilitates the learn-
+ing of robust non-prehensile manipulation policies that transfer
+effectively from simulation to real-world environments.
+III. M ETHOD
+A. Overall Framework
+We develop real-world non-prehensile manipulation skills
+through a two-stage pipeline: Real2Sim system identification
+via our physics-informed world model, and Sim2Real policy
+transfer enhanced by physics-aware digital cousins. We pro-
+vide an overview of our framework in Figure 2.
+Real2Sim System Identification :The Real2Sim stage
+constructs our physics-informed world model, which identifies
+the physics parameters of the target domain from visual
+observations. A world model [26] predicts the next system
+observation ot+1based on the current observation otand
+actions at:
+ot+1=W(ot,at,ω), (1)
+where tdenotes the time step and ωrepresents the learnable
+parameters. A comprehensive physical world for robot inter-
+action should account for visual observations, physics, and
+geometry [1], and we follow the convention in previous non-
+prehensile manipulation works [67, 86] that the geometry is
+assumed to be known. Therefore, our PIN-WM W=I ◦g
+focuses on learning visual observations and physics of the
+target domain, where Iis the differentiable rendering function
+(a) Rendering alignment
+መ𝐼𝑡+1∇𝜽Multi-view observation 2D Ga ussian Splats
+𝐱𝑡+1
+PIN-WM
+Simulate 𝒂𝑡 Policy  
+𝝅መ𝐼𝑡1
+መ𝐼𝑡𝑛Physics 𝜽𝟏
+Render 𝜶𝟏
+Physics 𝜽𝒏
+Render 𝜶𝒏𝒂𝑡1
+𝒂𝑡𝑛መ𝐼𝑡+11
+መ𝐼𝑡+1𝑛𝑟𝑡1
+𝑟𝑡𝑛
+Policy  
+𝝅∗𝐼𝑡 𝒂𝑡Next real observation 𝐼𝑡+1(c) Policy learning with physics -aware digital cousins
+(d) Transfer to the target domain without fine -tuning
+(b) Identification of physics parameters
+Differentiable
+Physics (LCP, 𝜽)
+𝐱𝑡,𝒂𝑡
+Source domain ( 𝜽, 𝜶) 
+Target domain (𝜽†, 𝜶†) Rendered image
+Ground truthRendering  loss GoalNext renderings መ𝐈𝑡+1
+PIN-WM
+Success
+Source Domain
+ Target Domain
+ ObjectA. Real2Sim System Identification B. Sim2Real Policy Transfer
+Apply 𝒂𝑡
+𝛻𝝅 Rewards 𝒓𝑡
+…
+Target domain
+Differentiable
+Render (2DGS, 𝜶)
+…
+…
+Fig. 2: Our Real2Sim2Real framework for learning non-prehensile manipulation policies. (a) The robot in the target domain moves around
+the object, capturing multi-view observations to estimate the rendering parameters αof 2D Gaussian Splats. (b) Once optimized, αis frozen.
+Both source and target domains apply the same task-agnostic physical interactions at. In the source domain, dynamics are computed via
+LCP with physical parameters θto update the rendering. θis then optimized with the rendering loss between two domains. (c) The identified
+world model is then used for policy learning. Physics-aware perturbations are introduced to αandθto mitigate the remained discrepancies
+from inaccurate observations. (d) This ensemble of perturbed world models enhances the Sim2Real transferability of learned policies.
+andgis the differentiable physics function. In more detail, the
+world model can be rephrased as:
+It+1=I(g(xt,at,θ),α), (2)
+where g, parameterized by θ, predicts the next state xt+1from
+current state xtand action at, andI, parameterized by α,
+generates the image It+1corresponding to xt+1. Hence, ω=
+{α,θ}forms all learnable parameters for W. The goal of
+system identification is to optimize ωso that the generated
+images resemble those observed in the target domain.
+Sim2Real Policy Transfer :After system identification,
+we obtain the world model Was an interactive simula-
+tion environment. We can learn non-prehensile manipulation
+skills through reinforcement learning, where the learned pol-
+icy is expected to achieve Sim2Real transfer without real-
+world fine-tuning. However, the identified world model may
+deviate from the real world due to inaccurate and partial
+observations [43]. We enhance policy transfer performance
+by introducing physics-aware digital cousins (PADC). PADC
+perturbs the identified system to generate meaningful train-
+ing variations, which share similar physics and rendering
+properties while introducing distinctions to model unobserved
+discrepancies. This approach improves policy transferability
+and reduces the learning burden. The learned policy is then
+directly deployed in the target domain for manipulation tasks.B. Physics-INformed World Model
+In this section, we provide a detailed description of learning
+PIN-WM W=I ◦g. To fully characterize the dynamics gof
+our system, we adopt rigid body simulation [68] to formulate
+the dynamics of scene components that satisfy the momentum
+conservation. Therefore, we include the target object, the end-
+effector, and the floor in our environment state representation
+xt={pt,qt,ξt}, where pt,qt, and ξtrepresents their
+positions, orientations, and twist velocities, respectively.
+We account for joint, contact, and friction constraints for
+rigid body simulation, and include the physical properties of
+those scene components that are most concerned by non-
+prehensile manipulation tasks [67, 53] into our physical pa-
+rameters θ={θM,θk,θµ}, where θMrepresents the mass
+and inertia, θkrepresents restitution, and θµrepresents friction
+coefficients. Under the rigid-body assumption where object
+motion follows the Newton-Euler equations, these parameters
+are sufficient to define collision, inertial response, and contact
+behavior [20, 68]. Properties like elasticity or plasticity fall
+outside the rigid-body scope.
+The differentiable rendering function Iis used to align the
+visual observations between the source domain and the target
+domain. Note that from a differentiable physics perspective,
+the floor is stationary, and the robot is the one applying
+force actively, whose dynamics will not be affected by other
+objects, so only the motion of the target object needs to be
+observed and aligned. Therefore, our rendering function only
+consider the target object, that is I(xt,α) =I(xo
+t,α), where
+αrepresents the rendering parameters specifically defined for
+the target object, and the rendered image will change with the
+update of object pose.
+The learning process of our PIN-WM starts with optimizing
+αfor rendering alignment, and uses optimized α∗to guide
+the identification of physical parameters θfor simulation.
+Rendering Alignment :To optimize the rendering param-
+etersαfor the target object o, the robot end-effector moves
+around oin its initial state xo
+0and captures multiple static
+scene images with an eye-in-hand camera Is={Is
+0, ..., Is
+m},
+as demonstrated in Figure 2(a). To make sure that the rendering
+function Ican generalize to new viewpoints or object poses,
+we adopt 2D Gaussian Splatting (2DGS) [34] as the render.
+Compared to 3D Gaussian splatting [42], 2DGS is more
+effective in capturing surface details.
+2DGS renders images by optimizing a set of Gaussian
+elliptical disks, which are defined in local tangent uvplanes
+in world space:
+P(u, v) =pk+sutuu+svtvv=H(u, v,1,1)⊤,(3)
+where pkis the central point of the k-th 2D splat. tuandtv
+are principal tangential vectors, and tw=tu×tvpresents the
+primitive normal. R= [tu,tv,tw]is a3×3rotation matrix
+andS= (su, sv)is the scaling vector. The 2D Gaussian for
+static object representation can be equivalently represented by
+a homogeneous matrix H0∈4×4:
+H0=sutusvtv0 p k
+0 0 0 1
+=
+RS p k
+0 1
+. (4)
+During the optimization, we randomly splat 2D disks onto
+the object surface Gfor high-quality rendering initialization.
+For an image coordinate (x, y), volumetric alpha blending
+integrates alpha-weighted appearance to render the image ˆI:
+ˆI(x, y) =X
+i=1αc
+iαo
+iGi(u(x, y))i−1Y
+j=1 
+1−αo
+jGj(u(x, y))
+,
+(5)
+where αc
+iandαo
+iare the color and opacity of the i-th
+Gaussian, u(x, y)represents the intersection point between the
+ray emitted from the camera viewpoint through the image pixel
+(x, y)and the plane where the 2D Gaussian distribution resides
+in 3D space, G(u)is the 2D Gaussian value for intersection
+u, indicating its weight.
+This differentiable rendering models the visual observation
+of the target object oin its initial state, and the corresponding
+parameters α, including all 2DGS parameters, are optimized
+with the following loss function:
+L=Lc+ωdLd+ωnLn, (6)
+where Lccombines rendering loss [56] Lr=∥ˆI−Is∥2
+2with
+the D-SSIM term [42]. LdandLnare regularization terms for
+depth distortion and normal consistency [34], respectively.
+Once the optimal parameters α∗are obtained for the target
+object oin its initial state xo
+0, any change of the object pose
+can lead to the rendering updating, achieved by transformingthe 2DGS accordingly. In more detail, for any new object state
+xo
+t, we can convert its corresponding pose to a transformation
+matrix To
+t∈4×4[30]. We then apply To
+tto initial Gaus-
+sian splats represented by H0, resulting in the transformed
+homogeneous matrix:
+Ht=To
+t(To
+0)−1H0. (7)
+where To
+0represents the static object pose in its initial state xo
+0
+as the reference. Htcan be used to render the new image for
+the target object with an updated state, denoted as I(xt,α∗).
+Identification of Physics Parameters :With the opti-
+mized rendering parameter α∗, we further estimate the physics
+properties θfor simulation, based on the gradient flow from
+visual observations established by the differential render. The
+robot interacts with the object in state xtthrough a set of
+task-agnostic actions A={at, ...,at+n−1}to collect a video
+Id={Id
+t+1, ..., Id
+t+n}capturing dynamics, as shown in Fig-
+ure 2(b). The transformed observations ˆI={I(xt+i,α∗)}n
+i=1
+are then obtained in simulation with Equation 5, where xt+i=
+g(xt+i−1,at+i−1,θ)is the updated state when applying action
+at+i−1. The physics parameter θis then estimated by minimiz-
+ing the discrepancy between the generation ˆIand observation
+Id. Therefore, we can represent the objective of the physics
+estimation as:
+min
+θLr(θ) =nX
+i=1∥I(g(xt+i−1,at+i−1,θ),α∗)−Id
+t+i∥2
+2.
+(8)
+What remains now is to develop a differentiable physics
+model xt+1=g(xt,at,θ)for simulation, predicting the
+next object pose xt+1based on current state xtand action
+at. Note that previous work estimates physics parameters by
+differentiating the impact of external wrenches on objects [68].
+However, for robotic manipulation, we cannot assume that all
+robot parts support wrench measuring. Therefore, we choose
+the translation dtof robot end-effector as the action, i.e.,
+at=dt.
+We formulate this system identification process as a
+velocity-based Linear Complementarity Problem (LCP) [16,
+68] which solves the equations of motion under global con-
+straints. Here, we use LCP to first estimate ξt+1fromxt, and
+then further use those two together to update the remaining
+pt+1andqt+1. In more detail, given a time horizon Hwhich
+describes the duration of an action’s effect, LCP updates twist
+velocities of each scene component ξttoξt+1afterH, where
+ξtincludes linear velocities vtand angular velocities Ωt.
+The updated velocity ξt+1={vt+1,Ωt+1}is then used to
+calculate the updated pose {pt+1,qt+1}integrated by the
+semi-implicit Euler method [47]:
+pt+1=pt+H·vt+1,
+qt+1=normalize (qt+H
+2([0,Ωt+1]⊗qt)), (9)
+where ptandqtare the object’s position and orientation
+represented by a quaternion. [0,Ωn+1]represent quaternion
+constructed from the angular velocity Ωn+1, and⊗denotes
+the quaternion multiplication.
+The LCP is solved following the framework by Cline [13],
+where the goal is to find velocities ξt+1and Lagrange mul-
+tipliers λe,λc,λf,γsatisfying the momentum conservation
+when a set of constraints is included:
+θMξt+1=θMξt+fg·H+Jeλe+Jcλc+Jfλf,
+(Rigid Body Dynamics Equation)
+Jeξt+1= 0, (Joint Constraints)
+Jcξt+1≥ −θkJcξt≥ −c, (Contact Constraints)
+Jfξt+1+Eγ≥0,θµλc≥E⊤λf,(Friction Constraints)
+(10)
+where fgis the gravity wrench, λe,λc,λf,γare constraint
+impulse magnitudes, Eis a binary matrix making the equation
+linearly independent at multiple contacts, and Je,Jc,Jfare
+input Jacobian matrices describing the joint, contact, and
+friction constraints, please refer to [16] for construction details.
+Here, joint constraints ensure that connected objects maintain
+a specific relative pose, contact constraints prevent interpene-
+tration, and friction constraints enforce the maximum energy
+dissipation principle.
+We adopt the primal-dual interior point method [51] as the
+LCP solver to obtain the solution ξt+1while establishing
+gradient propagation from ξt+1toθ. We then apply the
+method described in [4] to derive the gradients of the solution
+with the objective in Equation 8. The output of the physics
+model gis contributed by both θand the last state xt, where
+xtalso depends on θ. Therefore, the gradients with respect to
+θcan be expressed as:
+dLr(θ)
+dθ=nX
+i=1(I(g(xt+i−1,at+i−1,θ),α∗)−Id
+t+i)
+·(∂I
+∂g∂g
+∂θ+∂I
+∂g∂g
+∂xt+i−1∂xt+i−1
+∂θ).(11)
+As LCP is widely adopted by mainstream simulators [14, 49],
+the estimated θcan be compatible with existing simulation
+environments [36, 10] as well.
+Since we use a velocity-based LCP, the end-effector trans-
+lation dcan be converted into velocity ξe=d/H, where
+His the action time horizon. This equation holds because
+the robot’s mass is typically much greater than the object’s
+mass, allowing its own dynamics to be ignored. The pose
+and velocity of the floor is kept stationary during the whole
+process, and only its geometry and physical parameters are
+used for solving the dynamics equation. Moreover, in robot
+manipulation, the action time horizon His usually inequiv-
+alent to simulation step size h, while the latter is set small
+enough to ensure accurate object pose integration (Equation 9).
+The input sub-action for each recursion is derived by dividing
+the original action atintoH/h segments. We propagate
+recursive derivatives of Equation 11 across H/h simulation
+time steps and optimize θ.C. Physics-aware Digital Cousins
+The learned world model Wreduces the gap with real
+worlds and provides an interactive environment for manip-
+ulation policy learning. However, inconsistencies with the
+real world remain due to inaccurate and partial observations.
+Domain randomization [71] randomizes system parameters in
+the source domain during training to cover the problem space
+of the target, but it often lacks adequate constraints, increasing
+training burdens and reducing policy performance. Therefore,
+We propose physics-aware digital cousins , which perturb the
+rendering and physics near the system’s identified parameters,
+as illustrated in Figure 2(c).
+We adopt all estimated rendering parameters α∗and physics
+parameters θ∗for generating digital cousins. For rendering, we
+adopt the spherical harmonics (SH) parameters αsh⊂α∗[58],
+which represent the directional rendering component of the
+2D Gaussian. Perturbing αshallows modeling of lighting
+and material variations. We randomize the system parameters
+ωr={αsh,θ∗}by sampling ˜ωrfrom a uniform distribution:
+˜ωr∼ U(ωr·(1−δ),ωr·(1 +δ)) (12)
+where δindicates perturbation magnitude. For SH parame-
+ters, randomization is applied separately to each splat. To
+ensure zero-shot policy transfer, we perturb the identified
+parameters with δ= 0.1to generate digital cousins. Our
+physics-informed world model is compatible with arbitrary
+reinforcement learning methods; we adopt Proximal Policy
+Optimization (PPO) [66] for its ease of implementation. The
+learned policy is then directly deployed in the target domain
+world for manipulation tasks, as shown in Figure 2(d).
+IV. R ESULTS AND EVALUATIONS
+With our experimental evaluations, we aim to answer the
+following questions:
+•Does our method outperform other Real2Sim2Real meth-
+ods in learning deployable manipulation policies?
+•Does PIN-WM achieve more accurate system identifica-
+tion compared to existing approaches?
+•Does the proposed physics-aware digital cousins (PADC)
+help with policy transfer?
+•Can our method deliver superior performance in real-
+world settings?
+We conduct experimental evaluations in both simulation and
+the real world. Simulators provide ground truth for evaluating
+system identification accuracy and hence offer comprehensive
+answers to the first three questions, while the real-world tests
+are used to validate the effectiveness of policy deployment
+regarding the last question.
+We evaluate our method on rigid body motion control. The
+robot’s objective is to perform a sequence of non-prehensile
+actions to move an object into a target pose. Actions are
+specified as translations of the end-effector. We set up two
+tasks: push [11] and flip[86]. The push task is to move a planar
+object on a plane to a target pose, involving 2D translation in
+thexy-plane and 1D rotation around the z-axis. The flip task
+Push tasks Flip tasks
+Fig. 3: Manipulation trajectories in simulation obtained by our
+method for both push andfliptasks.
+is to poke an object to turn it from a lying pose to an upside-
+down pose, which requires 3D rotation and 3D translation.
+A. Evaluations in Simulation
+Experiment setup :In simulation, we collect a single
+task-agnostic trajectory that the target object is pushed forward
+along a straight line by the robot end-effector for a predefined
+distance in the target domain. After that, any access to the
+target domain is prohibited. Since our estimated parameters
+are compatible with existing simulators, we integrate estima-
+tions to the Bullet engine [14] for high-performance physics
+simulation. With the learned simulator, we train manipulation
+policies with only RGB images as input. We maintain 32
+parallel threads for efficient training, each running an inde-
+pendent physics-aware digital cousin. The initial object pose is
+randomized for each episode. After the episode terminates for
+each thread, the environment is replaced with a newly sampled
+digital cousin. Trained policies are then directly deployed to
+the target domain for evaluation. For both push and flip tasks,
+we set a relatively low friction in the target domain to highlight
+the importance of physics identification. Figure 3 demonstrates
+several manipulation trajectories obtained by our method for
+both push and flip tasks with different initial states.
+Evaluation metrics :To answer the first three questions,
+our evaluation metrics focus on both the manipulation policies
+and the world models. We measure the success rate Succ %
+of a policy if the task is completed within a threshold of
+100 steps for push and 25steps for flip. We also consider
+the required number of steps to complete a task, denoted as
+#Steps . We evaluate the accuracy of a world model using
+one-step error [44] which measures the distance between the
+final object states after applying one sampled action to theTABLE I: Comparisons on policy performance in the target domain.
+MethodsTasks
+Push Flip
+Succ % # Steps Succ % # Steps
+Random 0% 100.0 0% 25.0
+Dreamer V2 [27] 1% 99.9 0% 25.0
+Diffusion Policy [11] 13% 91.1 10% 23.3
+RoboGSim [45] 19% 82.6 21% 20.5
+Domain Rand [60] + I 33% 73.6 32% 20.0
+2D Physics [67] + I 55% 60.6 8% 22.6
+ASID [53] + I 58% 57.6 11% 22.2
+PIN-WM w/o PADC 92% 32.1 70% 12.0
+PIN-WM w/ PADC 97% 30.1 83% 11.4
+identified model and the target-domain simulator. This error
+is computed separately for translation and rotation differences,
+measured in meters and radians, respectively.
+Baseline methods :We compare our method with various
+types of approaches for training non-prehensile manipulation
+skills, including:
+•Methods that rely purely on data. A representative is the
+well-known Dreamer V2 [27], which is a latent-space dynam-
+ics model from data for handling high-dimensional observa-
+tions and learning robust policies. Given their strong reliance
+on data quantity, we provide 100 task-agnostic trajectories.
+Based on the learned expert policy, we train non-prehensile
+manipulation skills via imitating expert demonstrations [35]
+of100task-completion trajectories similar to Chi et al. [11].
+•Methods with pre-defined physics-based world models.
+We use Bullet [14] as the default simulator. Following the
+standard domain randomization approach [60], we randomize
+the physics parameters in Bullet, including mass, friction,
+restitution, and inertia, across a broad range for policy training.
+We employ our learned rendering function Ias the renderer.
+We set a variant with fixed, random physics and rendering
+parameters where no system identification or randomization
+is involved, denoted as Random . We also compare with
+RoboGSim [45], which optimizes only rendering parameters
+using 3DGS [42] but not physics parameters.
+•Methods with learned physics-based world models. We
+compare with ASID [53] and the method of Song and Boular-
+ias [67]. The former performs system identification using
+gradient-free optimization. The latter leverages differentiable
+2D physics (thus referred to as 2D Physics). Since neither of
+the two methods learns rendering parameters and their trained
+policies cannot work without aligned visual input, we add our
+rendering function Ito enhance these two methods.
+Note that all physics-based methods being compared are
+trained with the same task-agnostic trajectories as PIN-WM,
+for fair comparison. All policies are trained until no significant
+success rate performance can be gained and are then deployed
+directly to the target domain for evaluation. We also conduct
+an ablation study of our method that trains policies without
+PADC. More implementation details of baseline methods are
+provided in Appendix A.
+Comparisons on policy performance :We conduct 100
+episodes of tests for each method and report the comparison
+results in Table I. Our method achieves the best performance
+for both non-prehensile manipulation tasks, thanks to the
+accurate system identification of PIN-WM and the meaningful
+digital cousins of PADC. Without PADC, our method still
+outperforms others, although with a performance decrease.
+The purely data-driven world model Dreamer V2 [27],
+albeit having access to more task-agnostic data, fails to
+accurately approximate the dynamics of the target domain,
+resulting in poor performance of the trained and deployed
+policies. Diffusion Policy [11], relies on more expensive task-
+completion data, also presents inferior performance due to
+the limited training data quantity and hence poor out-of-
+distribution generalization. These results highlight the impor-
+tance of incorporating physics priors in learning world models.
+For those methods with pre-defined physics-based world
+model, Domain Rand [60] + Iintroduces excessive random-
+ness, making the task learning more difficult. We provide a
+detailed explanation in Appendix B of why Domain Rand +
+Istruggles; smaller-scale randomizations around ground-truth
+physical parameters improve its effectiveness, though knowing
+these parameters is unrealistic. RoboGSim [45] optimizes only
+for rendering parameters but not physics ones, also leading
+to performance degradation. In contrast, our physics-aware
+digital cousin design, perturbing the physics and rendering
+parameters around the identified values as means, creates
+meaningful digital cousins allowing for learning robust poli-
+cies with Sim2Real transferability.
+Moreover, the policies trained with physics-based alterna-
+tives exhibit unsatisfactory performance in the target domain.
+One reason is that their world models failed to effectively
+capture the target-domain dynamics. ASID [53] leads to sub-
+optimal solutions due to its inefficient gradient-free optimiza-
+tion. Although 2D Physics [67] accounts for 2D differentiable
+physics and achieves satisfactory push performance, its per-
+formance on the fliptask degrades since it involves 3D rigid
+body dynamics. These experiments collectively demonstrate
+that an accurate identification of both physics and rendering
+parameters is crucial for learning non-prehensile manipula-
+tion skills. Although PIN-WM performs physical parameter
+identification under the assumption of perfect geometry, we
+also provide experiments in Appendix B showing that, even
+with noise, the training environment constructed by PIN-WM
+effectively supports policy training.
+Comparisons on system identification :We compare the
+accuracy of system identification of both data-driven and
+physics-based approaches. This is done by measuring the one-
+step error after applying the same randomly sampled action to
+the same surface point of the target object. The results are
+reported in Table II.
+We observe that the data-driven method Dreamer V2 [27],
+as expected, suffer catastrophic performance degradation when
+generalizing to new state and action distributions. ASID [53]
+shows lower accuracy compared to PIN-WM in both push and
+flip tasks, since it is difficult for gradient-free optimization toTABLE II: Comparisons on system identification accuracy across
+different methods, using one-step error of the predicted trajectory.
+“Trans.” and “Rot.” are translation and rotation errors, respectively.
+MethodsTasks
+Push Flip
+Trans. Ori. Trans. Ori.
+Dreamer V2 [27] 7.6×10−25.6×10−12.3×10−12.0
+2D Physics [67] 4.2×10−25.4×10−12.1×10−11.6
+ASID [53] 3.0×10−24.0×10−11.4×10−11.6
+PIN-WM 1.7×10−21.3×10−11.4×10−20.3
+0 25 50 75 100
+Steps0.000.010.020.030.04Translation ErrorDreamer V2
+2D Physics
+ASID
+PIN-WM
+0 25 50 75 100
+Steps0.00.20.40.6Orientation Error
+Fig. 4: Transition and orientation errors of push task during training.
+find a good solution in a finite time due to the large search
+space. Although 2D Physics [67] adopts a differentiable frame-
+work, the 2D model finds difficulties in handling 3D rigid body
+dynamics, resulting in low prediction accuracy. In contrast,
+our method learns 3D rigid body physics parameters through
+differentiable optimization, achieving superior performance in
+both push and flip scenarios. We present the learning curves
+of the push task in Figure 4, demonstrating the stability and
+efficiency of PIN-WM during training. We can observe that
+Dreamer V2 quickly converges on the training dataset, but it
+does not generalize well on the test dataset. We also provide
+the physical parameters identified by each method, along with
+the ground truth parameters, in Appendix B.
+B. Evaluations in Real-World
+Fig. 5: Our real-world experiment setup.
+Experiment setup :Our hardware setup consists of a
+robot, an eye-in-hand camera, and an eye-to-hand camera, as
+shown in Figure 5. Given a real-world object oand its mesh
+geometry G, we use FoundationPose [72] to estimate initial
+object pose To
+0in the world coordinate system. We set the
+mesh geometry Gwith pose To
+0in the simulator, and sample
+a series of surface points on the transformed mesh To
+tGas the
+initialization for 2D Gaussian Splatting. The robot then moves
+around the object and captures the time-lapse video sequence
+TABLE III: Real-world deployment performance.
+MethodsTasks
+Push Flip
+Succ % # Steps Succ % # Steps
+Random 0% 100.0 0% 25.0
+Domain Rand [60] + I 10% 87.5 25% 18.5
+RoboGSim [45] 30% 72.7 15% 21.2
+2D Physics [67] + I 35% 70.7 5% 24.1
+ASID [53] + I 40% 64.6 10% 22.4
+PIN-WM w/o PADC 65% 45.2 60% 13.2
+PIN-WM w/ PADC 75% 37.5 65% 11.3
+Is, while recording the corresponding camera pose sequence
+{Tc
+0, ...,Tc
+n}. We segment the region of interest with SAM
+2 [64] and optimize the 2D Gaussian with the objective in
+Equation 6, aligning rendering with the real world. After that,
+we apply a straight line of translational actions to push the
+object oin the real world. A dynamic video Idis captured by
+the eye-to-hand camera to be used for optimizing the physics
+parameters θwith Equation 8.
+Baseline methods :In the real-world setting, collecting
+a large amount of trjactories, either task-agnostic or task-
+completion, is highly expensive. Therefore, we only com-
+pare with policy learning methods requiring no or few-shot
+real-world data , thus excluding data-driven methods such as
+Dreamer V2 [27] and Diffusion Policy [11].
+Comparisons on policy performance :We evaluate real-
+world performance with both push andfliptasks under iden-
+tical initial conditions across 20 trials. The push task requires
+pushing the T-shaped object to the red target position, while
+the flip task involves flipping a mug from its side to an upside-
+down pose. The results are summarized in Table III, showing
+that PIN-WM can complete the task with higher success rates
+and fewer steps.
+Conventional simulators with random parameters fail to pro-
+duce transferable policies due to physical and rendering mis-
+alignment. Although having integrated our rendering function
+I, the naive randomization of Domain Rand [60] still creates
+noisy variations that degrade policy learning. This is also
+demonstrated by the comparisons with RoboGSim [60], which
+aligns rendering but not physics parameters. With a more
+accurate estimation of physics parameters, 2D Physics [67] and
+ASID [53] obtain slightly better results but are still inferior to
+PIN-WM. By learning both physical parameters and rendering
+representations through differentiable optimization, together
+with our physics-aware digital cousins design, our approach
+attains much better performance in real-world deployments.
+We show comparisons of real-world trajectories of push
+task in Figure 6. Our method successfully pushes the T-
+shaped object to the target pose with a few steps. In contrast,
+alternative approaches either require longer trajectories or fail
+to complete the task. We also verify the effectiveness of our
+method by demonstrating how it completes the push task
+on a larger T-shaped object in Figure 7, demonstrating its
+adaptability to varied shapes and sizes. Appendix C provides
+real-world comparisons for pushing objects on a slippery glassplane, including both the T-shaped object and a cube object.
+We provide trajectories about flipping a mug in Figure 8 and
+a cube object in Appendix C.
+V. C ONCLUSIONS
+We have presented a method of end-to-end learning physics-
+informed world models of 3D rigid body dynamics from
+visual observations. Our method is able to identify the 3D
+physics parameters critical to non-prehensile manipulations
+with few-shot and task-agnostic interaction trajectories. To
+realize Sim2Real transfer, we turn the identified digital twin
+to a group of physics-aware digital cousins through perturbing
+the physics and rendering parameters around the identified
+mean values. Experiments demonstrate the robustness and
+effectiveness of our method when compared with different
+types of baseline methods.
+Limitation and future work :We see several opportuni-
+ties for future research. First, we use visual observations to
+guide the optimization of physical parameters, thus rendering
+alignment places a key role here. We find that the various
+shadows generated with the robot’s movement can distort ren-
+dering loss estimation, compromising the accuracy of learned
+physical properties. This issue could potentially be resolved
+by incorporating differentiable relighting [22] into Gaussian
+Splatting to better model lighting conditions. Additionally, our
+current framework focus on rigid-body dynamics, and it would
+be interesting to explore ways to integrate more advanced
+differentiable physics engines, such as the Material Point
+Method (MPM) [59], to extend PIN-WM’s capability to handle
+deformable objects. We are also engaged in applying PIN-WM
+to real-world applications in industrial automation [70, 82, 83].
+VI. A CKNOWLEDGEMENTS
+This work was supported in part by the NSFC (62325211,
+62132021, 62322207), the Major Program of Xiangjiang
+Laboratory (23XJ01009), Key R&D Program of Wuhan
+(2024060702030143), Shenzhen University Natural Sciences
+2035 Program (2022C007), and Guangdong Laboratory of
+ArtificialIntelligence and Digital Economy Open Research
+Fund (GML-KF-24-35).
+REFERENCES
+[1] Jad Abou-Chakra, Krishan Rana, Feras Dayoub, and
+Niko Suenderhauf. Physically embodied gaussian splat-
+ting: A visually learnt and physically grounded 3d repre-
+sentation for robotics. In Conference on Robot Learning ,
+2024.
+[2] Niket Agarwal, Arslan Ali, Maciej Bala, Yogesh Bal-
+aji, Erik Barker, Tiffany Cai, Prithvijit Chattopadhyay,
+Yongxin Chen, Yin Cui, Yifan Ding, et al. Cosmos
+world foundation model platform for physical ai. IEEE
+Conference on Computer Vision and Pattern Recognition ,
+2025.
+[3] Srinivas Akella and Matthew T Mason. Posing polygonal
+objects in the plane by pushing. The International
+Journal of Robotics Research , 1998.
+Domain Rand. RoboGSim ASID 2D Physics PIN-WM (ours)Time lapse Result
+Fig. 6: Real-world trajectories of different methods on the push task.
+Large T Small TTime lapse Result
+Fig. 7: Real-world trajectories of pushing T-shaped objects of different sizes obtained by our method.
+[4] Brandon Amos and J Zico Kolter. Optnet: Differentiable
+optimization as a layer in neural networks. In Interna-
+tional Conference on Machine Learning , 2017.
+[5] Fabian Baumeister, Lukas Mack, and Joerg Stueckler.
+Incremental few-shot adaptation for non-prehensile ob-
+ject manipulation using parallelizable physics simulators.
+arXiv preprint arXiv:2409.13228 , 2024.
+[6] Suneel Belkhale, Yuchen Cui, and Dorsa Sadigh. Data
+quality in imitation learning. Advances in Neural Infor-
+mation Processing Systems , 2024.
+[7] Tom Brown, Benjamin Mann, Nick Ryder, Melanie Sub-
+biah, Jared D Kaplan, Prafulla Dhariwal, Arvind Nee-
+lakantan, Pranav Shyam, Girish Sastry, Amanda Askell,et al. Language models are few-shot learners. Advances
+in Neural Information Processing Systems , 2020.
+[8] Junyi Cao, Shanyan Guan, Yanhao Ge, Wei Li, Xiaokang
+Yang, and Chao Ma. Neuma: Neural material adaptor for
+visual grounding of intrinsic dynamics. In Advances in
+Neural Information Processing Systems , 2024.
+[9] Rongsen Chen, Junhong Zhao, Fang-Lue Zhang, Andrew
+Chalmers, and Taehyun Rhee. Neural radiance fields for
+dynamic view synthesis using local temporal priors. In
+Computational Visual Media , 2024.
+[10] Yuanpei Chen, Tianhao Wu, Shengjie Wang, Xidong
+Feng, Jiechuan Jiang, Zongqing Lu, Stephen McAleer,
+Hao Dong, Song-Chun Zhu, and Yaodong Yang. Towards
+Domain Rand. RoboGSim ASID 2D Physics PIN-WMTime lapse
+Fig. 8: Real-world trajectories of different methods on the fliptask.
+human-level bimanual dexterous manipulation with re-
+inforcement learning. Advances in Neural Information
+Processing Systems , 2022.
+[11] Cheng Chi, Zhenjia Xu, Siyuan Feng, Eric Cousineau,
+Yilun Du, Benjamin Burchfiel, Russ Tedrake, and Shuran
+Song. Diffusion policy: Visuomotor policy learning via
+action diffusion. The International Journal of Robotics
+Research , 2023.
+[12] Ignasi Clavera, David Held, and Pieter Abbeel. Policy
+transfer via modularity and reward guiding. In IEEE
+International Conference on Intelligent Robots and Sys-
+tems, 2017.
+[13] Michael Bradley Cline. Rigid body simulation with
+contact and constraints . PhD thesis, University of British
+Columbia, 2002.
+[14] Erwin Coumans and Yunfei Bai. Pybullet, a python
+module for physics simulation for games, robotics and
+machine learning, 2016.
+[15] Tianyuan Dai, Josiah Wong, Yunfan Jiang, Chen Wang,
+Cem Gokmen, Ruohan Zhang, Jiajun Wu, and Li Fei-Fei.
+Automated creation of digital cousins for robust policy
+learning. In Conference on Robot Learning , 2024.
+[16] Filipe de Avila Belbute-Peres, Kevin Smith, Kelsey
+Allen, Josh Tenenbaum, and J Zico Kolter. End-to-end
+differentiable physics for learning and control. Advances
+in Neural Information Processing Systems , 2018.
+[17] Mehmet Remzi Dogar and Siddhartha S Srinivasa. A
+framework for push-grasping in clutter. In Robotics:
+Science and Systems , 2011.
+[18] Henrik Ebel, Daniel Niklas Fahse, Mario Rosenfelder,
+and Peter Eberhard. Finding formations for the non-
+prehensile object transportation with differentially-driven
+mobile robots. In Symposium on Robot Design, Dynam-
+ics and Control , 2022.
+[19] Ben Evans, Abitha Thankaraj, and Lerrel Pinto. Con-text is everything: Implicit identification for dynamics
+adaptation. In International Conference on Robotics and
+Automation , 2022.
+[20] Roy Featherstone. Rigid body dynamics algorithms .
+Springer, 2014.
+[21] Juan Del Aguila Ferrandis, Joao Moura, and Sethu Vi-
+jayakumar. Learning visuotactile estimation and control
+for non-prehensile manipulation under occlusions. In
+Annual Conference on Robot Learning , 2024.
+[22] Jian Gao, Chun Gu, Youtian Lin, Zhihao Li, Hao Zhu,
+Xun Cao, Li Zhang, and Yao Yao. Relightable 3d
+gaussians: Realistic point cloud relighting with brdf
+decomposition and ray tracing. In European Conference
+on Computer Vision , 2024.
+[23] Radian Gondokaryono, Mustafa Haiderbhai, Sai Aneesh
+Suryadevara, and Lueder A Kahrs. Learning nonprehen-
+sile dynamic manipulation: Sim2real vision-based policy
+with a surgical robot. IEEE Robotics and Automation
+Letters , 2023.
+[24] Michael Grieves and John Vickers. Digital twin: Miti-
+gating unpredictable, undesirable emergent behavior in
+complex systems. Transdisciplinary Perspectives on
+Complex Systems: New Findings and Approaches , 2017.
+[25] David Ha and J ¨urgen Schmidhuber. World models. arXiv
+preprint arXiv:1803.10122 , 2018.
+[26] Danijar Hafner, Timothy P. Lillicrap, Jimmy Ba, and Mo-
+hammad Norouzi. Dream to control: Learning behaviors
+by latent imagination. In International Conference on
+Learning Representations , 2020.
+[27] Danijar Hafner, Timothy P. Lillicrap, Mohammad
+Norouzi, and Jimmy Ba. Mastering atari with discrete
+world models. In International Conference on Learning
+Representations , 2021.
+[28] Nicklas Hansen, Hao Su, and Xiaolong Wang. Temporal
+difference learning for model predictive control. In
+International Conference on Machine Learning , 2022.
+[29] Nicklas Hansen, Hao Su, and Xiaolong Wang. TD-
+MPC2: scalable, robust world models for continuous
+control. In International Conference on Learning Repre-
+sentations , 2024.
+[30] Richard Hartley and Andrew Zisserman. Multiple view
+geometry in computer vision . Cambridge university press,
+2003.
+[31] Eric Heiden, David Millard, Erwin Coumans, Yizhou
+Sheng, and Gaurav S Sukhatme. Neuralsim: Augmenting
+differentiable simulators with neural networks. In IEEE
+International Conference on Robotics and Automation ,
+2021.
+[32] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising
+diffusion probabilistic models. In Advances in Neural
+Information Processing Systems , 2020.
+[33] Yingdong Hu, Fanqi Lin, Pingyue Sheng, Chuan Wen,
+Jiacheng You, and Yang Gao. Data scaling laws in
+imitation learning for robotic manipulation. In Workshop
+on X-Embodiment Robot Learning , 2024.
+[34] Binbin Huang, Zehao Yu, Anpei Chen, Andreas Geiger,
+and Shenghua Gao. 2d gaussian splatting for geometri-
+cally accurate radiance fields. In SIGGRAPH , 2024.
+[35] Ahmed Hussein, Mohamed Medhat Gaber, Eyad Elyan,
+and Chrisina Jayne. Imitation learning: A survey of
+learning methods. ACM Computing Surveys , 2017.
+[36] Stephen James, Zicong Ma, David Rovick Arrojo, and
+Andrew J Davison. Rlbench: The robot learning bench-
+mark & learning environment. IEEE Robotics and
+Automation Letters , 2020.
+[37] Xinyi Jing, Qiao Feng, Yu-Kun Lai, Jinsong Zhang,
+Yuanqiang Yu, and Kun Li. State: Learning structure
+and texture representations for novel view synthesis.
+Computational Visual Media , 2023.
+[38] Xinyi Jing, Tao Yu, Renyuan He, Yukun Lai, and Kun
+Li. Frnerf: Fusion and regularization fields for dynamic
+view synthesis. Computational Visual Media , 2024.
+[39] Dmitry Kalashnikov, Alex Irpan, Peter Pastor, Julian
+Ibarz, Alexander Herzog, Eric Jang, Deirdre Quillen,
+Ethan Holly, Mrinal Kalakrishnan, Vincent Vanhoucke,
+et al. Scalable deep reinforcement learning for vision-
+based robotic manipulation. In Conference on Robot
+Learning , 2018.
+[40] Rama Krishna Kandukuri, Michael Strecke, and Joerg
+Stueckler. Physics-based rigid body object tracking and
+friction filtering from rgb-d videos. In International
+Conference on 3D Vision , 2024.
+[41] Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B
+Brown, Benjamin Chess, Rewon Child, Scott Gray,
+Alec Radford, Jeffrey Wu, and Dario Amodei. Scal-
+ing laws for neural language models. arXiv preprint
+arXiv:2001.08361 , 2020.
+[42] Bernhard Kerbl, Georgios Kopanas, Thomas Leimk ¨uhler,
+and George Drettakis. 3d gaussian splatting for real-time
+radiance field rendering. ACM Transactions on Graphics ,
+2023.
+[43] Keisuke Kinoshita and Michael Lindenbaum. Robotic
+control with partial visual information. International
+Journal of Computer Vision , 2000.
+[44] Nathan Lambert, Kristofer Pister, and Roberto Calandra.
+Investigating compounding prediction errors in learned
+dynamics models. arXiv preprint arXiv:2203.09637 ,
+2022.
+[45] Xinhai Li, Jialin Li, Ziheng Zhang, Rui Zhang, Fan Jia,
+Tiancai Wang, Haoqiang Fan, Kuo-Kun Tseng, and Ruip-
+ing Wang. Robogsim: A real2sim2real robotic gaussian
+splatting simulator. arXiv preprint arXiv:2411.11839 ,
+2024.
+[46] Xuan Li, Yi-Ling Qiao, Peter Yichen Chen, Kr-
+ishna Murthy Jatavallabhula, Ming C. Lin, Chenfanfu
+Jiang, and Chuang Gan. Pac-nerf: Physics augmented
+continuum neural radiance fields for geometry-agnostic
+system identification. In International Conference on
+Learning Representations , 2023.
+[47] Zhehao Li, Qingyu Xu, Xiaohan Ye, Bo Ren, and Ligang
+Liu. Difffr: Differentiable sph-based fluid-rigid coupling
+for rigid body control. ACM Transactions on Graphics ,2023.
+[48] Michael Lutter, Christian Ritter, and Jan Peters. Deep
+lagrangian networks: Using physics as model prior for
+deep learning. In International Conference on Learning
+Representations , 2019.
+[49] Viktor Makoviychuk, Lukasz Wawrzyniak, Yunrong
+Guo, Michelle Lu, Kier Storey, Miles Macklin, David
+Hoeller, Nikita Rudin, Arthur Allshire, Ankur Handa,
+and Gavriel State. Isaac gym: High performance GPU
+based physics simulation for robot learning. In Neural
+Information Processing Systems Track on Datasets and
+Benchmarks , 2021.
+[50] Matthew T Mason. Mechanics and planning of manip-
+ulator pushing operations. The International Journal of
+Robotics Research , 1986.
+[51] Jacob Mattingley and Stephen Boyd. Cvxgen: A code
+generator for embedded convex optimization. Optimiza-
+tion and Engineering , 2012.
+[52] Bhairav Mehta, Manfred Diaz, Florian Golemo, Christo-
+pher J Pal, and Liam Paull. Active domain randomiza-
+tion. In Conference on Robot Learning , 2020.
+[53] Marius Memmel, Andrew Wagenmaker, Chuning Zhu,
+Dieter Fox, and Abhishek Gupta. ASID: Active explo-
+ration for system identification in robotic manipulation.
+InInternational Conference on Learning Representa-
+tions , 2024.
+[54] Russell Mendonca, Shikhar Bahl, and Deepak Pathak.
+Structured world models from human videos. In
+Robotics: Science and Systems , 2023.
+[55] Takahiro Miki, Joonho Lee, Jemin Hwangbo, Lorenz
+Wellhausen, Vladlen Koltun, and Marco Hutter. Learning
+robust perceptive locomotion for quadrupedal robots in
+the wild. Science Robotics , 2022.
+[56] Ben Mildenhall, Pratul P Srinivasan, Matthew Tancik,
+Jonathan T Barron, Ravi Ramamoorthi, and Ren Ng.
+Nerf: Representing scenes as neural radiance fields for
+view synthesis. Communications of the ACM , 2021.
+[57] Tai-Jiang Mu, Hao-Xiang Chen, Jun-Xiong Cai, and
+Ning Guo. Neural 3d reconstruction from sparse views
+using geometric priors. Computational Visual Media ,
+2023.
+[58] Thomas M ¨uller, Alex Evans, Christoph Schied, and
+Alexander Keller. Instant neural graphics primitives with
+a multiresolution hash encoding. ACM Transactions on
+Graphics , 2022.
+[59] J. Krishna Murthy, Miles Macklin, Florian Golemo,
+Vikram V oleti, Linda Petrini, Martin Weiss, Brean-
+dan Considine, J ´erˆome Parent-L ´evesque, Kevin Xie,
+Kenny Erleben, Liam Paull, Florian Shkurti, Derek
+Nowrouzezahrai, and Sanja Fidler. gradsim: Differen-
+tiable simulation for system identification and visuomo-
+tor control. In International Conference on Learning
+Representations , 2021.
+[60] Xue Bin Peng, Marcin Andrychowicz, Wojciech
+Zaremba, and Pieter Abbeel. Sim-to-real transfer of
+robotic control with dynamics randomization. In IEEE
+International Conference on Robotics and Automation ,
+2018.
+[61] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya
+Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry,
+Amanda Askell, Pamela Mishkin, Jack Clark, et al.
+Learning transferable visual models from natural lan-
+guage supervision. In International Conference on Ma-
+chine Learning , 2021.
+[62] Rafael Rafailov, Tianhe Yu, Aravind Rajeswaran, and
+Chelsea Finn. Offline reinforcement learning from im-
+ages with latent space models. In Learning for Dynamics
+and Control , 2021.
+[63] Maziar Raissi, Paris Perdikaris, and George E Karni-
+adakis. Physics-informed neural networks: A deep learn-
+ing framework for solving forward and inverse problems
+involving nonlinear partial differential equations. Journal
+of Computational Physics , 2019.
+[64] Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu, Ronghang
+Hu, Chaitanya Ryali, Tengyu Ma, Haitham Khedr, Ro-
+man R ¨adle, Chloe Rolland, Laura Gustafson, et al. Sam
+2: Segment anything in images and videos. arXiv preprint
+arXiv:2408.00714 , 2024.
+[65] Reuven Y Rubinstein and Dirk P Kroese. The cross-
+entropy method: a unified approach to combinatorial op-
+timization, Monte-Carlo simulation, and machine learn-
+ing. Springer, 2004.
+[66] John Schulman, Filip Wolski, Prafulla Dhariwal, Alec
+Radford, and Oleg Klimov. Proximal policy optimization
+algorithms. arXiv preprint arXiv:1707.06347 , 2017.
+[67] Changkyu Song and Abdeslam Boularias. Learning to
+slide unknown objects with differentiable physics simu-
+lations. In Robotics: Science and Systems , 2020.
+[68] Michael Strecke and Joerg Stueckler. Diffsdfsim: Dif-
+ferentiable rigid-body dynamics with implicit shapes. In
+International Conference on 3D Vision , 2021.
+[69] Richard S Sutton. Reinforcement learning: An introduc-
+tion. A Bradford Book , 2018.
+[70] Bingjie Tang, Iretiayo Akinola, Jie Xu, Bowen Wen,
+Ankur Handa, Karl Van Wyk, Dieter Fox, Gaurav S.
+Sukhatme, Fabio Ramos, and Yashraj S. Narang. Au-
+tomate: Specialist and generalist assembly policies over
+diverse geometries. In Robotics: Science and Systems ,
+2024.
+[71] Josh Tobin, Rachel Fong, Alex Ray, Jonas Schneider,
+Wojciech Zaremba, and Pieter Abbeel. Domain ran-
+domization for transferring deep neural networks from
+simulation to the real world. In IEEE International
+Conference on Intelligent Robots and Systems , 2017.
+[72] Bowen Wen, Wei Yang, Jan Kautz, and Stan Birchfield.
+Foundationpose: Unified 6d pose estimation and tracking
+of novel objects. In IEEE Conference on Computer
+Vision and Pattern Recognition , 2024.
+[73] Grady Williams, Andrew Aldrich, and Evangelos A
+Theodorou. Model predictive path integral control: From
+theory to parallel computation. Journal of Guidance,
+Control, and Dynamics , 2017.[74] Philipp Wu, Alejandro Escontrela, Danijar Hafner, Pieter
+Abbeel, and Ken Goldberg. Daydreamer: World models
+for physical robot learning. In Conference on Robot
+Learning , 2022.
+[75] Tong Wu, Yu-Jie Yuan, Ling-Xiao Zhang, Jie Yang, Yan-
+Pei Cao, Ling-Qi Yan, and Lin Gao. Recent advances
+in 3d gaussian splatting. Computational Visual Media ,
+2024.
+[76] Guo-Wei Yang, Zheng-Ning Liu, Dong-Yang Li, and
+Hao-Yang Peng. Jnerf: An efficient heterogeneous nerf
+model zoo based on jittor. Computational Visual Media ,
+2023.
+[77] Sarah Young, Dhiraj Gandhi, Shubham Tulsiani, Abhinav
+Gupta, Pieter Abbeel, and Lerrel Pinto. Visual imitation
+made easy. In Conference on Robot Learning , 2021.
+[78] Kuan-Ting Yu, Maria Bauza, Nima Fazeli, and Alberto
+Rodriguez. More than a million ways to be pushed. a
+high-fidelity experimental dataset of planar pushing. In
+IEEE International Conference on Intelligent Robots and
+Systems , 2016.
+[79] Tianhe Yu, Garrett Thomas, Lantao Yu, Stefano Ermon,
+James Y Zou, Sergey Levine, Chelsea Finn, and Tengyu
+Ma. Mopo: Model-based offline policy optimization.
+Advances in Neural Information Processing Systems ,
+2020.
+[80] Weihao Yuan, Johannes A Stork, Danica Kragic,
+Michael Y Wang, and Kaiyu Hang. Rearrangement with
+nonprehensile manipulation using deep reinforcement
+learning. In IEEE International Conference on Robotics
+and Automation , 2018.
+[81] Xiangyu Yue, Yang Zhang, Sicheng Zhao, Alberto
+Sangiovanni-Vincentelli, Kurt Keutzer, and Boqing
+Gong. Domain randomization and pyramid consistency:
+Simulation-to-real generalization without accessing tar-
+get domain data. In IEEE International Conference on
+Computer Vision , 2019.
+[82] Hang Zhao, Zherong Pan, Yang Yu, and Kai Xu. Learn-
+ing physically realizable skills for online packing of
+general 3d shapes. ACM Transactions on Graphics , 2023.
+[83] Hang Zhao, Juzhan Xu, Kexiong Yu, Ruizhen Hu,
+Chenyang Zhu, and Kai Xu. Deliberate planning of
+3d bin packing on packing configuration trees. arXiv
+preprint arXiv:2504.04421 , 2025.
+[84] Gaoyue Zhou, Hengkai Pan, Yann LeCun, and Lerrel
+Pinto. Dino-wm: World models on pre-trained vi-
+sual features enable zero-shot planning. arXiv preprint
+arXiv:2411.04983 , 2024.
+[85] Jiaji Zhou, Yifan Hou, and Matthew T Mason. Pushing
+revisited: Differential flatness, trajectory planning, and
+stabilization. The International Journal of Robotics
+Research , 2019.
+[86] Wenxuan Zhou, Bowen Jiang, Fan Yang, Chris Paxton,
+and David Held. Hacman: Learning hybrid actor-critic
+maps for 6d non-prehensile manipulation. In Conference
+on Robot Learning , 2023.
+APPENDIX
+A. Implementation Details for Baselines
+All the baselines are implemented carefully to ensure fair
+comparison. We used the official implementations with default
+hyperparameters for Diffusion Policy [11], 2D Physics [67],
+and Dreamer V2 [27]. A history of recent states and actions
+is used as input for the “Domain Rand + I” (denoted as
+DR) baseline [60]. All RL-based policies are trained using
+PPO [66], with the same model architecture, reward function,
+hyperparameters, and stopping criterion based on the success
+rate. The reward signal for policy learning is a handcrafted
+function to encourage the robot to push the object toward the
+target pose: r=−dt−dr, where dtanddrrefer to the trans-
+lation distance and rotation distance, respectively. Diffusion
+Policy is trained with successful trajectories collected from
+expert policies trained in the environment with GT physical
+parameters, without any randomization.
+B. More Experimental Results
+1) Superiority over uniform randomization: The only dif-
+ference between our method and the DR baseline is the
+different ranges of physics parameters that are used for domain
+randomization, where DR uses a large range Rto ensure that
+it covers the target parameters θ†while our method uses a
+much smaller range around the learned parameters θ∗. The
+low performance of DR is mainly due to the large range of R
+and the performance can be improved by shrinking the range
+around θ†(even though this is not feasible in real application
+scenarios), and using GT θ†directly can obtain the best result,
+as presented in Table IV.
+TABLE IV: Success rates across different ranges of randomization.
+Tasks GT PIN-WM w/ PADC DR ( R/4) DR ( R/2) DR ( R)
+Push 98% 97% 78% 56% 33%
+Flip 89% 83% 61% 43% 32%
+2) Identified physical parameters: System identification is
+inherently ill-posed, as multiple parameter sets can explain
+the same observations. To fairly compare the accuracy across
+different methods, we estimate one parameter at a time while
+keeping the others fixed at their GT values. Since inertia is
+typically represented as a 3×3matrix in simulation, we do
+not conduct this experiment. Our method consistently achieves
+the best performance, as shown in Table V.
+TABLE V: Identified physical parameters.
+MethodsPush Flip
+Friction Mass (kg) Restitution Friction Mass (kg) Restitution
+GT 3.00×10−21.00 0.00 2.00×10−11.00 0.00
+ASID 4.45×10−20.75 1.12×10−22.59×10−11.36 1.12×10−2
+2D Physics – 19.25 – – 29.60 –
+PIN-WM 3.05×10−20.76 4 .18×10−42.11×10−11.19 1 .69×10−5
+3) Robustness to geometry noise: Geometry noise will
+affect collision detection accuracy and, consequently, system
+identification. To evaluate this, we conduct experiments on
+noisy inputs, in which the noise conforms to a Gaussian
+distribution with a mean of 0 and a variance of σ%L, where
+σ∈ {0,0.5,1.0,3.0}andLis the length of object’s boundingbox diagonal. We report one-step error of the predicted trajec-
+tories after applying the same random actions to the object. As
+shown in Table VI, while the prediction errors increase with
+higher noise, our method remains robust even at σ= 3.0,
+outperforming ASID [53] using perfect geometry.
+TABLE VI: One-step errors across different noise levels.
+MethodsPush Flip
+Trans. Ori. Trans. Ori.
+PIN-WM ( σ= 0.0)1.7×10−21.3×10−11.4×10−22.7×10−1
+PIN-WM ( σ= 0.5)2.1×10−22.1×10−14.2×10−29.6×10−1
+PIN-WM ( σ= 1.0)2.3×10−21.6×10−14.2×10−29.5×10−1
+PIN-WM ( σ= 3.0)2.9×10−23.0×10−17.7×10−21.5
+ASID 3.0×10−24.0×10−11.4×10−11.6
+C. Further Real-World Evaluations
+We further validate the effectiveness of PIN-WM in iden-
+tifying real-world physical parameters. We push a T-shaped
+object and a cube object on a slippery glass plane. Even
+small touches cause noticeable displacement, which poses
+higher demands on the robot’s control precision. The smaller
+mass and volume of the cube make it harder to manipulate.
+Real-world trajectories are provided in Figures 9 and 10,
+separately. PIN-WM demonstrates strong performance on both
+objects, successfully pushing them to the target positions. In
+contrast, the baseline ASID consistently pushes the objects
+with excessive force just before reaching the target position,
+making it difficult to complete the task. We also conduct flip
+experiments on the small cube, with the trajectories provided
+in Figure 11. The quantitative results of these experiments are
+summarized in Table VII.
+TABLE VII: Success rate comparisons on different real-world tasks.
+Methods Push T (Slippery) Push Cube (Slippery) Flip Cube
+ASID 5% 0% 5%
+PIN-WM 45% 40% 60%
+Time lapseASID PIN-WM
+Fig. 9: Push T-shaped object on a slippery plane.
+Time lapseASID PIN-WM
+Fig. 10: Push cube object on a slippery plane.
+Time lapseASID PIN-WM
+Fig. 11: Flip a multicolored cube to change its top-surface color.

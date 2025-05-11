@@ -180,11 +180,14 @@ class ImageIndexer(Indexer):
         """Index images in the specified directory."""
         try:
             # Ensure SQLite database is created in the correct location
-            db_path = db_params.get('dbname', 'embeddings.db.sqlite')
+            dir_name = os.path.basename(os.path.normpath(corpus_dir)) 
+            db_name = f"{dir_name}_embeddings.db.sqlite"
+            if db_params is None:
+                db_params = {}
+            db_path = db_params.get('dbname',db_name)
             if not os.path.isabs(db_path):
                 db_path = os.path.abspath(db_path)
-            print(f"Creating SQLite database at: {db_path}")
-            
+            print(f"Creating SQLite database at {db_path}")
             # Ensure directory exists
             os.makedirs(os.path.dirname(db_path), exist_ok=True)
             

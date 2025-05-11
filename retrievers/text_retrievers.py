@@ -351,3 +351,5 @@ class TextRetriever(Retriever):
             if debug:
                 print(f"Error fetching chunks: {str(e)}")
             return [] 
+
+

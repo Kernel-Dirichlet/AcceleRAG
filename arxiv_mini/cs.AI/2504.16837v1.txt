@@ -1,0 +1,1275 @@
+arXiv:2504.16837v1  [cs.DS]  23 Apr 2025Approximating Optimal Labelings for Temporal Connectivity
+Daniele Carnevale1, Gianlorenzo D’Angelo1, and Martin Olsen2
+1Gran Sasso Science Institute, Italy,
+daniele.carnevale@gssi.it, gianlorenzo.dangelo@gssi.it
+2Aarhus University, Denmark,
+martino@btech.au.dk
+Abstract
+In a temporal graph the edge set dynamically changes over time according to a set of time-
+labels associated with each edge that indicates at which time-steps the edge is available. Two
+vertices are connected if there is a path connecting them in which the edges are traversed in
+increasing order of their labels. We study the problem of scheduling the availability time of the
+edges of a temporal graph in such a way that all pairs of vertices are connected within a given
+maximum allowed time aand the overall number of labels is minimized.
+The problem, known as Minimum Aged Labeling (MAL), has several applications in logistics,
+distribution scheduling, and information spreading in social networks, where carefully choosing
+the time-labels can significantly reduce infrastructure costs, fuel consumption, or greenhouse
+gases.
+The problem MAL has previously been proved to be NP-complete on undirected graphs
+and APX-hard on directed graphs. In this paper, we extend our knowledge on the complexity
+and approximability of MAL in several directions. We first show that the problem cannot be
+approximated within a factor better than O(logn) when a≥2, unless P = NP, and a factor
+better than 2log1−ϵnwhen a≥3, unless NP ⊆DTIME(2polylog( n)), where nis the number
+of vertices in the graph. Then we give a set of approximation algorithms that, under some
+conditions, almost match these lower bounds. In particular, we show that the approximation
+depends on a relation between aand the diameter of the input graph.
+We further establish a connection with a foundational optimization problem on static graphs
+called Diameter Constrained Spanning Subgraph (DCSS) and show that our hardness results also
+apply to DCSS.
+1 Introduction
+We consider a scheduling problem on dynamic networks that is motivated by several applications
+in logistics, distribution scheduling, and information diffusion in social networks.
+As a real-world example, consider a parcel-delivery scenario where there is a warehouse W
+serving three cities as the center of a star topology, see Figure 1 for an illustration. Each city
+has a bunch of parcels to be delivered to the other cities and, for each pair of cities ( A, B), there
+is at least one parcel that must be delivered from AtoB. There is a set of vehicles in Wthat
+are used to deliver the parcels from the warehouse to the cities and vice-versa. Each vehicle can
+possibly depart from Wat every hour. Upon arrival at one of the cities A, it delivers at Athe
+1
+WA
+B C7am;9am
+7am;8am 6am;8am
+1stscheduleWA
+B C6am;7am
+6am;7am 6am;7am
+2ndscheduleWA
+B C6am;8am
+7am 6am;8am
+3rdschedule
+Figure 1: The scheduled time of trips are reported close to the edges. 1stschedule : All the
+6 scheduled trips are needed to deliver all parcels and the last parcel is delivered at 9am. 2nd
+schedule : All the parcels are deposited in Wwith the 3 trips at 6am and then are delivered from
+Wto the right cities at 7am; still 6 trips are needed but the last parcel is delivered at 7am. 3rd
+schedule : The parcels leaving cities AandCare deposited in Wwith the trips at 6am; the single
+trip to Bat 7am brings the parcels directed to Bpreviously deposited at 6am and deposits the
+parcels from BinW; finally, the trips at 8am deliver the parcels directed to AandC. Only 5 trips
+are needed, but the last parcel is delivered at 8am.
+parcels destined to Athat were previously deposited at W, collects the parcels originating from
+A, and returns to the warehouse. A round trip of a vehicle from Wto one of the cities and back
+is called a trip. For simplicity, we assume that the travel time is negligible. When a vehicle V1
+returns from city Ato the warehouse W, it deposits in Wall the parcels that depart from Aand
+whose final destination is any of the other cities. When a vehicle V2departs to another city B, it
+brings to Ball the parcels that have been deposited in Wso far and whose final destination is B.
+If the trip of V1is scheduled earlier than that of V2, the parcels directed from AtoBare delivered.
+Otherwise, these parcels must wait for the next trip. Carefully scheduling the trips of all vehicles
+might reduce, at the same time, the delivery time and the costs in terms of number of required
+trips, vehicles used, fuel consumption, pollutants, and emission of greenhouse gases. For example,
+the 1stschedule in Figure 1, requires 6 trips to deliver all parcels and the last parcels are delivered
+at 9am. The 2ndschedule optimizes the latest arrival time and ensures that the last parcels are
+delivered two hours earlier than the previous solution, at 7am, but still requires 6 trips to deliver
+all parcels. The 3rdschedule, instead, optimizes the required number of trips, reducing them to 5,
+but the last parcels are delivered at 8am, one hour later than the previous case.
+The problem of scheduling trips becomes much more complex if we consider a general network in
+which each vertex might serve both as a warehouse and as a city, and connections among vertices
+are given by an arbitrary underlying graph. Moreover, similar problems arise in other contexts
+such as distribution scheduling [11] and information spreading, where the aim is to schedule a small
+number of meetings among employees of a company in such a way that each employee can share
+its own information with any other by a given time, see [10].
+Motivated by these applications, we consider the following question: What is the minimum
+number of trips needed to deliver all parcels within a given time?
+We model a schedule of trips along edges of a network with a temporal graph (a.k.a. dynamic
+graph) in which the scheduling time of a vehicle is represented as an edge-label and a path in a
+graph is valid (or temporal ) only if the edges are traversed in increasing order of their labels. We
+then consider the optimization problem of assigning the minimum number of labels to the edges
+of a graph in such a way that each pair of vertices is connected via a temporal path and the
+largest label is not greater than a given integer a, called the maximum allowed age . This problem,
+2
+called Minimum Aged Labeling (MAL), has been introduced by Mertzios et al. [21], who proved
+that it is APX-hard in directed graphs . Later, Klobas et al.[18] showed that MAL is NP-complete
+also for undirected graphs . To the best of our knowledge, there are no hardness or algorithmic
+results on the approximation of MAL in undirected graphs. Moreover, the reduction used to prove
+the APX-hardness in directed graphs [21] cannot be easily adapted to undirected graphs as in the
+constructed graph the direction of edges is used to bound the reachability of vertices. In this paper,
+we study the complexity of approximating MAL in undirected graphs showing when, depending on
+a relation between aand the diameter DGof the input graph, it is hard to approximate, or it can
+be approximated in polynomial-time.
+MAL also has a theoretical motivation as it can be interpreted as a dynamic version of a foun-
+dational graph theoretical problem called the Diameter Constrained Spanning Subgraph (DCSS)
+problem, which asks to find a spanning subgraph Hof a graph Gsuch that the diameter of His
+at most a given integer and its number of edges is minimized.
+Our results. We provide both hardness of approximation lower bounds and approximation al-
+gorithms for MAL.
+Hardness of approximation. We first prove that, even when the maximum allowed age aof a
+labeling is a fixed value greater or equal to 2, MAL cannot be approximated within a factor better
+than O(logn), unless P = NP. Then, we show that, unless NP ⊆DTIME(2polylog( n)), we cannot
+find any 2log1−ϵn-approximation algorithm for MAL, for any ϵ∈(0,1), even when ais a fixed value
+greater or equal to 3.
+These results advance our knowledge on the computational complexity of MAL in two directions.
+(1) From an exact computation point of view, the NP-hardness given in [18] only holds for a=
+DG= 10, while we show that MAL is NP-hard for any fixed a≥2 (still, we require a=DG). This
+closes the characterization of the computational complexity of MAL with respect to the parameter
+a, as the case a= 1 is trivial. Moreover, we provide a considerably simpler reduction than the one
+in [18]. (2) From an approximation point of view, the reduction in [21] shows that MAL is APX-
+hard for a=DG= 9 in directed graphs. We show two stronger lower bounds on the approximation,
+namely that MAL is hard to approximate better than a logarithmic factor, under P ̸= NP, and a
+factor 2log1−ϵn, under a stronger complexity condition. The second lower bound suggests that it is
+unlikely to approximate MAL to a factor better than a polynomial. Moreover, our lower bounds
+hold even for any fixed a≥2 and for a≥3, respectively, and for undirected graphs (again, we
+require a=DG). Finally, we remark that our lower bounds also apply to DCSS.
+Our hardness results are given in Section 3 and summarized in Table 1.
+Approximation algorithms. Like in [18] and [21], all our reductions require that a=DG. Hence, we
+investigate the approximability of MAL when a≥DG, addressing an open question posed in [18].
+We give three sets of results, which interestingly show how the approximation of MAL depends on
+a relation between aandDG.
+(1) We first consider the case in which ais sufficiently larger than RG, the radius of G. If
+a≥2RG(a≥2RG+ 1, respectively), we can compute in polynomial-time a solution that requires
+at most only 2 labels (1 label, respectively) more than the optimum. Observe that these additive
+approximation bounds correspond to asymptotic multiplicative bounds with approximation factors
+that arbitrarily approach 1 as the input size grows. Moreover, if a≥2DG+ 2, we can compute an
+optimal solution in polynomial-time. As MAL does not admit any feasible solution when a < D G,
+this first set of results leaves open the cases when DG≤a <2RG.
+3
+Table 1: Summary of the approximation hardness results for MAL (see Section 3)
+value of aComplexity assumption Approximation hardness
+a=DGa= 2 P̸=NP Θ(log n)
+a≥3P̸=NP Ω(log n)
+NP̸⊆DTIME(2polylog( n)) Ω(2log1−ϵn)
+DG< a < 2DG+ 2 Open
+a≥2DG+ 2 Polynomial-time solvable
+(2) We then consider the case in which ais slightly larger than DGby exploiting a relation
+between MAL and DCSS. Specifically, we show that there is a gap of a factor abetween the
+approximation of MAL and that of DCSS. We first prove that when a=DG= 2, MAL can
+be approximated with a logarithmic factor, which asymptotically matches our first hardness lower
+bound.1When a≥DG+ 2, we achieve an approximation factor of O(DG·n1/2), which is sublinear
+when DGis sufficiently small. Moreover, if a≥DG+4 or a≥DG+6, we reduce the approximation
+factor to O(DG·n2/5) and O(DG·n1/3), respectively. Finally, for any value of a≥DGwe achieve
+an approximation factor of O(DG·n3/5+ϵ), for any ϵ >0. All these approximation factors linearly
+depend on DG, due to the gap between the approximation of MAL and that of DCSS.
+(3) Our main algorithmic contribution consists in approximating MAL when DG≤a <2RG
+without passing through DCSS, thus avoiding a linear dependency on DGin the approximation
+ratio. We show that when a≥ ⌈3/2·DG⌉(a≥ ⌈5/3·DG⌉, respectively), then we can approximate
+MAL within a factor of O(√nlogn) (O(3p
+DGnlog2n), respectively). Both bounds are sublinear,
+and the second algorithm outperforms the first one when DG=o(p
+n/logn) but requires greater
+values of a.
+Our approximation results for MAL are given in Section 5 summarized in Table 2. The approx-
+imation results for DCSS are given in Section 4.
+Related Work. Due to their versatility, temporal graphs have been considered from several
+perspectives and using different terminology, e.g. dynamic ,evolving , and time-varying graphs or
+networks, see [22]. Mainly motivated by virus-spread minimization (see e.g. [5, 15]), an area that
+received considerable interest is the one related to the modification of a temporal network in such a
+way that some objective is optimized (see a recent survey [20]). Several operations were considered
+e.g. delaying labels and merging consecutive times [11], edge-deletion and label-deletion [16], and
+changing the relative order of times [17]. Moreover, Molter et al. [23] studied how the choice
+between edge-deletion and delaying influences the parameterized complexity of the reachability-
+minimization objective. In [10], the authors studied a problem similar yet orthogonal to MAL,
+where the objective is to minimize the maximum time required by a subset of vertices to reach
+every other vertex, through label shifting. Klobas et al. [18], also considered a generalization of
+MAL where only a subset of terminal vertices must be connected, subject to a constraint on the
+maximum allowed age, and show that the problem is W[1]-hard when parameterized by the number
+1When a= 2 and DG= 1 the graph is a clique. Hence RG= 1 and we can solve MAL with 2 labels more than
+the optimum.
+4
+Table 2: Summary of the approximation results for MAL as a function of the age bound aand the
+graph diameter DG(see Section 5)
+a DG Approximation ratio
+a≤DG+ 1 DG∈o(n2/5) O(DG·n3/5+ϵ)
+DG+ 2≤a≤DG+ 3 DG∈o(n1/2) O(DG·n1/2)
+DG+ 4≤a≤DG+ 5 DG∈o(n3/5) O(DG·n2/5)
+DG+ 6≤a <⌈3/2DG⌉ DG∈o(n2/3) O(DG·n1/3)
+⌈3/2DG⌉ ≤a <⌈5/3DG⌉DG∈Ω(p
+n1/3·logn) O(√n·logn)
+otherwise O(DG·n1/3)
+a≥ ⌈5/3DG⌉DG∈Ω(p
+n/logn) O(√n·logn)
+DG∈Ω(log n)∧DG∈O(p
+n/logn)O(3p
+DG·n·log2n)
+otherwise O(DG·n1/3)
+of labels.
+2 Preliminaries
+For an integer k∈N, let [ k] :={1,2, . . . , k }and [ k]0:={0} ∪[k]. We consider simple undirected
+graphs G= (V, E) with n=|V|vertices and m=|E|edges. We also use V(G) and E(G) to refer
+to the vertex set and the edge set of graph G, respectively. We denote an edge e∈Ebetween two
+vertices vandwwith e={v, w}, and say that vandware the endpoints ofeand that v(as well as
+w) is incident to e. Let vandwbe two vertices of a graph G, we say that vandwareadjacent if
+{v, w} ∈E. We denote the degree of a vertex vwith degG(v), representing the number of distinct
+edges of Gincident to v.
+Asubgraph H= (V′, E′) of a graph G(denoted H⊆G) is a graph such that V′⊆V(G) and
+E′⊆E(G), with the additional condition that if v, w∈E′, then v, w∈V′. IfV′=V(G) and His
+connected, then His called a spanning subgraph .
+ApathPbetween vertices vandwin graph Gis a sequence of distinct vertices v0, v1, . . . , v k∈V
+and sequence of distinct edges {vi, vi+1} ∈E, for each i∈[k−1]0, where v0=vandvk=w. The
+length ofPis equal to the number of its edges, i.e. k. Ashortest path is a path with minimum
+length. A cycle inGis a path of length at least 2, plus an edge between v0andvk.Ckis a cycle
+with kedges.
+Thedistance between two vertices vandwin the graph Gis denoted dG(v, w) and is equal to
+the length of a shortest path between vandw. Let S⊆V, we denote by dG(v, S) the distance
+between vto its closest vertex in S, i.e. dG(v, S) = min s∈SdG(v, s). A graph Gisconnected if
+there exists a path between any pair of vertices. A Shortest Path Forest (SPF) Frooted at some
+set of vertices S⊆Vis a forest spanning all vertices Vsuch that dF(w, S) =dG(w, S) , for each
+w∈V(G). If Sis a singleton, S={v}, a SPF rooted at Sis called a Shortest Path Tree (SPT)
+5
+rooted at v.
+Given a vertex v∈V, the eccentricity eccG(v) ofvinGis the maximum distance between v
+and any other vertex, i.e. ecc G(v) = max w∈VdG(v, w). The diameter andradius ofGare defined
+asDG= max v∈VeccG(v) and RG= min v∈VeccG(v), respectively. We say that a vertex vis a
+center of a graph Gif ecc G(v) =RG.
+We will drop the subscript Gin the notation when the graph in question is clear from the
+context.
+Atemporal graph is a pair ( G, λ) where Gis a graph and λ:E−→2N\{0}is a function assigning
+to every edge of Ga set of discrete labels that we interpret as presence in time. The lifetime (a.k.a.
+age)Lλof a temporal graph ( G, λ) is the largest label in λi.e.Lλ= max {t:t∈λ(e), e∈E}. The
+total number of labels in a temporal graph is |λ|=P
+e∈E|λ(e)|.
+One central notion in temporal graphs is that of a temporal path . In this paper, we adopt
+the definition commonly referred to as a strict temporal path. A temporal path is a sequence
+(e1, t1),(e2, t2), . . . , (ek, tk) where e1, e2, . . . , e kis a path in G,ti∈λ(ei) for every i∈[k], and
+t1< t2<···< tk. We say that a vertex vistemporally reachable from a vertex wif there exists
+a temporal path from wtov. A temporal graph is called temporally connected if every vertex is
+temporally reachable from every other vertex.
+We are ready to introduce the Minimum Aged Labeling (MAL) problem, which is the subject
+of this paper.
+Definition 1. Given a graph G= (V, E)and an integer a, the Minimum Aged Labeling (MAL)
+problem asks to find a function λ:E→2N\{0}such that (G, λ)is temporally connected, Lλ≤a,
+and|λ|is minimized.
+We assume that the graph Gis connected as otherwise MAL does not admit any feasible solution.
+The same holds if a < D G, as already observed in [18]. On the other hand, if a≥2DG+ 2, then
+MAL is solvable in polynomial-time as we will prove in Theorem 10-( iii) by using a result from [18].
+Hence, we will consider in the rest of the paper the case DG≤a≤2DG+ 2.
+A problem that is strictly related to MAL is the Diameter Constrained Spanning Subgraph
+(DCSS) problem.
+Definition 2. Given a graph Gand an integer d≥DG, the DCSS problem asks to find a spanning
+subgraph Hsuch that DH≤dand the number of edges of His minimized.
+There is a close connection between problems DCSS and MAL. Roughly speaking, MAL can
+be considered a temporal version of the DCSS problem. First, we will state a technical lemma and
+then a theorem that relates the approximations of MAL and DCSS.
+Lemma 1. LetGbe a graph and bbe an integer such that DG≤b≤2DG+ 2.
+i) Given a feasible solution Hto an instance (G, b)of DCSS, we can compute in polynomial-time
+a feasible solution λto the instance (G, b)of MAL with |λ|=b· |E(H)|.
+ii) Given a feasible solution λto an instance (G, b)of MAL, we can compute in polynomial-time
+a feasible solution Hto the instance (G, b)of DCSS with |E(H)| ≤ |λ|.
+Proof. i) Let Hbe a feasible solution to the instance ( G, b) of DCSS, we construct λby assigning
+to every edge in E(H) the set of labels [ b]. This procedure requires polynomial-time in Gsince
+b=O(|V(G)|). To see that ( G, λ) is temporally connected, let v, wbe any pair of vertices of G. As
+6
+His a feasible solution for the instance ( G, b) of DCSS, then DH≤b, which implies that there must
+exist a path e1, e2, . . . , e kbetween vandwof length k≤b. Observe that ( e1,1),(e2,2), . . . , (ek, k)
+is a valid temporal path in ( G, λ) from vtow. Thus, ( G, λ) is temporally connected.
+ii) Let λbe a feasible solution to the instance ( G, b) of MAL, we construct Hby removing the
+labels from the edges of ( G, λ). Formally, E(H) :={e:e∈E(G)∧λ(e)̸=∅}and observe that
+|E(H)| ≤ |λ|by definition. Since ( G, λ) is temporally connected with lifetime at most b, the graph
+His connected and has diameter at most b. In fact, any temporal path that uses at most bdistinct
+labels, has at most bedges.
+We can now relate the approximations of MAL and DCSS through the following theorem.
+Theorem 1. LetGbe a graph and bbe an integer such that b=O(|V(G)|).
+i) If there exists an α-approximation algorithm for MAL, then there exists an (αb)-approximation
+algorithm for DCSS, where (G, b)is the input to DCSS.
+ii) If there exists an α-approximation algorithm for DCSS, then there exists an (αb)-approximation
+algorithm for MAL, where (G, b)is the input to MAL.
+Proof. i) Let ( G, b) be an instance of DCSS. Let us consider ( G, b) as an instance of MAL and
+apply to it an α-approximation algorithm for MAL. Let λbe the returned solution, we have
+|λ| ≤α|λ∗|, where λ∗is an optimal solution to the MAL instance. By Lemma 1-( ii) we can
+compute in polynomial-time a solution Hfor the instance of DCSS such that |E(H)| ≤ |λ| ≤α|λ∗|.
+LetH∗be an optimal solution to the DCSS instance. By Lemma 1-( i), starting from H∗we
+can construct a solution λ′for the corresponding MAL instance such that |λ′|=b|E(H∗)|and then
+we have |λ∗| ≤b|E(H∗)|. It follows that |E(H)| ≤αb|E(H∗)|.
+ii) Let ( G, b) be an instance of MAL. Let us consider ( G, b) as an instance of DCSS and apply
+to it an α-approximation algorithm for DCSS. Let Hbe the returned solution, we have |E(H)| ≤
+α|E(H∗)|, where H∗is an optimal solution to the DCSS instance. By Lemma 1-( i) we can compute
+in polynomial-time a solution λfor the instance of MAL such that |λ|=b|E(H)| ≤bα|E(H∗)|. By
+Lemma 1-( ii), we have that |E(H∗)| ≤ |λ∗|, which implies that |λ| ≤bα|λ∗|.
+3 Hardness of Approximation
+In this section, we prove that MAL and DCSS are hard to approximate, even under some restrictions
+on the input instance.
+We begin by presenting our logarithmic lower bound for a= 2 in the next theorem.
+Theorem 2. For every ϵ∈(0,1/4), there is no polynomial-time (ϵlog|V|)-approximation algorithm
+for MAL, unless P =NP. The hardness holds even when the maximum allowed age ais equal to 2.
+Observe that Theorem 1 together with Theorem 2 imply that a logarithmic lower bound also
+holds for DCSS when d= 2.
+To prove Theorem 2, we introduce the Set Cover (SC) problem. In SC we are given a universe
+U={u1, . . . , u η}, with |U|=η, and a collection of µsubsets of U,C={s1, . . . , s µ} ⊆2U. The
+goal is to find a minimum-size subcollection C∗⊆ Csuch thatS
+si∈C∗si=U.
+The next theorem proves the intractability of approximating SC to a factor smaller than log N,
+where Nis the size of an instance.
+7
+C
+Ut1t2
+w1 wxt3
+Ews
+EscEt1Et3
+Figure 2: The graph Gconstructed starting from a SC instance ( U,C) in the proof of Theorem 2.
+Theorem 3 ([12], Corollary 1.5) .For every α∈(0,1), it is NP-hard to approximate SCto within
+(1−α) logN, where Nis the size of the instance. The reduction runs in time NO(1/α).
+Let ( U,C) be an instance of the SC problem. We construct a graph G= (V, E) which we will
+use to prove Theorem 2. See Figure 2 for a reference of the construction. Graph Gcontains a vertex
+sjfor each set of C, a vertex uifor each element of the universe U, and two sets of new vertices
+T={t1, t2, t3}andW={w1, w2, . . . , w x}where xis an integer to be defined later. Formally,
+V(G) =C∪U∪T∪W. The set of edges of Gcontains the edges induced by the instance of SC, that
+isEsc={{ui, sj} |ui∈U∧sj∈ C∧ ui∈sj}. It also contains edges Et1={{t1, z} |z∈U∪C∪{ t2}}
+and the edges Et3={{t3, z} |z∈W∪ C ∪ { t2}}. Moreover, we add to Gthe edges between each
+wl∈Wand all vertices in C, more formally Ews={{wl, sj}:wl∈W∧sj∈ C}. Finally, the edge
+set of Gis equal to E(G) =Esc∪Et1∪Et3∪Ews. The reader can check that the diameter of Gis
+equal to 2.
+The idea behind the reduction is that, since all paths of length 2 between any w∈Wand any
+u∈Upass through C, we must select two (possibly identical) set covers for each w∈W—one to
+allow wto reach all vertices in Uand another to allow all vertices in Uto reach w. The vertices in
+Thelp connect the other pairs of vertices. However, the labels of the edges incident to the vertices
+inTmight contribute a dominant term to the solution size. We address this by adding a sufficient
+number of vertices in W.
+Before proving Theorem 2, we need the following lemma.
+Lemma 2. Let(U,C)be an instance of SC and let Gbe the graph constructed as described above.
+Given an optimal set cover of size k∗for(U,C), we can construct a feasible solution λto the instance
+(G,2)of MAL with |λ| ≤6x+ 2xk∗.
+Proof. LetC∗⊆ C be a set cover of optimal size equal to k∗. We construct λas follows (see
+Figure 3). For all e∈Et1∪Et3we set λ(e) ={1,2}, obtaining a total of 2( η+µ+ 1) + 2( µ+x+ 1)
+such labels. For every vertex ui∈U, we consider an arbitrary set sui∈ C∗that covers ui, i.e.
+8
+C
+Ut1t2 w1 wxt3
+C∗
+Figure 3: The labeling λconstructed from an optimal set cover in the proof of Lemma 2. Each
+non-dashed edge in the MAL feasible solution is assigned the labels {1,2}.
+ui∈sui, and assign the labels λ(e) ={1,2}to the corresponding edge e={ui, sui}, accounting
+for a total of 2 ηsuch labels. Finally, we assign the set of labels {1,2}to all edges of the form
+{wl, sj}with wl∈Wandsj∈ C∗, accounting for 2 xk∗labels. Thus, in total we have that
+|λ|= 4(η+µ+ 1) + 2 x+ 2xk∗≤6x+ 2xk∗.
+It remains to prove that ( G, λ) is temporally connected. Denote by G′the spanning subgraph
+ofGcontaining all the edges that receive the labels {1,2}inλ. Observe that proving that G′has
+diameter 2 is equivalent to proving that ( G, λ) is temporally connected, since every path v1, v2, v3
+of length 2 in G′correspond to a valid temporal path ( {v1, v2},1),({v2, v3},2) of length 2 in ( G, λ).
+Letui∈U. In graph G′, the vertex uican reach every other vertex in at most 2 steps. To
+see this, observe that uican reach vertex v∈ C ∪ U∪ {t1, t2}using the edge {ui, t1}and then
+(if necessary) {t1, v}. Moreover, uican reach any vertex v∈W∪ {t3}by first moving into the
+arbitrarily chosen vertex suiinC∗(see the construction of λ) and then reaching v, thanks to the
+fact that all edges of the form {sui, v}with v∈W∪ {t3}belongs to G′.
+Letsj∈ C. The vertex sjcan reach every vertex v∈ C ∪ U∪ {t1, t2}with a path of length 2,
+by using the edges in Et1. Moreover, sjcan reach every vertex v∈W∪ {t3}with a path of length
+2 by using the edges in Et3.
+The vertex t1can reach every vertex v∈ C ∪ U∪ {t2}using one edge in Et1. Moreover, t1can
+reach vertex t3using the path {t1, t2},{t2, t3}, and it can reach every vertex w∈Wwith the path
+{t1, sj},{sj, w}where sj∈ C∗.
+The vertex t2can reach all other vertices by first moving to either t1ort3, and then using the
+edges in Et1∪Et3.
+9
+It remains to check the vertices W∪ {t3}. Since all other vertices can reach these vertices with
+a path of length at most 2, we only need to check that w∈W∪ {t3}can reach w′∈W∪ {t3}.
+Indeed, these vertices are connected with a path of length 2 via the edges in Et3.
+Now, we are ready to prove Theorem 2. For convenience of the reader, we restate the statement
+of Theorem 2.
+Theorem 2. For every ϵ∈(0,1/4), there is no polynomial-time (ϵlog|V|)-approximation algorithm
+for MAL, unless P =NP. The hardness holds even when the maximum allowed age ais equal to 2.
+Proof of Theorem 2. Let ( U,C) be an instance of SC with η=|U|andµ=|C|, letC∗be an
+optimal set cover, and let k∗=|C∗|. Let Gbe the graph constructed as previously described with
+x=η+µ+ 1. Let λ∗denote an optimal solution to MAL on instance ( G,2). Assume there is
+anα-approximation algorithm for MAL and denote the solution given by such an algorithm with
+λAPX. Denote with Gpwhere p∈[2] the subgraph of Ghaving only the edges that in λAPX
+contain label p, that is E(Gp) ={e∈E(G)|p∈λAPX(e)}. Observe that in Gpthe existing edges
+going from wl,l∈[x], to the vertices in Cmust induce a set cover as the only paths of length 2
+between wland any vertex in Umust go through a vertex in C. More formally, the set of vertices
+Cp,l={sj∈ C | p∈λAPX({wl, sj})}is a set cover for every p∈[2], l∈[x]. Denote with kthe
+minimum among the size of sets Cp,l, that is k= min p∈[2],l∈[x]|Cp,l|. Observe that for each p∈[2]
+andl∈[x],λcontains |Cp,l|distinct labels to connect vertex wlto all vertices in Cp,lwith label p.
+Hence, |λAPX| ≥P
+p∈[2]P
+l∈[x]|Cp,l| ≥2xk.
+By Lemma 2, we can compute a labeling λsuch that |λ| ≤6x+ 2xk∗and therefore, |λ∗| ≤
+6x+ 2xk∗.
+AsλAPXis an α-approximation algorithm for ( G,2), then |λAPX| ≤α|λ∗|, and therefore 2 xk≤
+|λAPX| ≤α|λ∗| ≤α(6x+ 2xk∗). Dividing by 2 x, we get that k≤α(k∗+ 3).
+Letα≤ϵlog(|G|), where |G|=O(N2). We have k≤ϵ′log(N2)k∗= 2ϵ′log(N)k∗, for any
+ϵ′=ϵ+o(1), which contradicts Theorem 3 for any ϵ′∈(0,1/2). Hence, we have a contradiction for
+anyα≤ϵlog(|G|) and ϵ∈(0,1/2). The theorem follows by observing that |G|=O(|V(G)|2).
+In the next theorem, we extend our logarithmic lower bound to the case where ais any fixed
+value greater than or equal to 3. Specifically, we prove this result for DCSS and then use Theorem 1
+to show the same result for MAL.
+Theorem 4. For every ϵ∈(0,1/6), there is no polynomial-time (ϵlog|V|)-approximation algorithm
+for DCSS, unless P =NP. The hardness holds even when the required diameter dis a fixed
+parameter greater or equal to 3.
+Let (U,C) be an instance of SC. We construct an instance ( G= (V, E), d) of DCSS for any fixed
+parameter d≥3. Fix x≥3dη+µbe fixed. We construct the graph G= (V, E) as follows. See
+Figure 4 for a reference of the construction.
+The set of vertices of Gconsists of a vertex sifor each set in C, a set of new vertices T=
+{t1, t2, . . . , t x}, and d−1 copies of each vertex in U. Specifically, for each j∈[d−2]0, we define
+Uj={ui,j|ui∈U}. The vertices ui,0correspond to the elements of Uand are connected to the
+sets in Caccording to the natural set-cover correspondence. Additionally, we introduce a set of new
+vertices Z={z0, z1, . . . , z d−2}and one more new vertex, denoted w. Thus, the set of vertices of G
+isV(G) =T∪ C ∪ (S
+j∈[d−2]0Uj)∪Z∪ {w}.
+10
+t2 tl t1
+s2 sm s1
+un,0 u1,0
+un,5 u1,5u1,1 un,1
+u1,2 un,2
+u1,3
+u1,4 un,4un,3z0
+z1
+z5z2
+z3
+z4w
+Figure 4: Example of the construction used in Theorem 4 for d= 7.
+We now define the set of edges of G. Let Escbe the edges corresponding to the instance of set
+cover, that is,
+Esc={(sj, ui,0)|sj∈ S ∧ ui∈ U ∧ ui∈sj}.
+Next, we connect the vertices in Tto each of the vertices in Sby defining
+Et={(tl, sj)|sj∈ S ∧ l∈[x]}.
+We now add edges to form a path between the copies ui,0andui,d−2of the same element ui∈ U.
+Specifically,
+Ep={(ui,q, ui,q+1)|ui∈ U ∧ q∈[d−3]0}.
+The vertex zd−2will be connected to all the vertices in Ud−2, i.e.,
+Ezu={(zd−2, u)|u∈ Ud−2}.
+Similarly, vertex z0will be connected to all the vertices in S, that is,
+Ezs={(z0, s)|s∈ S}.
+Moreover, z0andzd−2will be connected through a path that crosses the other vertices in Z, i.e.,
+Ezz={(zq, zq+1)|q∈[d−3]0}.
+11
+Finally, we add the edges from vertex wto all the vertices in U⌊d−2
+2⌋∪ {z⌊d−2
+2⌋}, that is,
+Ew={(w, u)|u∈ U⌊d−2
+2⌋} ∪ {(w, z⌊d−2
+2⌋)}.
+In conclusion, the edges of Gare
+E=Esc∪Et∪Ep∪Ezu∪Ezs∪Ezz∪Ew.
+We now prove that for any d≥3, if ( U,C) admits a SET COVER of size k∗, then we can
+compute a spanner of Gwith diameter dand at most η(d+ 1) + xk∗+µ+d−2 edges.
+Lemma 3. Let(U,C)be an instance of SC and let Gbe the graph constructed as described above.
+Given a set cover for (U,C)of optimum size k∗, we can construct a feasible solution Hto the
+instance (G, d)of DCSS such that |E(H)| ≤η(d+ 1) + xk∗+µ+d−2.
+Proof. LetC∗={s∗
+1, s∗
+2, . . . , s∗
+k∗} ⊆ C be an optimal set cover of size k∗. We construct a solution
+H= (V, E H) to the DCSS problem in the following way. The set of vertices of His the same as
+that of G, while the set of edges will contain the sets Ew,Ep,Ezu,Ezp, and Ezs.Hwill also contain
+all the edges of Etof the form ( tl, s∗
+j) for l∈[x] with s∗
+j∈ C∗. Finally, for every vertex ui∈U0, we
+arbitrarily select from the set Escone edge ( s∗
+j, ui) such that s∗
+j∈S∗andui∈s∗
+j. Summing up the
+size of the chosen edges, we get that |EH| ≤η(d+ 1) + xk∗+µ+d−2.
+It remains to prove that His connected and has diameter at most d.
+First, observe that the vertices in Tcan reach, in at most dsteps, any vertex inS
+j∈[d−2]0Uj∪{w},
+since they are incident to a set cover. Moreover, they can also reach all vertices in Zas well as the
+vertices s̸∈S∗via a path passing through zd−2. Therefore, we can restrict our attention to the
+vertices in C ∪(S
+j∈[d−2]0Uj)∪Z∪ {w}.
+Observe that wcan reach every other vertex through a path of length at most ⌊d
+2⌋+1. Moreover,
+a vertex in⌊d−2
+2⌋S
+j=0Uj∪ {zj}can reach a vertex in C ∪(d−2S
+j=⌊d−2
+2⌋+1Uj)∪ {zj}via a path traversing w,
+with length at most d. Therefore we may restrict our attention to the case where both vertices
+belong to one of the two aforementioned sets of vertices.
+Letxandybe any two vertices in⌊d−2
+2⌋S
+j=0Uj∪ {zj}. Observe that both xandylie on a cycle
+of length at most 2 ∗ ⌊d−2
+2⌋+ 4 that traverses vertices zd−2andw. Since we can upper-bound the
+length of the cycle by d+ 3, it follows that the distance between xandyis at most ⌊d+3
+2⌋, which
+is no greater than d(using the fact that d≥3).
+The only remaining case is when both xandybelong to C ∪(d−2S
+j=⌊d−2
+2⌋+1Uj)∪{zj}. In this case,
+both xandylie on a common cycle traversing wandz0with length at most 2 ⌊d
+2⌋+ 4≤d+ 4.
+Therefore, the distance between xandyis at most ⌊d+4
+2⌋, which is at most das long as d≥3.
+This completes the analysis of all cases and concludes the proof.
+We can now prove Theorem 4.
+12
+Proof of Theorem 4. Letd≥3 be a fixed integer. Let ( U,C) be an instance of SC, for which we
+can assume, without loss of generality, that η+µ≥d. Let Gbe the graph constructed as described
+above with x=ηd+µ. Let k∗be the optimum value for SC on ( U,C). Let H∗denote an optimal
+solution to DCSS for the corresponding instance ( G, d). Assume there exists an α-approximation
+algorithm for DCSS and let HAPXdenote the solution produced by this algorithm for ( G, d).
+Observe that in any subgraph of Gwith diameter at most d, the edges going from each tl∈T
+with l∈[x] to the vertices in Cmust induce a set cover, as the only paths of length dbetween tl
+and any vertex in Ud−2must traverse a vertex in C.
+Let us denote by Cl:={s|s∈ C∧ (tl, s)∈DCSS APX}and set k= min
+l=1,...,x|Cl|. Observe that each
+element sofClcorresponds to a distinct edge {tl, s}. This implies that |HAPX| ≥P
+l∈[x]|Cl| ≥kx.
+Moreover, |H∗| ≤η(d+ 1) + µ+k∗x+d−2, since, by Lemma 3, we can construct a feasible
+solution to ( G, d) with the number of edges given on the right-hand side of the inequality.
+Since we have that |HAPX| ≤α|H∗|, it follows that
+kx≤α(xk∗+ηd+µ+η+d−2),
+which simplifies to
+k≤α(k∗+ηd+µ
+x+η+d−2
+x).
+Asx=ηd+µ, we have that k≤α(k∗+ 2).
+Letα≤ϵlog(|G|), where |G|=O(dN2). We have that k≤ϵ′log(dN2)k∗≤3ϵ′log(N)k∗, for
+anyϵ′=ϵ+o(1), assuming that d≤N. This is a contradiction to Theorem 3 for any ϵ′∈(0,1/3).
+Therefore, we obtain a contradiction for any α≤ϵlog(|G|), where ϵ∈(0,1/3). The statement
+follows by observing that |G|=O(|V(G)|2).
+Combining Theorem 4 with Theorem 1, we obtain the following corollary.
+Corollary 1. For every ϵ∈(0,1/(6a)), there is no polynomial-time (ϵlog|V|)-approximation al-
+gorithm for MAL, unless P =NP. The hardness holds even when the maximum allowed age ais a
+fixed parameter greater or equal to 3.
+Proof. Let ( G, a) be an instance of DCSS where a=DG. Let ϵ∈(0,1/(6a)) and assume that we
+have a ( ϵlog|V|)-approximation algorithm for MAL. By Theorem 1, we know that there exists an
+(aϵlog|V|)-approximation algorithm for DCSS. Since ϵ∈(0,1/(6a)), this contradicts Theorem 4.
+The next theorem presents our second lower bound on the approximation of DCSS, based on
+a stronger complexity hypothesis. Again, we prove the hardness for DCSS and then combine this
+result with Theorem 1 to obtain a hardness bound for MAL.
+Theorem 5. For any constant ϵ∈(0,1), there is no polynomial-time 2log1−ϵn-approximation al-
+gorithm for DCSS, unless NP ⊆DTIME (2polylog (n)). The hardness holds even when the required
+diameter dis a fixed parameter greater or equal to 3.
+In order to prove Theorem 5, we use a reduction from a problem called MIN-REP, introduced
+in [19]. In MIN-REP, we are given a bipartite graph ˜G= (A, B, ˜E), where AandBare disjoint
+sets of vertices, and ˜Erepresents the edges between vertices in AandB. The set Ais partitioned
+13
+intorgroups A1, A2, . . . , A rand the set Bis partitioned into rgroups B1, B2, . . . , B r. Each set Ai
+andBjhas the same size, denoted by σ.
+The graph ˜Ginduces a bipartite condensed graph G′= (U, W, E′) defined as follows:
+U={ai|i∈[r]}, W ={bj|j∈[r]},
+andE′contains an edge between vertices ai∈Uandbj∈Wif and only if there is an edge in ˜E
+between some vertex in Aiand some vertex in Bj.
+The vertices in V(G′) are called condensed vertices , and the edges in E(G′) are called condensed
+edges .
+AREP-cover is a set C⊆A∪Bof vertices with the property that it “covers” every condensed
+edge. Specifically, for all condensed edges {ai, bj}there exist vertices a∈C∩Aiandb∈C∩Bj
+such that {a, b} ∈ ˜E. The objective of MIN-REP is to construct a REP-cover of minimum size.
+Let us denote with C∗an optimal solution to MIN-REP.
+We say that an instance of MIN-REP is a YES-instance if |C∗|= 2r(one vertex for each group)
+and is a NO-instance if |C∗| ≥2log1−ϵ′nr. The following theorem is due to Kortsarz [19]. We use
+the statement given in [8] Theorem 6.1.
+Theorem 6 ([19]).For any constant ϵ′∈(0,1), there is no polynomial-time algorithm that can
+distinguish between YES and NO instances of MIN-REP, unless NP ⊆DTIME (2polylog (n)).
+Let˜G= (A, B, ˜E) be an instance of MIN-REP with the associated condensed graph G′=
+(U, W, E′). We denote by Γ( w) the group in ˜Gcorresponding to the condensed vertex w∈U∪W.
+Specifically, for u∈U, we have Γ( u) =Aifor some i∈[r], and for w∈W, we have Γ( w) =Bjfor
+some j∈[r]. Let xbe a parameter that we will set later.
+Before we go into the details of the reduction from MIN-REP to DCSS, we provide some intuition
+behind the construction. We start with a MIN-REP instance ˜G= (A, B, ˜E) and construct an
+instance ( G,3) of DCSS. The graph Gcontains all the vertices and edges of ˜G, along with a vertex
+for every group (corresponding to the condensed vertex), which is connected to all the vertices in
+its group.
+The idea is that in the DCSS instance, we want two condensed vertices to be connected through
+the edges in ˜Gif they are connected by a condensed edge in G′. If they are not connected by a
+condensed edge, we want to have some other path between them. This ensures that the selected
+edges will correspond to a REP-cover. To achieve this, we add an edge between two condensed
+vertices if and only if they are not connected by a condensed edge in G′.
+To connect all the vertices in Gthat are not condensed vertices, we introduce a vertex t, which
+will act as the center of a star connecting all such vertices. This new vertex will be adjacent to all
+the vertices in AandB, and it will be connected to the condensed vertices through disjoint paths
+of length two. In this way, the condensed vertices will be the only vertices that are not connected
+through a path of length at most 3 passing through the star.
+The labels of edges incident to tmay introduce a dominant term in the size of the solution. To
+address this, we replicate the condensed vertices into x+ 1 copies, where xcopies have the same
+role as described before (i.e., they try to reach the other condensed vertices through the MIN-REP
+instance, selecting their own vertices for the REP-cover), and the remaining copy has the role of
+connecting its copies to the other vertices.
+We now construct our DCSS instance. See Figure 5 for an illustration. For simplicity, we first
+describe the reduction for the case of diameter 3, and then discuss how to extend it to any fixed
+d≥3.
+14
+Emr
+A1
+ArA2B1
+BrB2(a1, x)
+(a2, x)
+(ar, x)(b1, x)
+(b2, x)
+(br, x)sa1
+sarsb1
+sbr
+tEconEss Eso
+Estar
+Figure 5: The graph used in the proof of Theorem 5. Edges between a vertex and a set indicate
+that the vertex is connected to all vertices in the set.
+We begin by defining the vertex set V=A∪B∪VL∪VR∪S∪ {t}, where VL=U×[x],
+VR=W×[x], and S={su:u∈U∪W}. In other words, the vertices of VLandVRarexcopies
+of the condensed vertices, Scontains one vertex for each condensed vertex, and we add a special
+vertex tthat will help us easily connect the majority of the vertices in the instance.
+Now, we define the edge set of G. We start with the edges of the MIN-REP instance, which
+we denote as Emr=˜E. Next, we add the edges connecting the vertices of VLandVRto their
+corresponding group. More formally, let Econ={{(u, i), a} |u∈U∪W, a∈Γ(u), i∈[x]}.We
+then connect the vertices in Susing two edge sets. The first set connects each su∈Sto the
+vertices ( u, i)∈VL∪VR, and is defined as Eso={{(u, i), su} |u∈U∪W, i∈[x]}.The second set
+connects the vertices within Ssuch that there is an edge between two vertices in Sif and only if
+there is no condensed edge connecting the corresponding condensed vertices in G′. Formally, this
+set is Ess={{su, su′} |u, u′∈U∪W,{u, u′} ̸∈E(G′)}.
+Observe that for two vertices in U, the corresponding vertices in Swill be connected by an
+edge, and the same holds for the vertices in W.
+Finally, we add the edges that have tas an endpoint. These edges form the set Estar={{t, y} |
+y∈A∪B∪S}.
+The final edge set of Gis the union of all the previous edge sets: E(G) =Emr∪Econ∪Eso∪
+Ess∪Estar.
+The next lemma shows that the diameter of Gis equal to 3.
+Lemma 4. The graph Gconstructed above has diameter 3.
+Proof. First, observe that vertex tcan reach every vertex in A∪B∪Swith one edge, and it can
+reach every vertex in VL∪VRwith a path of two edges going through S. Let v1, v2be two vertices
+15
+ofV(G)\ {t}. If at most one of v1andv2belongs to VL∪VR, then there exists a path between
+v1andv2of length at most 3 going through vertex t.
+The only remaining case is when both v1andv2belong to VL∪VR. Therefore, v1andv2are
+of the form v1= (w, i) and v2= (w′, j) with w, w′∈U∪W. Ifw=w′, then v1andv2can reach
+each other in 2 steps using the edges incident to sw. If both wandw′lie in U(analogously in W),
+then we can use the edge {sw, sw′} ∈Essto connect v1tov2with a path of length 3.
+Finally, we have the case where w∈Uandw′∈W(or analogously w∈Wandw′∈U). If there
+exists an edge between swandsw′, then the path of length 3 is ( w, i), sw, sw′,(w′, j). Otherwise,
+if there is no edge between swandsw′, then, by the construction of G, there exists a superedge
+between wandw′inG′, and therefore there exists an edge {a, b} ∈˜E=Emrwith a∈Γ(w) and
+b∈Γ(w′). In conclusion, the path of length 3 between v1andv2inGis (w, i), a, b, (w′, j), and
+therefore DG= 3.
+We are going to show that if there exists a 2log1−ϵn-approximation algorithm for an instance
+(G,3) of DCSS, then Theorem 6 is contradicted. To this aim, we need two lemmas.
+LetHbe an arbitrary spanning subgraph of Gwith DH= 3. The first lemma proves that the
+size of E(H) is lower bounded by xtimes the size of an optimal solution to the MIN-REP instance,
+i.e.,|E(H)|> x· |C∗|, where xis the number of copies in Gof each condensed vertex.
+Lemma 5. For any feasible solution Hto the instance (G,3)of DCSS we have |E(H)|> x· |C∗|.
+Proof. Fori∈[x], let Ci⊆A∪Bbe the set of vertices in A∪Bthat are adjacent to any i-th copy
+of a supervertex in H. Formally, Ci={c∈A∪B|w∈U∪W∧c∈Γ(w)∧ {(w, i), c} ∈H}.We
+will prove that Ciis a REP-cover of ˜Gfor all i∈[x]. Fix an i∈[x] and a superedge {u, v} ∈E(G′).
+Observe that {u, v}does not belong to Gand that the only possible paths between ( u, i) and ( v, i)
+inHof length at most 3 are those passing through an edge in Emr. Hence, there must exist two
+vertices aandbsuch that a∈Γ(u),b∈Γ(v), and the path ( u, i), a, b, (v, i) is in H. By definition
+ofCi, both aandbbelong to Ci, and Cicovers the superedge {u, v}. Hence, for all i∈[x], we have
+thatCiis a valid REP-cover, and consequently |Ci| ≥ |C∗|.
+Observe that every vertex cbelonging to Cicorresponds to a distinct edge {c,(u, i)}inH, for
+some u∈U∪W. Moreover, for each u∈U∪W, and i, j∈[x] with i̸=j, the set of edges of
+Gincident to ( u, i) and ( u, j) are disjoint. Therefore, the number of edges in His at least the
+sum, over all i∈[x], of the size of Ci, that is, |E(H)|>Px
+i=1|Ci|, where the inequality is strict as
+we need to add more edges in order to connect the other vertices (e.g., t). Finally, recalling that
+|Ci| ≥ |C∗|, we conclude that |E(H)|> x· |C∗|.
+The second lemma shows that there exists a spanning subgraph of diameter 3 which does not
+cost much more than C∗in a YES-instance of MIN-REP.
+Lemma 6. Assume that ˜Gis a YES-instance of MIN-REP, then there exists a feasible solution H
+to the instance (G,3)of DCSS such that |E(H)| ≤4rx+ 5r2σ.
+Proof. Let˜Gbe a YES-instance of MIN-REP, so there exists a REP-cover Cof size 2 r. Since
+|C|= 2r, it follows that |C∩Γ(w)|= 1 for each w∈U∪W. Let cwdenote the unique element of
+C∩Γ(w) for each w∈U∪W.
+We construct Hstarting from a subgraph of Gthat includes the edges Estar∪Ess∪Eso. We
+then add the subset of edges in Econof the form {(w, i), cw}for all w∈U∪Wandi∈[x]. Finally,
+we add the edges {a, b} ∈Emrsuch that a, b∈C.
+16
+Let us now analyze the size of H. The edges in Estarare 2r+ 2rσ, the edges in Esocontribute
+2rx, and we select 2 rxedges from Econ. Finally, Hwill include2r(2r−1)
+2edges in Ess∪Emr. To
+see this, observe that for each vertex sw∈Swith w∈U∪W, we include ( r−1) + ( r−degG′(w))
+edges from Essplus degG′(w) edges incident to cwinEmr(one for each superedge to be covered).
+Therefore, in total, Hwill contain at most 4 rx+ 2r2+r+ 2rσedges. Clearly, we can upper
+bound the total number of edges in Hby 4rx+ 5r2σ.
+It remains to prove that Hhas diameter at most 3. The proof is essentially the same as that
+of Lemma 4.
+We are now ready to prove Theorem 5. For convenience of the reader, we restate the statement
+of Theorem 5.
+Theorem 5. For any constant ϵ∈(0,1), there is no polynomial-time 2log1−ϵn-approximation al-
+gorithm for DCSS, unless NP ⊆DTIME (2polylog (n)). The hardness holds even when the required
+diameter dis a fixed parameter greater or equal to 3.
+Proof. Fixϵ∈(0,1). Let ˜Gbe an instance of MIN-REP of size ˜ nsuch that ˜ n≥222
+ϵ(1−ϵ). Let
+x=rσ. Clearly, the graph Gcreated as described earlier has size n, which is polynomial in
+˜n= 2rσ. Specifically, we have n≤(2rσ)2.
+Assume there exists a polynomial-time (2log1−ϵn)-approximation algorithm for the DCSS prob-
+lem, which we apply to the instance ( G,3) previously defined. Let HAPXdenote the approximate
+solution, and let H∗denote an optimal solution to the DCSS instance on ( G,3).
+Theorem 6 implies that, under the assumption that NP ̸⊆DTIME(2polylog( n)), there is no
+polynomial-time algorithm that can distinguish between the YES case, where |C∗|= 2r, and the
+NO case, where |C∗| ≥r2log1−ϵ′(2rσ). Since Theorem 6 holds for any choice of ϵ′, we fix ϵ′=ϵ2, and
+we have |C∗| ≥r2log1−ϵ2(2rσ)when ˜Gis a NO-instance for MIN-REP.
+By Lemma 6, if ˜Gis a YES-instance of MIN-REP, then |H∗| ≤9xr. Therefore, when ˜Gis a
+YES-instance, the solution of our approximation algorithm on Ghas size:
+|HAPX| ≤9xr·2log1−ϵn≤9xr·22 log1−ϵ(2rσ).
+On the other hand, when ˜Gis a NO-instance of MIN-REP, by Lemma 5, we have
+|H∗|> x· |C∗| ≥xr2log1−ϵ2(2rσ)=xr2(log1−ϵ(2rσ))1+ϵ.
+Now, using the fact that 2 rσ=n′≥222
+ϵ(1−ϵ)and 0 < ϵ < 1, we get the inequality:
+9xr22 log1−ϵ(n′)< xr2(log1−ϵ(n′))1+ϵ,
+which implies that we can use our approximation algorithm to distinguish between YES and NO
+instances of MIN-REP, contradicting Theorem 6. Hence, for any ϵ, no polynomial-time (2log1−ϵn)-
+approximation algorithm can exist, and the theorem follows for d= 3.
+To extend the hardness to the case where the required diameter dis any fixed value d≥3,
+we need to adjust the reduction slightly. For simplicity, assume that d= 2k+ 1 for some integer
+k≥2. We change the reduction by adding, for each vertex ( u, i)∈VL∪VR, a path of length k−1
+with copies of vertex ( u, i). Specifically, we add vertices ( u, i,1),(u, i,2), . . . , (u, i, k−1) and edges
+17
+{(u, i),(u, i,1)},{(u, i, j ),(u, i, j + 1)}forj∈[k−2]. In this graph, vertices ( u, i, k−1) must select
+a REP-cover in order to connect to every other vertex with a path of length at most d.
+As before, by choosing ϵsmall enough and an instance of MIN-REP large enough, we can
+prove that d-DCSS cannot be approximated with a factor better than 2log1−ϵnfor any odd d≥3.
+A similar construction can be done when dis even, though more technicalities arise due to the
+different path lengths based on whether ( u, i)∈VLor (u, i)∈VR.
+We now combine Theorem 5 with Theorem 1 to obtain a hardness lower bound for MAL. We
+observe that in this result, differently from Corollary 1, the interval for ϵdoes not depend on aas
+ϵappears in the exponent.
+Corollary 2. For any constant ϵ∈(0,1), there is no polynomial-time 2log1−ϵn-approximation
+algorithm for MAL, unless NP ⊆DTIME (2polylog (n)). The hardness holds even when the maximum
+allowed age ais a fixed parameter greater or equal to 3.
+Proof. We prove that the corollary holds for any constant ϵ∈(0,1). To this end, assume by way
+of contradiction that there exists ϵ∈(0,1) such that there is a 2log1−ϵn-approximation algorithm
+for MAL. By Theorem 1, this implies the existence of a ( a·2log1−ϵn)-approximation algorithm for
+DCSS. Observe that
+a·2log1−ϵn= 2log1−ϵn+log a.
+We aim to find ϵ′∈(0,1) such that
+2logϵ′n>2log1−ϵn+log a,
+which would contradict Theorem 5 as a·2log1−ϵn<2logϵ′n. Thus, it suffices to show that there
+exists ϵ′such that
+logϵ′n >log1−ϵn+ log a.
+Asais a fixed parameter, it suffices to pick a sufficiently large ϵ′∈(1−ϵ,1).
+4 Approximation algorithms for DCSS
+In this section, we present approximation algorithms for DCSS by exploiting related problems from
+the literature. In the following section, we show how to adapt the algorithms for DCSS to MAL
+by using Theorem 1.
+To the best of our knowledge, the DCSS problem first appeared, in a slightly different form,
+only in [14]. In particular, the version considered by [14], called the d-DSS problem, takes in input
+only a graph and asks for the minimum-size spanning subgraph of diameter at most d, where d
+is fixed in the definition of the problem. In [14] the results for d-DSS are obtained through a
+reduction from the All-Client k-spanner ( k-AC) problem contained in an unpublished manuscript.
+Ink-AC, we are given a graph and a subset of the edges called servers, and we want to find a
+subgraph containing only server edges, in which the distance between any pair of vertices is at
+most ktimes their original distance and the number of edges is minimized. The authors of [14],
+show that k-AC can be approximated within a factor O(√n) with an additive violation on the
+required distances of at most 2 edges, and it is hard to approximate within a factor 2log1−ϵn, unless
+NP⊆DTIME(2polylog( n)). In the previous section, we presented a different reduction to derive this
+last result.
+18
+There are few other known optimization problems that generalize DCSS, and thus, we can apply
+the approximation algorithms developed for these problems to DCSS as well.
+Mincost Diameter- dproblem. Dodis and Khanna [13], studied a generalization of the DCSS
+problem called Mincost Diameter- din which we are given a graph G= (V, E) with a cost function
+c:E→R+, where E={{u, v}:{u, v} ̸∈E}, and we want to find a set of edges E′⊆Eof
+minimum cost such that G′= (V, E∪E′) has diameter at most d. There is a correspondence
+between DCSS and Mincost Diameter- dwhen the initial graph Gprovided as input to the latter
+is empty. More precisely, let ( G, d) be an instance of DCSS, we construct graph G′= (V(G),∅)
+and cost function csuch that c(e) = 1 if e∈E(G) and c(e) =m+ 1 otherwise. Observe that any
+feasible solution of cost at most mfor Mincost Diameter- dproblem on instance ( G′, c) corresponds
+to a feasible solution for DCSS on instance ( G, d) with the same cost, and vice versa. Moreover,
+we can disregard solutions with cost greater than m, since selecting all edges esuch that c(e) = 1
+provides a feasible solution to the Mincost Diameter- d(recall that d≥DG) with strictly smaller
+cost.
+Dodis and Khanna [13] proved that Mincost Diameter- dis hard to approximate within O(2log1−ϵn)
+unless NP ⊆DTIME( npoly log( n)). However, the reduction used to establish this hardness result
+relies on an initial non-empty subgraph, and it does not appear to be trivially adaptable to the
+DCSS problem. On the approximation side, the authors also proved the following result, which is
+of particular interest to us.
+Theorem 7 ([13], Section 5) .There exists a O(logn)-approximation algorithm for Mincost Diameter-
+2.
+As observed earlier, the Mincost Diameter- dproblem can be viewed as a generalization of DCSS,
+and therefore, the following result is implied by the previous one.
+Corollary 3. There exists a O(logn)-approximation algorithm for DCSS when d=DG= 2.
+Pairwise Spanner problem. In [8], the authors considered a problem called Pairwise Spanner ,
+which generalizes many other network design problems, including DCSS. In the Pairwise Spanner
+problem, we are given a (possibly directed) graph G, a collection of ordered vertex pairs P⊆V×V,
+and a function ∆ : P→N, and we aim to compute a subgraph HofGthat minimizes |E(H)|, such
+thatdH(s, t)≤∆(s, t) for all pairs ( s, t)∈P. In the same paper, the authors proved the following
+result regarding Pairwise Spanner.
+Theorem 8 ([8], Theorem 1.8) .For any constant ϵ >0, there exists a O(n3/5+ϵ)-approximation
+algorithm for the Pairwise Spanner problem.
+Observe that if we set Pto be all ordered pairs of distinct vertices in Gand fix ∆( s, t) =dfor all
+pairs ( s, t)∈P, we obtain the DCSS problem with parameter d, and hence the above approximation
+also applies to this case.
+Corollary 4. For any constant ϵ >0, there exists a O(n3/5+ϵ)-approximation algorithm for the
+DCSS problem.
+19
+Additive +b-spanner problem. Anadditive +b-spanner (or simply + b-spanner) is a spanning
+subgraph that preserves all distances between vertices up to an additive stretch. More formally, a
+spanning subgraph H⊆Gis an additive + b-spanner if dH(u, v)≤dG(u, v) +bfor all u, v∈V.
+Additive spanners are widely studied in the literature; see the survey [1] and the references therein.
+The following theorem summarizes several results from the literature on additive spanners.
+Theorem 9 ([1], Section 8) .LetGbe any graph with nvertices,
+i) [2], Gadmits a +2-spanner with O(n3/2)edges.
+ii) [4], Gadmits a +4-spanner with O(n7/5)edges.
+iii) [3], Gadmits a +6-spanner with O(n4/3)edges.
+Observe that, by definition, a + b-spanner of a graph Gis a feasible solution to DCSS on input
+(G, d), when d≥DG+b. Therefore, the previous theorem, along with the observation that an
+optimal solution for DCSS has size at least n−1, implies the following corollary.
+Corollary 5. Let(G, d)be an instance of DCSS.
+i) If d≥DG+ 2then there exists an O(n1/2)-approximation algorithm for DCSS.
+ii) If d≥DG+ 4then there exists an O(n2/5)-approximation algorithm for DCSS.
+iii) If d≥DG+ 6then there exists an O(n1/3)-approximation algorithm for DCSS.
+5 Approximation Algorithms for MAL
+In this section we introduce our approximation algorithms for MAL. We recall that DG≤a≤
+2DG+2. The following theorem provides our first set of results for the cases in which ais sufficiently
+large.
+Theorem 10. Let(G, a)denote an instance of MAL.
+i) If a≥2RG, then we can compute a solution λfor MAL in polynomial time such that |λ| ≤
+|λ∗|+ 2.
+ii) If a≥2RG+ 1, then we can compute a solution λfor MAL in polynomial time such that
+|λ| ≤ |λ∗|+ 1.
+iii) If a≥2DG+ 2, then we can compute a solution λfor MAL in polynomial time such that
+|λ|=|λ∗|.
+Proof. Letrbe the center of G. We observe that |λ∗| ≥2|V(G)| −4 since at least 2 |V(G)| −4
+labels are necessary for a temporal graph to be temporally connected, even without any constraints
+on the lifetime (see [18]). Moreover, if Gdoes not contain C4, then |λ∗| ≥2|V(G)| −3.
+i) We use the following folklore algorithm (see, e.g., [18]) that assigns 2 labels to the edges
+of a shortest path tree Trooted at the center rof graph G. Each edge e={u, v}ofT, where
+dG(u, r) =dG(v, r)+1, takes 2 labels: RG−dG(u, r)+1 and RG+dG(u, r). The largest label used is
+therefore 2 RG, and hence Lλ= 2RG. Moreover, each pair of vertices ( x, y) is temporally connected
+20
+in (G, λ) as there is a temporal path from xtoypassing through the least common ancestor lstof
+xandyinT. In fact, let us consider the unique path Pconnecting xtoyinT. Ifx=lst, then P
+has labels RG+dG(x, r) + 1, RG+dG(x, r) + 2, . . . , R G+dG(y, r), which are strictly increasing as
+dG(y, r)≥dG(x, r)+1. Analogously, if y=lst, then Phas labels RG−dG(y, r)+1, RG−dG(y, r)+
+2, . . . , R G−dG(x, r), which are strictly increasing as dG(x, r)≥dG(y, r). Iflst̸=x, y, letlstxand
+lstybe the two vertices adjacent to lstinPthat are closer to xandy, respectively. Then Phas
+labels RG−dG(x, r) + 1 , . . . , R G−dG(lstx, r) + 1 , RG+dG(lsty, r), . . . , R G+dG(y, r), which are
+strictly increasing as dG(x, r)≥dG(lstx, r),dG(lstx, r) =dG(lsty, r)≥1, and dG(lsty, r)≤dG(y, r).
+Finally, since each edge of Thas exactly 2 labels, we have |λ|= 2E(T) = 2|V(G)| −2, and hence
+|λ| ≤ |λ∗|+ 2.
+ii) We slightly modify the above algorithm as follows. Let r′be a vertex adjacent to rin a
+shortest path tree Trooted at r, with rbeing the center of G. The edge between randr′takes a
+single label RG+ 1. Each edge e={u, v}inE(T)\{{r, r′}}, where dG(u, r) =dG(v, r) + 1, takes 2
+labels: RG−dG(u, r) + 1 and RG+dG(u, r) + 1. Note that the labels in E(T)\{{r, r′}}are similar
+to those used in the proof of ( i), with the only difference being that the second label is shifted by
+one time unit. Therefore, the largest label used is 2 RG+ 1, and hence Lλ= 2RG+ 1. Moreover,
+the proof that each pair of vertices ( x, y) is temporally connected is similar to the previous case
+(taking into account this difference). Finally, since E(T)\ {{r, r′}}=n−2, the total number of
+labels used is |λ|= 2(|V(G)| −2) + 1 = 2 |V(G)| −3≤ |λ∗|+ 1.
+iii) We distinguish between two cases: whether Gcontains C4or not. In the former case, we
+observe that the algorithm given in [18] to temporally connect a graph containing C4assigns an
+optimal number of 2 |V(G)| −4 labels, where the largest label is no more than 2 DG+ 2. In the
+latter case, the statement follows by observing that 2 DG+ 2≥2RG+ 1, and hence the labeling
+used to prove ( ii), which uses 2 |V(G)| −3 labels, is optimal.
+The next corollary collects the approximation results for the cases in which ais slightly larger
+than DG, which are derived from the relation between MAL and DCSS established in Theorem 1.
+Corollary 6. Let(G, a)denote an instance of MAL.
+i) If a= 2, then there exists an O(log(n))-approximation algorithm for MAL.
+ii) For any ϵ >0, there exists an O(DG·n3/5+ϵ)-approximation algorithm for MAL.
+iii) If a≥DG+ 2, then there exists an O(DG·n1/2)-approximation algorithm for MAL.
+iv) If a≥DG+ 4, then there exists an O(DG·n2/5)-approximation algorithm for MAL.
+v) If a≥DG+ 6, then there exists an O(DG·n1/3)-approximation algorithm for MAL.
+Proof. i) By combining Corollary 3 with Theorem 1, we obtain an O(alog(n))-approximation al-
+gorithm for MAL. The statement follows by observing that ais a constant.
+ii) By combining Corollary 4 with Theorem 1, we obtain an O(an3/5+ϵ)-approximation algorithm
+for MAL. The statement follows from the observation that DG≤a≤2DG+ 2.
+iii), iv), v) By combining Corollary 5 with Theorem 1, we obtain approximation factors of
+O(an1/2),O(an2/5), and O(an1/3), respectively, for MAL. The claim again follows from the obser-
+vation that DG≤a≤2DG+ 2.
+21
+Observe that there exists a trivial O(n)-approximation algorithm which consists of computing,
+for each node s, a shortest path tree rooted at sand assigning label dG(s, v) to each edge {u, v}in
+the tree, assuming that dG(s, v) =dG(s, u) + 1. The bounds in Corollary 6 outperforms this trivial
+bound only when DG·nα∈o(n2). In particular, the bounds in ii)–v) outperform the trivial bound
+when DG∈o(n2/5),DG∈o(n1/2),DG∈o(n3/5), and DG∈o(n2/3), respectively.
+In the next theorem, we present our main algorithmic results, which consist of approximation
+algorithms for MAL that do not exploit the relationship with DCSS and whose approximation
+ratios do not depend linearly on DG.
+Theorem 11. Let(G, a)be an instance of MAL.
+i) If a≥ ⌈3/2·DG⌉, then there exists an O(√nlogn)-approximation algorithm for MAL.
+ii) If a≥ ⌈5/3·DG⌉, then there exists an O(3p
+DGnlog2n)-approximation algorithm for MAL.
+Differently from Corollary 6, the bounds provided in Theorem 11 always outperform the trivial
+bound, regardless of the value of DG. Moreover, the approximation guarantee of Theorem 11 (i)
+matches or outperforms those of Corollary 6 (ii)-(v) when DG∈Ω(p
+n1/3logn), while Theo-
+rem 11 (ii) achieves the same when DG∈Ω(log n).
+In order to prove Theorem 11, we need to introduce some new concepts.
+The following definition is an adaptation to undirected graphs of Definition 2.2 from [9].
+Definition 3. For a graph G= (V, E)and a set-pair (S1, S2), where S1, S2⊆V, we say that
+(S1, S2)is a⟨h1, h2⟩-dominating set-pair of size-bound ⟨n1, n2⟩if|S1|=O(n1),|S2|=O(n2), and
+one of the following conditions holds.
+1. For each v∈V(G),dG(v, S1)≤h1,
+2. For each v∈V(G),dG(v, S2)≤h2.
+Moreover, we need the following lemma regarding the well-known Hitting Set (HS) problem.
+In the HS problem, we are given a universe U={u1, . . . , u n}and a collection of Nsubsets C=
+{S1, . . . , S N}, where each Si⊆Ufori∈[N]. The goal is to find a minimum-size set R⊆Usuch
+thatR∩Si̸=∅for every i∈[N].
+Lemma 7 ([7], Lemma 3.3) .Given an HS instance where U={u1, . . . , u n}andC={S1, . . . , S N},
+with each subset Sihaving size exactly ℓ, we can find a subset R⊆Uof size O
+nlogn
+ℓ
+that hits
+all subsets in the collection, in O(Nℓ)time.
+The next lemma is similar to Lemma 2.3 in [9]. The original lemma gives a randomized linear-
+time algorithm, while in the following, we state the deterministic version, which requires a higher
+polynomial running time. For the sake of completeness, we provide a complete proof of the lemma.
+Lemma 8. LetG= (V, E)be an unweighted graph on nvertices. For any δ∈(0,1)and any
+integer n2∈[n], we can compute in polynomial-time a ⟨⌊δDG⌋,⌈(1−δ)DG⌉⟩-dominating set-pair
+of size-bound ⟨n1, n2⟩, where n1≤nlogn
+n2.
+22
+Proof. LetG= (V, E) be a graph, let δ∈(0,1), and let n2∈[n] be an integer.
+For every vertex v∈V, we compute a shortest path tree Tvrooted at v, and let Nvdenote the
+subset of Vconsisting of the n2vertices closest to vinTv, with ties broken arbitrarily. Specifically,
+Nv={v1, v2, . . . , v n2}, where for every vi∈Nv, u∈V\Nvit holds dTv(vi, v)≤dTv(u, v).
+LetS1be the hitting-set of size O
+nlogn
+n2
+, computed using the algorithm in Lemma 7 on the
+collection of subsets {Nv}v∈V.
+Letwbe one of the farthest vertices from S1, that is, dG(S1, w)≥dG(S1, v) for all v∈V.
+FixS2=Nwand observe that the set-pair ( S1, S2) has the correct size-bound ⟨n1, n2⟩, where n1
+satisfies the bound n1≤nlogn
+n2.
+It remains to prove that one of the two conditions of Definition 3 is satisfied. If for every v∈V
+we have that dG(S1, v)≤ ⌊δDG⌋, then Condition 1 is satisfied and ( S1, S2) is a dominating set-pair.
+Therefore, we may assume that Condition 1 is violated by at least one vertex, and in particular,
+dG(S1, w)>⌊δDG⌋by the choice of w.
+LetMwdenote the subset of vertices at distance at most ⌊δDG⌋from winTw, i.e., Mw={v|
+dTw(v, w)≤ ⌊δDG⌋}. Observe that Mw∩S1=∅because wis at distance greater than ⌊δDG⌋from
+S1. Moreover, Mw⊊Nw, as otherwise Nw⊆Mwwould imply that Nw∩S1=∅, contradicting S1
+being a hitting-set.
+In conclusion, since Mw⊂Nw=S2and the height of Twis at most DG, we have that for all
+v∈V\S2, the distance is upper-bounded as dG(v, S2)≤dTw(v, S2)≤DG−⌊δDG⌋=⌈(1−δ)DG⌉.
+Thus, Condition 2 of Definition 3 is satisfied.
+Before proving Theorem 11, we provide an informal description of the underlying algorithm, in
+which we will ignore the number of used labels and other details.
+In part (i) of Theorem 11, we set the parameters of Lemma 8 so as to ensure the existence of a
+setSof size O(√nlogn), such that every vertex outside Sis reachable via a path of length at most
+⌈1
+2·DG⌉. Next, for each vertex v∈S, we compute a shortest path tree rooted at vand assign labels
+to its edges such that every vertex in the tree can reach the root vthrough a temporal path whose
+last label is at most DG. Consequently, after this step, every vertex in Gcan temporally reach
+every vertex in S. The final step is to compute a shortest path forest (as guaranteed by Lemma 8)
+rooted at Sthat covers all vertices outside Svia temporal paths of length at most ⌈1
+2·DG⌉. We
+then assign labels to the edges of this forest using labels in the range DG+ 1, DG+ 2, . . . ,⌈3
+2DG⌉,
+so that the forest can be traversed from the roots to the leaves. Finally, observe that any vertex
+can temporally reach all vertices in S, and from there, using the forest F, it can reach every vertex
+outside S. Thus, the resulting temporal graph is temporally connected.
+In part (ii) of Theorem 11, we set the parameters of Lemma 8 so as to ensure the existence of
+either a set S1that can reach all vertices via a path of length at most ⌈1
+3·DG⌉or a set S2that can
+reach all vertices via a path of length at most ⌈2
+3·DG⌉. In the second case, we proceed in the same
+way as in part (i). In the first case, we compute a shortest path forest Frooted at set S1and assign
+two labels to each edge of Fin such a way that every vertex in the forest can reach a vertex in S1
+using labels in the range 1 ,2, . . . ,⌈1
+3·DG⌉. Furthermore, for every non-root vertex in the forest, there
+exists a vertex in S1that can reach it using labels in the range ⌈4
+3·DG⌉+1,⌈4
+3·DG⌉+2, . . . ,⌈5
+3·DG⌉.
+Finally, to ensure temporal connectivity, we compute a shortest path for every unordered pair of
+distinct vertices in S1and assign labels to the paths in such a way that the two vertices can reach
+each other using labels in the range ⌈1
+3·DG⌉+ 1,⌈1
+3·DG⌉+ 2, . . . ,⌈4
+3·DG⌉. In conclusion, a vertex
+not in S1can temporally reach a vertex in S1, then reach all vertices in S1, and finally reach all
+23
+vertices outside of S1.
+We restate Theorem 11 below and proceed with its proof.
+Theorem 11. Let(G, a)be an instance of MAL.
+i) If a≥ ⌈3/2·DG⌉, then there exists an O(√nlogn)-approximation algorithm for MAL.
+ii) If a≥ ⌈5/3·DG⌉, then there exists an O(3p
+DGnlog2n)-approximation algorithm for MAL.
+Proof. i) We apply the algorithm in Lemma 8 with n2=⌈√nlogn⌉, and δ= 1/2. With this choice
+of parameters we obtain a ⟨⌊1/2·DG⌋,⌈1/2·DG⌉⟩-dominating set-pair ( S1, S2) where both S1andS2
+have size O(√nlogn) and one of them can reach every other vertex with a path of length bounded
+by⌈1/2·DG⌉. Let us denote with Sthe set satisfying one of the two conditions in Definition 3.
+The labeling λis then constructed in the following way.
+For every vertex v∈Swe compute a shortest path tree Tvrooted at v. Let e={u, w}be an
+edge of Tvwith dTv(v, u) =dTv(v, w)+1, we add to λ(e) the label DG−dTv(v, u)+1. Observe that,
+with this assignment of labels, each vertex w∈V(Tv) can temporally reach the root vthrough a
+temporal path ending with label DG. Since this assignment procedure is repeated for all v∈S,
+then every vertex w∈V(G) can reach all the vertices in Sthrough a temporal path ending with
+label DG. Moreover, we have added n−1 labels for every v∈S, which account for an overall
+number of O(n√nlogn) labels.
+We then compute a single shortest path forest Frooted in set S. Let e={u, w}be an edge of
+Fwith the vertex ubeing the one farther from S, formally min v∈SdF(v, u) = min v∈SdF(v, w) + 1.
+We add to λ(e) the label DG+ min v∈SdF(v, u). Observe that the vertices at distance one from S
+receive label DG+ 1, the vertices at distance two receive label DG+ 2 and so on up to the most
+distant edges that receive label at most ⌈3/2DG⌉. Moreover, we have added to λone label for each
+edge of F, thus an overall number of less than nlabels.
+In conclusion, the size of λisO(n√nlogn). As the minimum number of labels to temporally
+connect a graph, even without constraints on the maximum allowed age, is 2 n−4 (see [18]), then
+|λ∗| ≥2n−4 and |λ|=O(√nlogn)· |λ∗|. Moreover, the largest label used is at most ⌈3/2DG⌉.
+It remains to prove that ( G, λ) is temporally connected. Let x, y∈V(G) be two vertices of
+G, we will prove that xcan reach ythrough a temporal path. If y∈Sthen the temporal path
+is equal to the unique path from xtoyinTyusing labels DG−dTy(y, x) + 1, . . . , D G. Therefore,
+we may assume that y∈V(G)\S. Let vbe the vertex in Ssuch that there is a path in Ffrom
+vtoy, this vertex must exist by construction on F. Ifv=xthen the temporal path from xto
+yis the one using the path from xtoyinFand labels DG+ 1, . . . , D G+dF(v, y). Otherwise
+v̸=x, and the path from xtoyis constructed by joining the temporal path from xtovinTv
+using labels DG−dTv(v, x) + 1 , . . . , D Gwith the temporal path from vtoyinFusing labels
+DG+ 1, . . . , D G+dF(v, y), see Figure 6.
+ii) Let ( S1, S2) be computed by the algorithm in Lemma 8 with parameters n2=l
+3p
+DGnlog2nm
+andδ= 1/3. We obtain a ⟨⌊1/3DG⌋,⌈2/3DG⌉⟩-dominating set-pair ( S1, S2) of size-bound ⟨n1, n2⟩,
+where n1≤3q
+D−1
+Gn2logn. If Condition 2 of Definition 3 holds for ( S1, S2), then λis constructed
+as in the previous proof with Sbeing S2. In this case the size of λis now upper-bounded by
+O(n3p
+DGnlog2n) which is O(3p
+DGnlog2n)· |λ∗|.
+Therefore, we assume in the remainder that S1is such that for all v∈V(G),dG(v, S1)≤
+⌊1/3DG⌋ ≤1/3DG. For simplicity of presentation we will assume that DGis a multiple of 3. The
+labeling λis then constructed as follows.
+24
+vx
+yS Tv TS
+DG−dTv(v, x) + 1
+DG DG+ 1 DG+dTS(v, y)
+Figure 6: The temporal path from xtoyin the proof of Theorem 11 (i)
+LetFbe a shortest path forest rooted in set S1. Let e={u, w}be an edge of Fwith the
+vertex ubeing the one further from S1, formally min v∈S1dF(v, u) = min v∈S1dF(v, w) + 1. We add
+toλ(e) the two labels 1 /3DG−minv∈SdF(v, u) + 1 and 4 /3DG+ min v∈SdF(v, u). Observe that
+the vertices at distance one from Sreceive labels 1 /3DG,4/3DG+ 1, the vertices at distance two
+receive labels 1 /3DG−1,4/3DG+ 2 and so on, up to the most distant edges that receive labels
+1,5/3DG. We have added to λtwo labels for each edge of F, which overall do not exceed 2 n.
+Lets, s′∈S1be two distinct vertices, let Ps,s′=e1, e2, . . . , e kbe a shortest path between sand
+s′inG, and observe that k≤DGasGhas diameter DG. We add to λ(ei) the labels 1 /3DG+iand
+1/3DG+k−i+1 for i∈[k]. Notice that with these labels we have created a temporal path from sto
+s′, and a temporal path from s′tos, both using labels in the range 1 /3DG+1,1/3DG+2, . . . , 4/3DG.
+Since we add at most 2 DGlabels for every pair of vertices in S1, then we have added a total of at
+most 2 DG·|S1|·(|S1|−1)/2 =O(n3p
+DGnlog2n) labels in this phase. The overall number of labels,
+taking into account also the previous labeling, is |λ|=O(n3p
+DGnlog2n) =O(3p
+DGnlog2n)·|λ∗|.
+Moreover, the largest label used is at most 5 /3DG.
+It remains to prove that ( G, λ) is temporally connected. To this aim, let x, y∈V(G) be two
+vertices of G, we will prove that xcan reach ythrough a temporal path.
+Ifx̸∈S1then the vertex xusing the edges of Fcan reach a vertex v∈S1through a temporal
+path using labels in {1,2, . . . , 1/3DG}, otherwise xis already in S1and we set v=x. Ify∈S1,
+then adding to the previous temporal path the edges and times of Pv,yform a temporal path from
+xtoyusing labels in {1,2, . . . , 4/3DG}. Ify̸∈S1, letv′be the vertex in S1that can reach yusing
+the labels {4/3DG+1,4/3DG+2, . . . , 5/3DG}. Then, the temporal path from xtoyis constructed
+using first the temporal path from xtovwith labels in {1,2, . . . , 1/3DG}, then the temporal path
+Pv,v′from vtov′with labels in {1/3DG+ 1,1/3DG+ 2, . . . , 4/3DG}, and finally the temporal path
+from v′toythat uses labels in {4/3DG+ 1,4/3DG+ 2, . . . , 5/3DG}.
+6 Extensions and Variants
+In this section, we consider extensions and variants of MAL. We begin with a discussion of the
+directed version of MAL (DMAL), and then proceed to examine two variants introduced in [18],
+known as the Minimum Steiner Labeling (MSL) and the Minimum Aged Steiner Labeling (MASL)
+problems.
+25
+6.1 DMAL
+Consider the directed version of MAL, denoted DMAL, where the input graph is directed. The
+approximation hardness of DMAL is related to that of MAL in the following sense.
+Theorem 12. Given an α-approximation algorithm for DMAL, there exists a 2α-approximation
+algorithm for MAL.
+Proof. Let ( G, a) be an instance of MAL. We construct the directed graph Gdby replacing each
+edge{u, v}ofGwith the two directed edges ( u, v) and ( v, u). Observe that the number of labels in
+an optimal solution λ∗
+dfor the DMAL instance ( Gd, a) is at most twice that of an optimal solution
+λ∗for the MAL instance ( G, a), as we can construct a feasible solution for ( Gd, a) by doubling the
+labels of λ∗.
+Letλdbe the solution produced by the α-approximation algorithm on the instance ( Gd, a) of
+DMAL.
+We now construct λfor the undirected instance as follows: for every u, v∈V, define λ({u, v}) =
+λd((u, v))∪λd((v, u)). Clearly, |λ| ≤ |λd|.
+To show that λis a valid solution for MAL, observe that all directed temporal paths are
+preserved in the transformation. That is, if there exists a directed temporal path from utovin
+G′, then there exists an undirected temporal path from utovinGusing the same labels.
+In conclusion, we obtain that λis a solution for MAL of size at most αλ∗
+d≤2αλ∗.
+By combining Theorem 2, Corollary 1 and Corollary 2 with Theorem 12, we obtain the following
+corollary.
+Corollary 7. i) For every ϵ∈(0,1/8), there is no polynomial-time (ϵlog|V|)-approximation
+algorithm for DMAL, unless P =NP. The hardness holds even when the maximum allowed
+ageais equal to 2.
+ii) For every ϵ∈(0,1/(12a)), there is no polynomial-time (ϵlog|V|)-approximation algorithm for
+DMAL, unless P =NP. The hardness holds even when the maximum allowed age ais a fixed
+parameter greater or equal to 3.
+iii) For any constant ϵ∈(0,1), there is no polynomial-time 2log1−ϵn-approximation algorithm for
+DMAL, unless NP ⊆DTIME (2polylog (n)). The hardness holds even when the maximum allowed
+ageais a fixed parameter greater or equal to 3.
+On the approximation algorithm side, we observe that Corollary 6 (ii) also holds for DMAL,
+since the result of Theorem 8 [8] applies to directed graphs as well.
+Moreover, the results in Theorem 11 can also be adapted to DMAL, achieving the same asymp-
+totic approximation factor. To illustrate this, we provide an overview of the necessary modifications,
+starting with the definition of a dominating set pair in the directed setting, as introduced in Defi-
+nition 2.2 of [9]. From here on, we use dG(u, v) to denote the length of the shortest directed path
+from vertex uto vertex v. The distances from a set to a vertex and from a vertex to a set are
+defined accordingly.
+Definition 4 (Definition 2.2 in [9]) .For a directed graph G= (V, E)and a set-pair (S1, S2),
+where S1, S2⊆V, we say that (S1, S2)is a⟨h1, h2⟩-dominating set-pair of size-bound ⟨n1, n2⟩if
+|S1|=O(n1),|S2|=O(n2), and one of the following conditions holds.
+26
+1. For each v∈V(G),dG(S1, v)≤h1,
+2. For each v∈V(G),dG(v, S2)≤h2.
+We say that S1ish1-out-dominating if it satisfies condition 1, and S2ish2-in-dominating if it
+satisfies condition 2.
+From here on, we use the suffixes “in-” and “out-” to indicate that the shortest path tree (short-
+est path forest, respectively) is oriented toward the root(s) or toward the leaf vertices, respectively.
+The proof of Lemma 8 can be adapted to establish the same result in the setting of directed dom-
+inating set-pairs. Specifically, for every v∈V, we compute an in-SPT Tv, that is, a shortest path
+tree in which every vertex has a directed path to the root v. The rest of the proof remains valid,
+as it is already consistent with the directed case.
+Regarding Theorem 11 (i), we compute the directed dominating set-pair ( S1, S2) using the same
+values for δandn2. IfS1is1
+2-out-dominating, then for each v∈S1we compute an in-SPT and
+assign labels in the range 1 ,2, . . . , D Gto its edges (in the following, when we assign labels, we do
+so in such a way that directed paths correspond to temporal directed paths). We then compute an
+out-SPF rooted at S1and assign to its edges labels in the range DG+ 1, DG+ 2, . . . ,3
+2DG.
+Otherwise, S2is1
+2-in-dominating. We first compute an in-SPF rooted at S2, assigning labels in
+the range 1 ,2, . . . ,1
+2DG. Then, for every vertex in S2, we compute an out-SPT and assign labels
+in the range1
+2DG+ 1,1
+2DG+ 2, . . . ,3
+2DGto its edges.
+For Theorem 11 (ii), we need to compute two directed dominating set pairs. The first dominating
+set pair ( S1, S2) is computed with δ=1
+3andn2=3p
+DGnlog2n, while in the second dominating
+set pair ( S′
+1, S′
+2), we set δ=2
+3andn2=3q
+D−1
+Gn2logn. If either S1is2
+3-out-dominating or
+S′
+2is2
+3-in-dominating, then the labeling is constructed following the previous modification for
+Theorem 11 (i). Thus, we may assume that S2is1
+3-in-dominating and S′
+1is1
+3-out-dominating. In
+this case, we compute an in-SPF rooted at S2and assign labels in the range 1 ,2, . . . ,1
+3DGto its
+edges. Then, for every pair of vertices v1∈S2andv2∈S′
+1, we compute a shortest path from
+v1tov2and use labels in1
+3DG+ 1,1
+3DG+ 2, . . . ,4
+3DGto make it temporal. Finally, we compute
+an out-SPF rooted at S′
+1and, using labels in4
+3DG+ 1,4
+3DG+ 2, . . . ,5
+3DG, we make it temporal.
+To summarize, let v∈V; either v∈S2orvcan temporally reach a vertex in S2. Then, it can
+temporally reach all vertices in S′
+1, and finally, it can temporally reach any vertex not in S′
+1.
+6.2 MSL and MASL
+Following [18], we define the Minimum Steiner Labeling (MSL) and the Minimum Aged Steiner
+Labeling (MASL) problems. We begin with the definition of MSL:
+Definition 5. Given a graph G= (V, E)and a subset S⊆V, the Minimum Steiner Labeling
+(MSL) problem asks for a function λ:E→2Nsuch that for every ordered pair s1, s2∈S, there
+exists a temporal path from s1tos2in(G, λ), and|λ|is minimized.
+The authors of [18] proved that MSL is NP-complete. On the approximation side, observe that
+the size of an optimal Steiner Tree is at most the size of an optimal solution to MSL, as otherwise
+discarding the labels would yield a smaller Steiner Tree, contradicting optimality. Moreover, the
+optimum of MSL is less than twice the optimum of Steiner Tree, since, given a Steiner Tree, a
+feasible MSL solution can be constructed by using the folklore labeling technique (described in the
+27
+proof of Theorem 10 (i)), where the root is an arbitrary vertex of the tree. As a consequence, by
+combining any α-approximation algorithm for the Steiner Tree problem with the folklore labeling
+technique, we obtain a 2 α-approximation algorithm for MSL. To the best of our knowledge, the
+current best approximation ratio for the Steiner Tree problem is due to Byrka et al. [6], who devised
+a (ln(4)+ ε)<1.39-approximation algorithm. Therefore, MSL can be approximated within a factor
+of 2.78.
+By introducing a bound on the maximum age in the MSL problem, we obtain the Minimum
+Aged Steiner Labeling (MASL) problem.
+Definition 6. Given a graph G= (V, E), a subset S⊆V, and an integer a, the Minimum Aged
+Steiner Labeling (MASL) problem asks for a function λ:E→2Nsuch that for every ordered pair
+s1, s2∈S, there exists a temporal path from s1tos2in(G, λ),Lλ≤a, and|λ|is minimized.
+It is worth noting that when S=V, MASL coincides with MAL, and therefore the hardness of
+approximation results for MAL also apply to MASL. On the approximation side, Corollary 6 (ii)
+holds for MASL as well, since we can use the result of Theorem 8 (Theorem 1.8 in [8]) by setting
+∆(s, t) =afors, t∈S, and ∆( s, t) =∞otherwise. However, the approximation factors of the other
+algorithms for MAL are affected by the change in the lower bound on the optimum. Thus, when
+|S| ∈Ω(n), all our approximation algorithms for MAL apply to MASL with the same asymptotic
+approximation factor.
+7 Conclusion and Open Questions
+In this paper, we studied the complexity of approximating the Minumum Aged Labeling Problem
+(MAL). We showed that, when a=DG, the problem is hard to approximate, even within large
+approximation factors. Table 1 summarizes our hardness bounds. If we relax the value of aand
+consider the cases when a > D G, MAL can be approximated within bounded factors that depend on
+a relation between aandDG. Table 2 summarizes our approximation results. We further showed a
+relation between MAL and the Diameter Constrained Spanning Subgraph problem (DCSS), which
+implies that similar hardness and approximation bounds apply to DCSS.
+It remains open whether MAL is NP-hard when DG< a < 2DG+ 2. We observe that our
+reductions are no longer valid for a≥DG+ 1, as in this case it is possible to find “small” solutions
+by exploiting the presence of vertices that keep the diameter of the graph as low as the distance
+between the hard part of the instance used in the reduction. Moreover, it remains unclear whether
+the lower bounds on the approximation of MAL given in Theorem 2 and Corollary 2 still hold when
+DG< a < 2RG. Observe that for a≥2RG, Theorem 10 (i) implies that for every constant c >1,
+there exists an n0such that for all graphs Gof size at least n0, we can approximate MAL on ( G, a)
+within a factor of c.
+References
+[1] Reyan Ahmed, Greg Bodwin, Faryad Darabi Sahneh, Keaton Hamm, Mohammad Javad Latifi
+Jebelli, Stephen Kobourov, and Richard Spence. Graph spanners: A tutorial review. Com-
+puter Science Review , 37:100253, 2020. URL: https://www.sciencedirect.com/science/
+article/pii/S1574013719302539 ,doi:10.1016/j.cosrev.2020.100253 .
+28
+[2] D. Aingworth, C. Chekuri, P. Indyk, and R. Motwani. Fast estimation of diameter and shortest
+paths (without matrix multiplication). SIAM Journal on Computing , 28(4):1167–1181, 1999.
+arXiv:https://doi.org/10.1137/S0097539796303421 ,doi:10.1137/S0097539796303421 .
+[3] Surender Baswana, Telikepalli Kavitha, Kurt Mehlhorn, and Seth Pettie. Additive span-
+ners and ( α,β)-spanners. ACM Trans. Algorithms , 7(1), dec 2010. doi:10.1145/1868237.
+1868242 .
+[4] Greg Bodwin. Some general structure for extremal sparsification problems. CoRR ,
+abs/2001.07741, 2020. URL: https://arxiv.org/abs/2001.07741 ,arXiv:2001.07741 .
+[5] Alfredo Braunstein and Alessandro Ingrosso. Inference of causality in epidemics on temporal
+contact networks. Scientific Reports , 6:27538, 06 2016. doi:10.1038/srep27538 .
+[6] Jaroslaw Byrka, Fabrizio Grandoni, Thomas Rothvoß, and Laura Sanit` a. An improved lp-
+based approximation for steiner tree. In Proceedings of the Forty-Second ACM Symposium on
+Theory of Computing , STOC ’10, page 583–592, New York, NY, USA, 2010. Association for
+Computing Machinery. doi:10.1145/1806689.1806769 .
+[7] Timothy M. Chan. More algorithms for all-pairs shortest paths in weighted graphs. SIAM Jour-
+nal on Computing , 39(5):2075–2089, 2010. arXiv:https://doi.org/10.1137/08071990X ,
+doi:10.1137/08071990X .
+[8] Eden Chlamt´ aˇ c, Michael Dinitz, Guy Kortsarz, and Bundit Laekhanukit. Approximating
+spanners and directed steiner forest: Upper and lower bounds. ACM Trans. Algorithms ,
+16(3), jun 2020. doi:10.1145/3381451 .
+[9] Keerti Choudhary and Omer Gold. Extremal distances in directed graphs: tight spanners
+and near-optimal approximation algorithms. In Proceedings of the Thirty-First Annual ACM-
+SIAM Symposium on Discrete Algorithms , SODA ’20, page 495–514, USA, 2020. Society for
+Industrial and Applied Mathematics.
+[10] Argyrios Deligkas, Eduard Eiben, and George Skretas. Minimizing reachability times on tem-
+poral graphs via shifting labels. In Edith Elkind, editor, Proceedings of the Thirty-Second
+International Joint Conference on Artificial Intelligence, IJCAI-23 , pages 5333–5340. In-
+ternational Joint Conferences on Artificial Intelligence Organization, 8 2023. Main Track.
+doi:10.24963/ijcai.2023/592 .
+[11] Argyrios Deligkas and Igor Potapov. Optimizing reachability sets in temporal graphs by
+delaying. In The Thirty-Fourth AAAI Conference on Artificial Intelligence, AAAI 2020, The
+Thirty-Second Innovative Applications of Artificial Intelligence Conference, IAAI 2020, The
+Tenth AAAI Symposium on Educational Advances in Artificial Intelligence, EAAI 2020, New
+York, NY, USA, February 7-12, 2020 , pages 9810–9817. AAAI Press, 2020. URL: https:
+//doi.org/10.1609/aaai.v34i06.6533 ,doi:10.1609/AAAI.V34I06.6533 .
+[12] Irit Dinur and David Steurer. Analytical approach to parallel repetition. In Proceedings of
+the Forty-Sixth Annual ACM Symposium on Theory of Computing , STOC ’14, page 624–633,
+New York, NY, USA, 2014. Association for Computing Machinery. doi:10.1145/2591796.
+2591884 .
+29
+[13] Yevgeniy Dodis and Sanjeev Khanna. Design networks with bounded pairwise distance. In
+Proceedings of the Thirty-First Annual ACM Symposium on Theory of Computing , STOC
+’99, page 750–759, New York, NY, USA, 1999. Association for Computing Machinery. doi:
+10.1145/301250.301447 .
+[14] Michael Elkin and David Peleg. Approximating k-spanner problems for k >2. In Karen Aardal
+and Bert Gerards, editors, Integer Programming and Combinatorial Optimization , pages 90–
+104, Berlin, Heidelberg, 2001. Springer Berlin Heidelberg.
+[15] Jessica Enright and Rowland Raymond Kao. Epidemics on dynamic networks. Epi-
+demics , 24:88–97, 2018. URL: https://www.sciencedirect.com/science/article/pii/
+S1755436518300173 ,doi:10.1016/j.epidem.2018.04.003 .
+[16] Jessica Enright, Kitty Meeks, George B. Mertzios, and Viktor Zamaraev. Deleting edges
+to restrict the size of an epidemic in temporal networks. Journal of Computer and System
+Sciences , 119:60–77, 2021. URL: https://www.sciencedirect.com/science/article/pii/
+S0022000021000155 ,doi:10.1016/j.jcss.2021.01.007 .
+[17] Jessica A. Enright, Kitty Meeks, and Fiona Skerman. Assigning times to minimise reachability
+in temporal graphs. J. Comput. Syst. Sci. , 115:169–186, 2021. URL: https://doi.org/10.
+1016/j.jcss.2020.08.001 ,doi:10.1016/J.JCSS.2020.08.001 .
+[18] Nina Klobas, George B. Mertzios, Hendrik Molter, and Paul G. Spirakis. The complexity
+of computing optimum labelings for temporal connectivity. Journal of Computer and Sys-
+tem Sciences , 146:103564, 2024. URL: https://www.sciencedirect.com/science/article/
+pii/S002200002400059X ,doi:10.1016/j.jcss.2024.103564 .
+[19] Guy Kortsarz. On the hardness of approximating spanners. Algorithmica , 30:432–450, 07 2001.
+doi:10.1007/s00453-001-0021-y .
+[20] Kitty Meeks. Reducing reachability in temporal graphs: Towards a more realistic model of
+real-world spreading processes. In Ulrich Berger, Johanna N. Y. Franklin, Florin Manea, and
+Arno Pauly, editors, Revolutions and Revelations in Computability , pages 186–195, Cham,
+2022. Springer International Publishing.
+[21] G.B. Mertzios, O. Michail, and P.G. Spirakis. Temporal network optimization subject to
+connectivity constraints. Algorithmica , 81:1416–1449, 2019. EPrint Processing Status: Full
+text deposited in DRO. doi:10.1007/s00453-018-0478-6 .
+[22] Othon Michail. An introduction to temporal graphs: An algorithmic perspective*. Internet
+Mathematics , 12(4), 7 2016. doi:10.1080/15427951.2016.1177801 .
+[23] Hendrik Molter, Malte Renken, and Philipp Zschoche. Temporal reachability minimiza-
+tion: Delaying vs. deleting. Journal of Computer and System Sciences , 144:103549, 2024.
+URL: https://www.sciencedirect.com/science/article/pii/S0022000024000448 ,doi:
+10.1016/j.jcss.2024.103549 .
+30

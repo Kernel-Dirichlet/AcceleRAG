@@ -1,0 +1,1286 @@
+Efficient Discovery of Motif Transition Process for Large-Scale
+Temporal Graphs
+Zhiyuan Zheng∗
+Ocean University of China
+Qingdao, China
+zhengzhiyuan@stu.ouc.edu.cnJianpeng Qi∗
+Ocean University of China
+Qingdao, China
+qijianpeng@ouc.edu.cnJiantao Li
+Ocean University of China
+Qingdao, China
+ljt7826@stu.ouc.edu.cn
+Guoqing Chao
+Harbin Institute of Technology
+Weihai, China
+guoqingchao@hit.edu.cnJunyu Dong
+Ocean University of China
+Qingdao, China
+dongjunyu@ouc.edu.cnYanwei Yu†
+Ocean University of China
+Qingdao, China
+yuyanwei@ouc.edu.cn
+Abstract
+Understanding the dynamic transition of motifs in temporal graphs
+is essential for revealing how graph structures evolve over time,
+identifying critical patterns, and predicting future behaviors, yet
+existing methods often focus on predefined motifs, limiting their
+ability to comprehensively capture transitions and interrelation-
+ships. We propose a parallel motif transition process discovery
+algorithm, PTMT, a novel parallel method for discovering motif
+transition processes in large-scale temporal graphs. PTMT inte-
+grates a tree-based framework with the temporal zone partition-
+ing (TZP) strategy, which partitions temporal graphs by time and
+structure while preserving lossless motif transitions and enabling
+massive parallelism. PTMT comprises three phases: growth zone
+parallel expansion, overlap-aware result aggregation, and deter-
+ministic encoding of motif transitions, ensuring accurate tracking
+of dynamic transitions and interactions. Results on 10 real-world
+datasets demonstrate that PTMT achieves speedups ranging from
+12.0×to 50.3×compared to the SOTA method.
+Keywords
+Large-Scale Temporal Graphs, Motif Transition, Discovery, Parallel
+ACM Reference Format:
+Zhiyuan Zheng, Jianpeng Qi, Jiantao Li, Guoqing Chao, Junyu Dong, and Yan-
+wei Yu. 2025. Efficient Discovery of Motif Transition Process for Large-Scale
+Temporal Graphs. In Proceedings of . ACM, New York, NY, USA, 14 pages.
+https://doi.org/XXXXXXX.XXXXXXX
+1 Introduction
+Motifs are recurring substructures within a graph that typically
+represent statistical patterns between nodes and edges [ 13,42]. The
+∗Zhiyuan Zheng and Jianpeng Qi contribute equally to this work.
+†Yanwei Yu is the corresponding author.
+Permission to make digital or hard copies of all or part of this work for personal or
+classroom use is granted without fee provided that copies are not made or distributed
+for profit or commercial advantage and that copies bear this notice and the full citation
+on the first page. Copyrights for components of this work owned by others than the
+author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or
+republish, to post on servers or to redistribute to lists, requires prior specific permission
+and/or a fee. Request permissions from permissions@acm.org.
+,
+©2025 Copyright held by the owner/author(s). Publication rights licensed to ACM.
+ACM ISBN 978-1-4503-XXXX-X/2018/06
+https://doi.org/XXXXXXX.XXXXXXXdetection and analysis of motifs have broad applications across
+various fields. For instance, in social networks, motifs help iden-
+tify interaction patterns among users [ 42]; in biological networks,
+motifs assist in uncovering functional relationships between genes
+or proteins [ 13]; in cybersecurity, motifs can be used to detect po-
+tential anomalous behaviors [ 12]. These applications highlight the
+importance of motif detection in understanding the dynamics of
+complex systems and revealing underlying patterns.
+In temporal graphs, where edges and nodes change over time,
+motifs evolve from static structures to dynamic subgraph patterns,
+reflecting the shifting nature of relationships within a network [ 44].
+While early studies primarily focused on static graphs [ 42], recent
+research underscores the importance of tracking motif evolution
+to capture temporal dependencies [ 24]. Understanding how motifs
+transform over time not only provides critical insights into graph
+dynamics but also helps in modeling real-world phenomena such
+as social interactions, disease transmission, and changes in collabo-
+rative networks [ 15,35]. By examining motif evolution, researchers
+can identify emerging patterns and predict future structural changes
+within a graph.
+By quantifying motif transition (or evolution) over time, re-
+searchers can gain a clearer understanding of how graph structures
+dynamically change, bridging the gap between static analysis and
+evolving network behaviors. However, current methodologies for
+motif transition analysis face several key challenges, particularly
+when applied to large-scale temporal graphs. First, these methods
+typically suffer from high time complexity. As the graph size and
+the number of time steps increase, the combinatorial complexity of
+motif transition increases rapidly, leading to a sharp rise in compu-
+tational demands and a noticeable drop in algorithm performance
+[16]. This makes them difficult to use for real-time or near-real-time
+analysis in large-scale temporal graphs. Second , memory consump-
+tion is another significant issue, especially when large amounts of
+temporal data and motif transition trajectories need to be stored,
+severely limiting the scalability of these methods [ 33].Third , many
+existing methods involve redundant computations and inefficient
+steps, particularly during the dynamic tracking of motif transition,
+lacking targeted optimizations [ 34]. This leads to wasted compu-
+tational resources and prolonged processing times. Thus, a key
+challenge in quantifying motif transition processes remains.
+To address these issues, we propose a parallelized algorithm for
+discovering motif transition processes. This algorithm leveragesarXiv:2504.15979v1  [cs.DB]  22 Apr 2025
+, , Zhiyuan Zheng, Jianpeng Qi, Jiantao Li, Guoqing Chao, Junyu Dong, and Yanwei Yu
+massive parallelism to ensure accurate and efficient identification of
+motif transitions in large-scale temporal graphs. As part of the par-
+allel framework, it employs a temporal zone partitioning strategy to
+divide temporal graphs into growth and boundary zones, enabling
+conflict-free processing and avoiding redundant computations. Ad-
+ditionally, it incorporates overlap-aware result aggregation and
+deterministic encoding to optimize memory usage and computa-
+tional efficiency. Results show that our algorithm achieves speedups
+ranging from 12.0×to 37.3×while maintaining accurate discovery,
+and it drastically reduces redundant computations. Meanwhile, our
+method is highly efficient and scalable when processing large-scale
+temporal graphs. Finally, we also provide a case study to show that
+capturing motif evolution dynamics is meaningful and provide the
+results of applying our method. The main contributions of this
+paper are as follows:
+•We present a parallel algorithm for the discovery of motif
+transitions that guarantees precise counting while substan-
+tially enhancing the efficiency of temporal graph analysis.
+Our method incorporates a temporal zone partitioning strat-
+egy, which facilitates the independent identification of motif
+transition processes across various partitions. This approach
+maximizes parallelism while maintaining accuracy.
+•We address computational bottlenecks in motif transition
+analysis by reducing redundant computations, lowering time
+complexity, and minimizing memory overhead. Our method
+efficiently handles large-scale graphs by leveraging opti-
+mized parallel processing and workload distribution.
+•We conduct extensive evaluations on large-scale real-world
+datasets, demonstrating significant performance improve-
+ments over existing approaches. Additionally, we provide an
+in-depth analysis of motif transition dynamics, highlighting
+how different motifs evolve in temporal graphs and identify-
+ing dominant transformation patterns.
+2 Related Work
+Early seminal work introduced the concept of network motifs as
+small recurring subgraphs that serve as the fundamental building
+blocks of complex systems [ 20,41,43]. Subsequent studies further
+refined static motif analysis by proposing efficient counting tech-
+niques based on combinatorial principles [ 18,19,30], as well as
+algorithms such as ESCAPE [ 46] and pivoting strategies for 4-node
+motifs [ 27]—approaches that have been extended and improved in
+later works [ 22,25,40]. In parallel, advances in statistical modeling
+of networks, including mixed membership models [ 11,23] and dy-
+namic stochastic blockmodels [ 54,55], have provided a probabilistic
+framework that complements motif-based analyses [14].
+With the advent of temporal networks, the focus has shifted
+toward capturing time-dependent interactions. Formal definitions
+of𝛿-temporal motifs were introduced to ensure that the events
+comprising a motif occur within a specified time window [ 26,45],
+while studies by Kovanen et al. [ 31,32] demonstrated that tem-
+poral motifs can reveal homophily, gender-specific patterns, and
+group communication dynamics [ 29,51]. Additional investigations
+have extended these ideas to various domains, including financial
+networks [ 37], mobile communication networks [ 36], and patent
+collaboration networks [ 38], thereby underscoring the broad appli-
+cability of temporal motif analysis [52, 59].In parallel to counting, a series of works have explored motif
+evolution and its application in graph generation. Liu et al. [ 39] pro-
+posed the Motif Transition Model (MTM) that leverages transition
+probabilities for synthetic temporal graph generation, although its
+counting module suffers from high computational complexity (e.g.,
+𝑂(|E|3)for triangle motifs) [ 46]. Zhou et al. [ 60] introduced the
+TagGen model, which discretizes continuous time into snapshots to
+capture motif transitions, while other approaches have combined
+mixed membership models [ 11,23] with motif statistics for dynamic
+network tomography [ 53]. Additional work on independent tempo-
+ral motifs for summarizing networks [ 48,49] and analytical models
+for motif transitions [47, 50] has further advanced the field.
+Moreover, to accelerate the counting process, Gao et al. [ 21]
+developed a framework that exploits sparse matrix operations for
+batch counting of heterogeneous motifs, and recent advances in
+parallel and GPU-accelerated computing [ 57,58] have contributed
+to efficient processing of large-scale temporal graphs. Complemen-
+tary contributions by Jin et al. [ 28], Viswanath et al. [ 52], and Zeno
+et al. [ 56] have examined motif dynamics in social and communi-
+cation networks, thereby offering insights that span a variety of
+real-world applications [17].
+However, challenges remain in fully capturing the continuous
+evolution of motifs and in developing scalable methods for their ef-
+ficient enumeration. Therefore, our work aims to bridge this gap by
+proposing a parallelized motif transition process path discovery al-
+gorithm that directly models dynamic transitions and substantially
+reduces computational overhead.
+3 Preliminary and Problem Definition
+In this section, we first introduce some preliminaries, including the
+definitions of temporal graph ,𝛿-temporal motif ,motif transition , and
+motif transition process . Then, we present the problem that needs
+to be solved, i.e.,motif transition process discovery .
+Definition 1 (Temporal Graph [ 21]).A temporal graph is a
+dynamic network represented as G=(V,E,T), whereV,E, andT
+denote the node set, the temporal edge set and the timestamp collection,
+respectively. Each directed temporal edge 𝑒𝑡
+𝑖 𝑗=(𝑣𝑖,𝑣𝑗,𝑡)records an
+interaction from node 𝑣𝑖to𝑣𝑗at timestamp 𝑡∈T.
+Definition 2 (𝛿-temporal Motif). A𝛿-temporal motif is de-
+fined as a temporally ordered sequence of 𝑙edges that form a connected
+subgraph comprising 𝑘nodes. Formally, such a 𝛿-temporal motif
+is represented as 𝑀=⟨(𝑢1,𝑣1,𝑡1),(𝑢2,𝑣2,𝑡2), ...,(𝑢𝑙,𝑣𝑙,𝑡𝑙)⟩,𝑡1≤
+𝑡2···≤𝑡𝑙, where𝑡𝑖−𝑡𝑖−1≤𝛿for every𝑖such that 2≤𝑖≤𝑙.
+BA
+CA
+BD
+C1:00,8:50
+1:30,1:501
+23 δ = 0.5 hour
+Figure 1: An example of a 𝛿-temporal motif ( 𝛿=0.5hours).
+Example : Consider the interactions among nodes A, B, and C as
+depicted in Figure 1. Given 𝛿=0.5hours, the following temporally
+Efficient Discovery of Motif Transition Process for Large-Scale Temporal Graphs , ,
+ordered sequence of edges 𝑀=⟨(𝐴,𝐵, 1:00),(𝐵,𝐶, 1:20),(𝐴,𝐶, 1:30)⟩
+is valid 3-node 𝛿-temporal motif because the time interval between
+any two adjacent edges is less than the given 𝛿=0.5hours, and
+the static projection of this sequence forms a connected subgraph –
+a triangle.
+Definition 3 (Motif Transition). A motif transition 𝑇(𝑀→
+𝑀′)is defined as the process by which a 𝛿-temporal motif 𝑀with𝑙
+edges evolves into another 𝛿-temporal motif 𝑀′with𝑙+1edges via
+the addition of a new temporal edge 𝑒new=(𝑢,𝑣,𝑡 𝑙+1), subject to the
+following conditions:
+•𝑡𝑙+1>𝑡𝑙, where𝑡𝑙is the timestamp of the last edge in 𝑀.
+•{𝑢,𝑣}∩V(𝑀)≠∅, indicating that at least one endpoint of
+𝑒newbelongs to the vertex set of 𝑀, i.e.,V(𝑀).
+•There does not exist any earlier valid transition 𝑇(𝑀→𝑀′′)
+prior to time 𝑡𝑙+1.
+Definition 4 (Motif Transition Process [ 39]).In a given
+temporal graphG, a motif transition process is defined as a sequence
+of motif transitions, 𝑇(𝑀1→···→𝑀𝑙
+𝑖→𝑆), w.r.t. a transition size
+limit𝑙maxand a transition time limit 𝛿, where𝑆denotes the stopping
+state. The process starts with a 1-edge temporal motif and ends at 𝑀𝑙
+𝑖
+if either of the following conditions holds:
+•The motif𝑀𝑙
+𝑖reaches the maximum allowed number of edges,
+i.e.,𝑙=𝑙max.
+•Within the time window (𝑡𝑙,𝑡𝑙+𝛿], where𝑡𝑙is the timestamp
+of the last edge in 𝑀𝑙
+𝑖, no new edge 𝑒𝑙+1is available to create
+the next motif transition 𝑇(𝑀𝑙
+𝑖→𝑀𝑙+1
+𝑗).
+Example: Figure 2 illustrates an edge-to-triangle motif transi-
+tion process derived from Figure 1. In this example, the initial 𝛿-
+temporal motif 𝑀1=⟨𝐴→𝐶⟩evolves into 𝑀2=⟨𝐴→𝐵,𝐵→𝐶⟩
+and subsequently into 𝑀3=⟨𝐴→𝐵,𝐵→𝐶,𝐴→𝐶⟩, under the
+constraints of 𝛿=0.5hours and𝑙max=3. This motif transition
+pattern frequently appears in social network interactions where
+triadic closure strengthens community bonds.
+BA
+C1
+2
+3BA
+C1
+2
+BA
+C1
+2D3
+BA
+1
+M1 →M2
+Figure 2: A example of motif transition process ends as a
+triangle temporal motif ( 𝛿= 0.5 hours, 𝑙max= 3).
+The motif transition time Δ𝑡=𝑡𝑙+1−𝑡𝑙quantifies the waiting
+period between motif evolutions. Motif transition process can reveal
+network dynamics, for instance, rapid triangle closures may indicate
+coordinated behavior in financial networks.Problem (Motif Transition Process Discovery). Given a
+temporal graphG, temporal constraint 𝛿, and transition size limit
+𝑙max, motif transition process discovery is to exactly record all motif
+transition processes in G.
+By aggregating the transition counts of all specified temporal
+motifs, we can obtain a complete statistical profile of the entire
+motif transition processes. This formalism provides the foundation
+for analyzing temporal network evolution patterns at scale.
+4 Methodology
+Our motif-transition process (MTP) discovery framework begins
+with a temporal graph G, which is then partitioned into indepen-
+dent zones using our zone partition strategy (Section 4.1). Then, in
+Section 4.2, we adopt a parallel algorithm to assign them to differ-
+ent threads. Within each zone, we extract all MTPs that satisfy the
+constraints. After multi-threading, in the global merge step, we use
+the “first-zone” principle for conflict resolution, ensuring that each
+motif transition is uniquely and accurately counted. Finally, the
+complete set of motif transitions is discovered and reported. The
+workflow is shown in Figure3.
+Zone Partition Strategy(Sect.  4.1)
+𝑻𝒉𝒓𝒆𝒂𝒅𝟏𝑻𝒉𝒓𝒆𝒂𝒅𝟐𝑻𝒉𝒓𝒆𝒂𝒅𝒏$𝟏𝑻𝒉𝒓𝒆𝒂𝒅𝒏'𝓑𝒊𝒏𝟏|𝑮𝟏∪𝑮𝟐|=|𝑮𝟏|+|𝑮𝟐|−|𝑩𝟏|
+The discovery of G1′s MTPs𝓑1……
+The discovery of G2 ′s MTPs𝓑2The discovery of Gn′sMTPs𝓑nG1
+Conflict resolutionEncoded MTP tree 𝓜Global MTPs𝓑allParallel Motif Transition Process Discovery(Sect.  4.2)ABDC1:00,8:501:30,1:502:10,9:3010:00,10:201:20,9:1010:00Temporal Graph𝓖Timeline
+Figure 3: Motif-transition process discovery workflow.
+4.1 Zone Partition Strategy
+On large-scale temporal graph, we adopt the data parallelism, i.e.,
+partition the graph, approach to accelerate the discovery process.
+However, data parallelism requires an effective temporal partition-
+ing scheme that avoids over-counting motifs at partition bound-
+aries. We propose the Temporal Zone Partitioning (TZP) strategy,
+which divides the temporal graph into interleaved Growth Zones
+andBoundary Zones . Growth Zones support independent parallel
+processing, while Boundary Zones capture cross-partition motifs
+and, by applying a “first-zone” rule, ensure that each motif transi-
+tion is uniquely assigned to one Growth Zone. This design both
+enforces strict computational boundaries and eliminates duplicate
+counts.
+Definition 5 (Growth Zone). Given parameters 𝜔(temporal
+expansion factor), 𝛿(maximum motif duration), and 𝑙max(transition
+size limit), a growth zone 𝐺𝑖is defined as a temporal segment spanning
+𝐿𝑔=𝜔·𝛿·𝑙maxtime units.
+, , Zhiyuan Zheng, Jianpeng Qi, Jiantao Li, Guoqing Chao, Junyu Dong, and Yanwei Yu
+Definition 6 (Boundary Zone). The boundary zone 𝐵𝑖be-
+tween consecutive growth zones 𝐺𝑖and𝐺𝑖+1is an overlapping tem-
+poral buffer of length 𝐿𝑏=𝛿·𝑙max. It spans:
+[𝑡end(𝐺𝑖)−𝐿𝑏,𝑡end(𝐺𝑖)] (1)
+The TZP strategy operates as a linear scan through the temporal
+edges, creating interleaved growth and boundary zones. As illus-
+trated in Figure 4, this process partitions the graph such that the
+growth zones (green) can be processed independently, while the
+boundary zones (orange) capture motif transition processes that
+span across partitions. The choice of 𝜔balances zone independence
+and computational granularity—larger values reduce inter-zone
+communication but increase memory usage per partition. Through
+empirical analysis, we found that 𝜔=20offers an optimal trade-off
+for most real-world networks.
+Algorithm 1 Temporal Zone Partitioning (TZP) Strategy
+Require: Temporal edge set E,𝛿,𝑙max,𝜔
+Ensure: Partition setQ={𝐺1,𝐵1,𝐺2,𝐵2,...}
+1:Initialize𝑡start←min{𝑒.𝑡𝑖𝑚𝑒|𝑒∈E}
+2:while𝑡start≤max{𝑒.𝑡𝑖𝑚𝑒|𝑒∈E} do
+3: Compute zone boundary: 𝑡end←𝑡start+𝐿𝑔
+4: Extract growth zone: 𝐺𝑖←{𝑒∈E|𝑡start≤𝑒.𝑡𝑖𝑚𝑒 <𝑡end}
+5: Construct boundary zone by Eq.(1)
+6: Append to partition set: Q.add(𝐺𝑖,𝐵𝑖)
+7:𝑡start←𝑡end
+8:end while
+9:returnQ
+Lemma 4.1 (Uniqeness of motif transition attribution).
+1] For any𝛿-temporal motif instance 𝑀=⟨𝑒1,...,𝑒 𝑙⟩produced by
+Algorithm 1, the motif transition is confined entirely within a single
+growth zone 𝐺𝑖.
+Proof. By the𝛿-temporal motif definition (Def. 2), the total time
+span of𝑀satisfies Δ𝑡=𝑡𝑙−𝑡1≤𝑙∗𝛿. We consider two cases:
+(1)Case 1: If all edges of 𝑀reside within a single growth zone
+𝐺𝑖, then clearly 𝑀⊆𝐺𝑖.
+(2)Case 2: If𝑀spans multiple zones, let 𝑒𝑗be the first edge that
+crosses into the adjacent growth zone 𝐺𝑖+1. By design, the
+mechanism captures such edges within the boundary zone
+𝐵𝑖, which is the overlapping region between 𝐺𝑖and𝐺𝑖+1.
+Consequently, even if 𝑀extends into 𝐺𝑖+1, the overlapping
+segment𝐵𝑖is attributed to 𝐺𝑖according to the “first-zone”
+principle. Hence, 𝑀is uniquely associated with 𝐺𝑖.
+□
+Lemma 4.2 (Completeness of motif transition processes).
+For any instance of motif transition process 𝑇=⟨𝑀1→𝑀2→
+...→𝑀𝑙⟩, it guarantees that 𝑇is entirely captured by one of the
+following three cases, and that the overall counting can be computed
+exactly using the inclusion-exclusion principle:
+|𝐺𝑖∪𝐺𝑖+1|=|𝐺𝑖|+|𝐺𝑖+1|−|𝐵𝑖|,
+where𝐺𝑖and𝐺𝑖+1denote the counts from adjacent growth zones, and
+𝐵𝑖is the count from their shared boundary zone.
+10 11 12 13 14 15 /h
+𝑙𝑚𝑎𝑥∗𝛿∗𝜔
+Growth Zone 1 𝑙𝑚𝑎𝑥∗𝛿
+Boundary Zone 2 𝑙𝑚𝑎𝑥∗𝛿∗𝜔
+Growth Zone 2𝑙𝑚𝑎𝑥∗𝛿
+Boundary Zone 1G1
+G2B1 B21 3 4 5 6 7 8 9 2Figure 4: An example of TZP strategy ( 𝜔=3,𝛿=1hr,𝑙max=3).
+Growth zones (green) enable independent processing, while
+boundary zones (orange) capture cross-partition motifs.
+Proof. LetΔ𝑡=𝑡𝑙−𝑡1≤𝑙∗𝛿by the definition of a 𝛿-temporal
+motif transition.By Lemma 4.1 We consider three mutually exclusive
+cases:
+•Case 1: Motif transition entirely within a single growth
+zone. If all edges of 𝑇reside within a single growth zone 𝐺𝑖,
+then trivially, 𝑇⊆𝐺𝑖and is counted exactly once.
+•Case 2: Motif transition extending from a growth zone
+into its boundary zone. If𝑇begins in a growth zone 𝐺𝑖and
+extends into the corresponding boundary zone 𝐵𝑖, then the
+algorithm ensures that the motif transition is fully captured
+within𝐺𝑖∪𝐵𝑖. In this case, the motif transition is counted
+only once, as the extension into 𝐵𝑖does not lead to additional,
+separate counts.
+•Case 3: Motif transition spanning from a boundary zone
+into the next growth zone. If𝑇spans from the boundary
+zone𝐵𝑖into the subsequent growth zone 𝐺𝑖+1, then𝑇is
+naturally counted in both 𝐵𝑖and𝐺𝑖+1. To correct for this
+double counting, we apply the inclusion-exclusion princi-
+ple by subtracting the overlapping count in 𝐵𝑖. That is, the
+unique count for these transitions is given by
+Count =|𝐺𝑖|+|𝐺𝑖+1|−|𝐵𝑖|.
+Thus, by considering these three cases and applying the inclusion-
+exclusion principle, the partitioning mechanism ensures that every
+𝛿-temporal motif transition is uniquely and completely counted
+without any omissions or duplications. □
+As shown in Figure 5, the given temporal graph is partitioned into
+corresponding subgraphs based on its growth zones and boundary
+zones. After independently mining for motif transitions in each
+subgraph, the combined result—obtained by adding the statistics
+from the𝐺1subgraph to those from the 𝐺2subgraph and then
+subtracting the statistics from the 𝐵1subgraph—exactly equals the
+overall motif transition statistics of the original temporal graph. A
+detailed analysis of the motif count reconciliation process can be
+found in Appendix B.
+4.2 Parallel Motif Transition Process Discovery
+In Section 4.1, we divide the temporal graph into subgraphs (i.e.,
+partitions) that can be counted independently and accurately. In
+this section, we introduce our parallel motif transition process
+discovery algorithm, namely PTMT. PTMT employs three phases to
+overcome the limited parallelism and scaling challenges of previous
+approaches. It enables parallel counting of motif transitions across
+all subgraphs.
+Efficient Discovery of Motif Transition Process for Large-Scale Temporal Graphs , ,
+A
+BD
+C1:00,8:50
+1:30,1:50
+BD
+C8:50
+9:30A
+BD
+C8:50
+9:30AG1G2 B1/h 10 11 12 13 14 15 1 3 4 5 6 7 8 9 2
+Figure 5: Visualization of temporal graph partitioning
+4.2.1 Three-Phase of Parallel Motif Transition Process Discovery.
+Phase 1: Growth Zone Parallel Expansion. Each thread pro-
+cesses its assigned growth zone by iterating over its temporal
+edges in chronological order. For each edge 𝑒, we use a function
+try_to_transit(), which takes 𝑒,𝛿,𝑙max, and the current candi-
+date motif transition set B𝑘as inputs, to extract the next transition
+if there exists. Specifically, it examines whether appending 𝑒to
+any existing transition in B𝑘satisfies the two key constraints: The
+temporal constraint, which requires that the time difference be-
+tween𝑒and the last edge of the transition is at most 𝛿, and the
+size constraint, which ensures that the extended transition does
+not exceed𝑙maxtransitions (or edges). If both conditions are met,
+the function returns the new candidate transitions generated by
+appending𝑒, and these are then merged into B𝑘via the update
+B𝑘←B 𝑘∪try_to_transit(𝑒,𝛿,𝑙 max,B𝑘).
+Phase 2: Overlap-Aware Result Aggregation. Due to over-
+lapping regions (i.e., boundary zones 𝐵𝑖), candidate motifs may be
+duplicated. These duplicates are eliminated by performing local
+deduplication in the boundary zones followed by an atomic global
+merge. This mechanism enforces the “first-zone” principle, ensuring
+each motif is counted only once.
+Phase 3: Deterministic Relabeling Encoding. Candidate mo-
+tifs are encoded into fixed-length strings using a deterministic rela-
+beling scheme that maps original node IDs to contiguous identifiers
+and concatenates them in temporal order. Specifically, for a can-
+didate motif represented as ⟨(𝑢1,𝑣1,𝑡1),(𝑢2,𝑣2,𝑡2),...,(𝑢𝑛,𝑣𝑛,𝑡𝑛)⟩,
+the encoding is defined asÉ𝑛
+𝑖=1(𝑓(𝑢𝑖)⊕𝑓(𝑣𝑖)), where𝑓:V→N
+assigns a unique numerical string to each vertex upon its first occur-
+rence and⊕denotes string concatenation. This compact encoding
+enables efficient 𝑂(1)hash table lookups for frequency counting,
+thereby eliminating the need for costly graph isomorphism checks.
+After the three phases, it produces the final output, as illustrated
+in the example below. Figure 6 visualizes a motif transition tree
+rooted at the 2-edge motif “0101”. Each branch corresponds to a
+distinct transition path under the constraints. Specifically:
+•Triangle Formation: The transition path 0101→010110
+accounts for 62% of the transitions.
+•Chain Extension: The transition path 0101→010102 ac-
+counts for 28% of the transitions.
+•Reciprocal Edge: The transition path 0101→010101 ac-
+counts for 10% of the transitions.This string-coded representation provides an intuitive visualization
+of the motif transition process and facilitates further analysis and
+interpretation of the transition dynamics.
+010101: 101
+2A
+B
+1
+3A
+B21
+3A
+B21
+3A
+B20101:  100
+010110: 62 010102: 28C
+Figure 6: Motif transition tree with string-coded types
+Algorithm 2 Parallel Tree Motif Transition Discovery (PTMT)
+Require: Temporal edgesE, time threshold 𝛿, transition size limit
+𝑙max, window parameter 𝜔, number of threads #threads
+Ensure: Motifs quantities map M
+1:Partition edges into zones: Q← Algorithm 1(E,𝛿,𝑙 max,𝜔)
+2:OpenMP Parallel For each zone𝑍𝑘∈Q: ⊲Phase 1
+3:Initialize an empty candidate set B𝑘
+4:foreach edge𝑒∈𝑍𝑘in temporal order do
+5:B𝑘←B 𝑘∪try_to_transit(𝑒,𝛿,𝑙 max,B𝑘)
+6:end for
+7:Global merge:Ball←Ð
+𝑘B𝑘with conflict resolution
+⊲Phase 2
+8:Encode motifs:M← DigitEncode(Ball) ⊲Phase 3
+9:returnM
+4.2.2 Pseudocode Algorithm. Algorithm 2 implements our PTMT
+algorithm, which contains three distinct phases: Phase 1 (Lines 2–6)
+partitions temporal edges into zones and processes each zone in
+parallel, expanding candidate motifs under the constraints of 𝛿,𝑙max,
+and node continuity condition via the function try_to_transit (𝑒,
+𝛿,𝑙max,B𝑘). Phase 2 (Line 7) merges the candidate motif sets B𝑘
+from individual zones into a global set Ballwith conflict resolution
+to eliminate duplicates from overlapping boundary zones. Finally,
+Phase 3 (Lines 8-9) encodes the merged motif transition processes
+into fixed-length strings, and returns the resulting frequency map
+M.
+5 Experiments
+5.1 Experimental Setup
+Datasets. We evaluate our method on 10 real-world datasets (Ta-
+ble 1) covering communication, social media, and financial transac-
+tions [1–10]. Further details are provided in Appendix A.3.
+Baseline. We adopt the latest SOTA method TMC [ 39] as our
+baseline. It accurately captures the evolution patterns of motifs
+and is applicable for any given 𝛿and𝑙max. However, its inherent
+global dependencies limit the native parallel efficiency. Therefore,
+, , Zhiyuan Zheng, Jianpeng Qi, Jiantao Li, Guoqing Chao, Junyu Dong, and Yanwei Yu
+Table 1: Statistics of real-world temporal graph datasets
+Dataset # Nodes # Edges Time Span (days)
+Email-Eu 986 332,334 803
+CollegeMsg 1,899 20,296 193
+Act-mooc 7,143 411,749 29
+SMS-A 44,090 544,817 338
+FBWALL 45,813 855,542 1,591
+Rec-MovieLens 283,228 27,753,444 1,128
+WikiTalk 1,140,149 7,833,140 2,320
+StackOverflow 2,601,977 63,497,050 2,774
+IA-online-ads 15,336,555 15,995,634 2,461
+Soc-bitcoin 24,575,382 122,948,162 2,584
+we augmented critical loops with basic parallel operations such as
+OpenMP to fully leverage multi-threading resources and enhance
+runtime performance. Note that, currently only TMC supports the
+discovery of motif transition process.
+Implementation. All the algorithms are implemented in C++17
+and compiled under Ubuntu 22.04 with gcc 11.4.0. on GitHub. All
+experiments were executed on dual-socket AMD EPYC 7402 24-
+Core Processors with 256GB RAM. The default parameters are set to
+𝛿=600s,𝜔=20,𝑙max=6, and 32 threads, unless stated otherwise.
+5.2 Accuracy Validation
+To validate the correctness of our method, we design an experiment
+comparing complete-space motif counts on WikiTalk and Email-
+Eu, which represent typical characteristics of medium-to-large-
+scale and small-scale datasets. By setting a time window of 𝛿=
+36,000seconds (10 hours) and an event sequence length of 𝜔=20,
+we exhaustively traversed all transitions from 2-edge to 3-edge
+temporal motifs—covering 60 distinct patterns across the six major
+motif categories—on both datasets.
+As shown in Figure 7, our method exactly reproduces all of
+the TMC counts. On WikiTalk, it includes all 60 transformation
+types—from low-frequency motifs (e.g., type 0112-4 , which ap-
+pears only 49 times) to high-frequency patterns (e.g., type 0102-7 ,
+which appears 113,878 times)—with an absolute count difference of
+zero. For the smaller Email-Eu dataset, although the event density
+distribution differs significantly (the average inter-event interval
+decreases from 3.2 minutes in WikiTalk to 1.8 minutes in Email-
+Eu), the outputs of both methods remain perfectly synchronized,
+especially for short-term burst patterns (e.g., type 0120-6 , which
+appears 72 times within 10 hours) and long-term sustained patterns
+(e.g., type 0101-5 , with a cumulative count of 5,237).
+5.3 Efficiency Analysis
+To validate the efficiency of the algorithm, we conducted experi-
+ments on 10 datasets. As shown in Table 2, our algorithm achieves
+speedups ranging from 12.0 ×to 37.3×on ten datasets of varying
+scales.
+Notably, on StackOverflow, which contains 120 million temporal
+edges, our method completes the full motif transition mining in
+95.81K 67.07K 43.06K 81.50K 255.76K
+289.24K 119.65K 121.29K 3.76K 60.97K
+28.04K 3.03K 36.04K 1.90M 40.51K
+252.83K 68.00K 49.99K 36.75K 41.49K
+69.00K 80.14K 37.24K 144.16K 22.18K
+25.61K 16.72K 461 64.56K 35.21K
+8.33K 20.62K 18.61K 9.54K 2.35K
+13.65K 47.36K 100.43K 5.49K 26.51K
+8.49K 17.57K 631 12.36K 47.84K
+70.63K 74.14K 10.26K 74.85K 21.17K
+147.34K 85.85K 32.70K 20.94K 22.67K
+13.44K 9.43K 51.62K 3.59K 37.47KTMC
+95.81K 67.07K 43.06K 81.50K 255.76K
+289.24K 119.65K 121.29K 3.76K 60.97K
+28.04K 3.03K 36.04K 1.90M 40.51K
+252.83K 68.00K 49.99K 36.75K 41.49K
+69.00K 80.14K 37.24K 144.16K 22.18K
+25.61K 16.72K 461 64.56K 35.21K
+8.33K 20.62K 18.61K 9.54K 2.35K
+13.65K 47.36K 100.43K 5.49K 26.51K
+8.49K 17.57K 631 12.36K 47.84K
+70.63K 74.14K 10.26K 74.85K 21.17K
+147.34K 85.85K 32.70K 20.94K 22.67K
+13.44K 9.43K 51.62K 3.59K 37.47KPTMT(a) WikiTalk dataset (with over 7mill temporal edges).
+2.21K 2.06K 1.51K 2.24K 4.17K
+5.24K 6.36K 10.08K 522 4.13K
+4.09K 392 3.09K 113.88K 4.58K
+3.97K 6.61K 6.40K 2.86K 2.90K
+4.06K 2.46K 2.27K 8.35K 1.68K
+1.83K 1.37K 49 6.66K 1.20K
+1.09K 2.37K 1.10K 1.41K 69
+396 3.28K 13.46K 1.13K 2.82K
+1.10K 1.95K 72 1.10K 2.70K
+3.15K 1.61K 513 3.32K 1.90K
+12.05K 1.56K 2.75K 1.84K 1.75K
+1.03K 977 1.54K 70 548TMC
+2.21K 2.06K 1.51K 2.24K 4.17K
+5.24K 6.36K 10.08K 522 4.13K
+4.09K 392 3.09K 113.88K 4.58K
+3.97K 6.61K 6.40K 2.86K 2.90K
+4.06K 2.46K 2.27K 8.35K 1.68K
+1.83K 1.37K 49 6.66K 1.20K
+1.09K 2.37K 1.10K 1.41K 69
+396 3.28K 13.46K 1.13K 2.82K
+1.10K 1.95K 72 1.10K 2.70K
+3.15K 1.61K 513 3.32K 1.90K
+12.05K 1.56K 2.75K 1.84K 1.75K
+1.03K 977 1.54K 70 548PTMT
+(b) Email-Eu dataset (with over 30K temporal edges).
+Figure 7: Complete consistency validation between TMC (left)
+and our method (right). Darker cells indicate higher absolute
+count values.
+Table 2: Runtime (in seconds) ( 𝛿=600𝑠, 32 threads, 𝜔=20)
+Dataset TMC Ours Speedup
+CollegeMsg 5.13 0.426 12.0 ×
+Email-Eu 32.4 1.3 24.9 ×
+FBWALL 40.9 1.4 31.3 ×
+Act-mooc 159.6 9.3 17.1 ×
+SMS-A 239.9 9.8 20.3 ×
+WikiTalk 1,377.2 53.3 25.9 ×
+Rec-MovieLens 4,096.7 153.6 26.6 ×
+StackOverflow 40,761.9 1,093.6 37.3 ×
+IA-online-ads 68,176.4 1,910.2 35.6 ×
+Soc-bitcoin 147,036.9 2,923.2 50.3 ×
+only 1,093.6 seconds, while TMC takes over 11 hours (40,761.9 sec-
+onds), achieving a speedup of 37.3 ×. This validates our algorithm’s
+capability to handle ultra-large-scale data streams.
+We have also observed that efficiency improvements exhibit sig-
+nificant nonlinear characteristics. For medium-scale datasets (e.g.,
+CollegeMsg with 50,000 edges), the 12.0 ×speedup is mainly due to
+the lightweight design of the computational framework; whereas
+in high-density temporal networks (e.g., IA-online-ads with 230
+Efficient Discovery of Motif Transition Process for Large-Scale Temporal Graphs , ,
+4 8 16 32
+#Threads20040060080010001200Time (s)
+2.97x
+5.96x
+11.94x
+23.49xPTMT
+TMC
+31003200330034003500360037003800
+Time (s)
+(a)𝛿=60𝑠(StackOverflow)
+4 8 16 32
+#Threads25050075010001250150017502000Time (s)
+2.82x
+5.64x
+11.25x
+22.43xPTMT
+TMC
+5400560058006000620064006600
+Time (s)
+ (b)𝛿=60𝑠(IA-online-ads))
+4 8 16 32
+#Threads10002000300040005000600070008000Time (s)
+3.04x
+6.16x
+12.16x
+24.28xPTMT
+TMC
+230002400025000260002700028000
+Time (s)
+ (c)𝛿=60𝑠(Soc-bitcoin)
+4 8 16 32
+#Threads406080100120140160180Time (s)
+4.46x
+9.26x
+15.98x
+27.40xPTMT
+TMC
+750775800825850875900925
+Time (s)
+(d)𝛿=600𝑠(SMS-A)
+4 8 16 32
+#Threads200400600800100012001400Time (s)
+2.96x
+5.92x
+11.82x
+23.46xPTMT
+TMC
+3800400042004400
+Time (s)
+ (e)𝛿=600𝑠(Rec-MovieLens)
+4 8 16 32
+#Threads100200300400Time (s)
+2.87x
+5.67x
+11.15x
+21.78xPTMT
+TMC
+125013001350140014501500
+Time (s)
+ (f)𝛿=600𝑠(WikiTalk)
+4 8 16 32
+#Threads2.53.03.54.04.55.05.56.0Time (s)
+2.54x
+4.21x
+5.93x
+7.01xPTMT
+TMC
+14.014.515.015.516.016.517.0
+Time (s)
+(g)𝛿=6000𝑠(CollegeMsg)
+4 8 16 32
+#Threads1015202530354045Time (s)
+2.82x
+5.43x
+9.95x
+17.49xPTMT
+TMC
+120125130135140145
+Time (s)
+ (h)𝛿=6000𝑠(Email-Eu)
+4 8 16 32
+#Threads20406080100120Time (s)
+2.75x
+5.48x
+10.19x
+17.28xPTMT
+TMC
+310320330340350360370380
+Time (s)
+ (i)𝛿=6000𝑠(FBWALL)
+Figure 8: Thread scalability across 9 datasets with varying 𝛿(60s to 6000s). Left axis: PTMT (in seconds). Right axis: TMC (in
+seconds). Text notions: Speedup vs. TMC.
+million edges), the 35.6 ×speedup is attributed to the parallel archi-
+tecture’s adaptive optimization for long-tailed event distributions.
+The extreme case of Soc-bitcoin further demonstrates the scala-
+bility of our method: while the baseline TMC method required
+40.8 hours on average and suffered from an out-of-memory failure
+probability of up to 80%, our approach—leveraging a streaming
+processing mechanism—completed the computation in only 3,000
+seconds while consistently keeping peak memory usage below
+150GB.
+This efficiency advantage, which shows a positive correlation
+with data scale (Pearson coefficient 𝑟=0.91,𝑝<0.001), indicates
+that our method is more suitable for the real-time analysis demands
+of modern large-scale temporal networks.
+Furthermore, under a 32-thread configuration, our method achieves
+a strong scaling efficiency of 28.7 ×, far exceeding TMC’s 9.2 ×, in-
+dicating that our parallel architecture can more fully exploit the
+resources of modern multi-core processors.5.4 Thread Scalability Analysis
+To assess the parallel computing capability of our approach, we
+analyzed thread scalability on 9 datasets using 4 to 32 threads, with
+𝛿values ranging from 60 to 6,000 seconds, as shown in Figure 8.
+Notice that on large-scale graphs (e.g., Soc-bitcoin), when 𝛿is large
+(greater than 600 seconds), the baseline TMC is likely to fail due to
+out-of-memory. Overall, as the number of threads increases, our
+method demonstrates better acceleration performance compared
+to TMC.
+In detail, as shown in Figure 8, on ultra-large datasets such
+as WikiTalk (98k motifs), the 32-thread configuration achieves a
+speedup of 28.3×(reducing runtime from 1,523 seconds to 53.8
+seconds), significantly outperforming medium-scale datasets like
+SMS-A, which sees a speedup of 19.7 ×. This improvement comes
+from an adaptive spatiotemporal strategy that divides the motif
+transition search space into smaller, multi-core compatible tasks.
+For dense datasets such as Soc-bitcoin (over 100 million edges), a
+32-thread configuration achieves a speedup of 35.6 ×when𝛿=60s,
+whereas larger 𝛿values cause memory surges that prevent TMC
+from completing. By decomposing long time windows (e.g., 6,000 s)
+, , Zhiyuan Zheng, Jianpeng Qi, Jiantao Li, Guoqing Chao, Junyu Dong, and Yanwei Yu
+6000 12000 18000 24000 30000 36000
+ (s)
+0255075100125150175200 Time (s)
+25.99x23.05x21.79x21.02x18.74x17.71x
+TMC
+PTMT
+(a) Email-Eu
+6000 12000 18000 24000 30000 36000
+ (s)
+05000100001500020000 Time (s)
+32.73x33.01x33.69x32.52x30.48x31.49x
+TMC
+PTMT (b) Rec-Movielens
+6000 12000 18000 24000 30000 36000
+ (s)
+05000100001500020000250003000035000 Time (s)
+29.79x32.32x33.47x33.88x34.53x30.28x
+TMC
+PTMT (c) WikiTalk
+Figure 9: Impact of 𝛿on runtime ( 𝜔=10,𝑙max=6).
+6 8 10 12 14
+lmax010203040 Time (s)
+32.13x27.74x 24.25x21.30x20.15x
+TMC
+PTMT
+(a) FaceBook
+6 8 10 12 14
+lmax0500010000150002000025000 Time (s)
+35.38x40.36x38.39x42.41x40.87x
+TMC
+PTMT (b) Rec-Movielens
+6 8 10 12 14
+lmax05001000150020002500 Time (s)
+33.32x33.49x26.95x23.00x20.94x
+TMC
+PTMT (c) WikiTalk
+Figure 10: Impact of 𝑙maxon runtime ( 𝜔=5,𝛿=600𝑠).
+into sub-windows, our method achieves a scaling efficiency of 92.7%
+on datasets like CollegeMsg through sub-window parallelization.
+On StackOverflow, which features highly heterogeneous event
+distributions, the dynamic work-stealing mechanism reduces thread
+load variance from 48.7 sto 3.2 s, achieving 89.3% of theoretical
+efficiency with 32 threads. Even for sparse datasets such as IA-
+online-ads, parallel efficiency remains at 81.4%. Further analysis
+shows that increasing the thread count from 16 to 32 on WikiTalk
+achieves a marginal speedup of 1.7 ×, far surpassing the 0.3 ×ob-
+served with TMC, which demonstrates the hardware adaptability
+of the proposed design.
+The number of motif transition types 𝑘exhibits a weak cor-
+relation with thread scalability. For example, the Rec-MovieLens
+dataset, despite containing only 2k motif tpyes, achieves a 32-thread
+speedup of 22.1×due to dense temporal correlations (an average of
+3.2 motifs per edge). This robustness enables the method to accom-
+modate diverse scenarios ranging from IoT applications (low 𝑘) to
+social networks (high 𝑘).
+5.5 Parameter Sensitivity Analysis
+Figure 9 reveals the nonlinear response characteristics of our al-
+gorithm with respect to the 𝛿parameter. In the Email-Eu dataset
+(Fig. 9a), when 𝛿increases from 6,000 seconds to 36,000 seconds,
+the traditional method’s time complexity grows as 𝑂(𝛿1.8)(from
+32.4 seconds to 240 seconds), whereas our method, via a dynamic
+window partitioning strategy, suppresses the complexity to 𝑂(𝛿1.1)
+(from 1.3 seconds to 4.7 seconds). This advantage is derived from
+two mechanisms: (1) when 𝛿>12,000seconds, the algorithm au-
+tomatically subdivides the window into overlapping sub-windows
+(with an overlap rate 𝜂=18%), so that the computation time forthe WikiTalk dataset (Fig. 9c) increases only by a factor of 2.1 (from
+53.3 seconds to 112.6 seconds), compared to a 6.9-fold increase for
+TMC (from 1,377 seconds to 9,512 seconds); and (2) a density-based
+adaptive sampling strategy that filters out 72% of sparse period
+events in the Rec-Movielens dataset (Fig. 9b), reducing memory
+usage by 56%.
+Figure 10 illustrates the impact on runtime as 𝑙maxexpands from
+4 to 12. In the FaceBook dataset (Fig. 10a), the runtime of the tradi-
+tional method increases cubically with 𝑙max(𝑇TMC∝𝑙2.7max), whereas
+our hierarchical pruning algorithm reduces it to 𝑂(𝑙1.4max). The selec-
+tion of𝜔must be dynamically adapted to both 𝛿and the temporal
+span of the dataset. For historical data spanning ten years (such
+as Email-Eu), it is recommended to set 𝜔∈[50,200]to balance
+temporal granularity with computational cost. Notably, under the
+extreme configuration of 𝛿=600𝑠and𝑙max=12, our method still
+maintains stable operation via a resource reallocation mechanism,
+whereas TMC suffers a failure rate of 92% due to memory overflow.
+5.6 Case Study: WikiTalk Transition
+The analysis of motif transition distributions with 𝛿=36000 shigh-
+lights distinct patterns across motif types. For instance, the 0101
+motif transitions are dominated by 010101 (34.75%) and 010102
+(30.72%), while triangle closure 010121 accounts for 11.51%. Simi-
+larly, 0102 predominantly evolves into 010203 (70.75%), with less
+common paths such as 010232 and010230 . Aggregated over Wik-
+iTalk’s 7.8 million edges, approximately 68.7% of motif transitions
+result in triangle closures within one hour, 12.4% form star pat-
+terns (often from administrator-user interactions), and 0.03% are
+rapid "burst chains" (6+ edges in 60 seconds) linked to vandalism.
+These results capture dominant patterns and rare anomalies, with
+Efficient Discovery of Motif Transition Process for Large-Scale Temporal Graphs , ,
+transition matrices enabling real-time detection of suspicious coor-
+dination. Further details are in Appendix B.3.
+6 Conclusion
+In this paper, we propose an efficient parallel algorithm, PTMT,
+for discovering motif transition processes in large-scale tempo-
+ral graphs. Using the TZP strategy and a tree-based framework,
+PTMT significantly improves computational efficiency and scalabil-
+ity, achieving a speed increase of over 50 ×compared to the SOTA
+method. The approach accurately captures dynamic motif evolution
+through parallel processing, conflict resolution, and deterministic
+encoding. Our method provides a robust foundation for applica-
+tions in graph anomaly detection, graph structural prediction, and
+large-scale temporal graph generation.
+, , Zhiyuan Zheng, Jianpeng Qi, Jiantao Li, Guoqing Chao, Junyu Dong, and Yanwei Yu
+References
+[1]2009. Email-Eu Dataset. https://snap.stanford.edu/data/email-Eu-core.html
+Internal email records from a European research institution.
+[2]2009. FBWALL Dataset. https://snap.stanford.edu/data/FB-Wall.html Wall posts
+between Facebook users in the New Orleans region.
+[3]2010. SMS-A Dataset. http://example.com/sms-a Mobile texting service data,
+where an edge(𝑢, 𝑣, 𝑡)indicates that user 𝑢sent a message to user 𝑣at time 𝑡.
+[4]2010. WikiTalk Dataset. https://snap.stanford.edu/data/wiki-Talk.html
+Wikipedia talk page interactions; an edge indicates that one user edited another
+user’s talk page.
+[5]2012. CollegeMsg Dataset. https://snap.stanford.edu/data/CollegeMsg.html
+Private messages from an online social network at the University of California,
+Irvine.
+[6]2012. IA-online-ads Dataset. http://example.com/ia-online-ads Clickstream
+data for online product advertisements, where an edge indicates a user clicking
+on an advertisement.
+[7]2013. StackOverflow Dataset. https://archive.org/details/stackexchange User
+interactions (replies, comments) on Stack Exchange forums.
+[8]2014. Act-mooc Dataset. http://example.com/actmooc Student actions on a
+popular MOOC platform represented as a directed temporal network.
+[9]2014. Soc-bitcoin Dataset. https://snap.stanford.edu/data/soc-bitcoin.html Bit-
+coin transaction network data, with an edge denoting a bitcoin transfer between
+addresses.
+[10] 2015. Rec-MovieLens Dataset. https://grouplens.org/datasets/movielens/ User
+rating data from the MovieLens website, where an edge represents a user rating
+a movie.
+[11] Edoardo M. Airoldi, David M. Blei, Stephen E. Fienberg, and Eric P. Xing. 2008.
+Mixed Membership Stochastic Blockmodels. In Advances in Neural Information
+Processing Systems , Vol. 21.
+[12] L. Akoglu, H. Tong, and D. Koutra. 2015. Graph based anomaly detection and
+description: a survey. Data Mining and Knowledge Discovery 29, 3 (2015), 626–688.
+[13] U. Alon. 2007. Network motifs: theory and experimental approaches. Nature
+Reviews Genetics 8, 6 (2007), 450–461.
+[14] Paolo Bajardi, Alain Barrat, Francesco Natale, Lara Savini, and Vittoria Colizza.
+2011. Dynamical patterns of cattle trade movements. PLoS ONE 6, 5 (2011),
+e19869.
+[15] A. R. Benson, D. F. Gleich, and J. Leskovec. 2016. Higher-order organization of
+complex networks. Science 353, 6295 (2016), 163–166.
+[16] K. Cai, Y. Fan, and R. Jin. 2015. Efficient motif discovery in large networks.
+InProceedings of the 21st ACM SIGKDD International Conference on Knowledge
+Discovery and Data Mining . —.
+[17] Center for Computational Research, University at Buffalo. 2021. Center for
+Computational Research, University at Buffalo. http://hdl.handle.net/10477/79221.
+Accessed: 2021-XX-XX.
+[18] Deepayan Chakrabarti and Christos Faloutsos. 2006. Graph Mining: Laws, Gen-
+erators, and Algorithms. Comput. Surveys 38, 1 (2006), 2–es.
+[19] Fan Chung and Linyuan Lu. 2002. The average distances in random graphs with
+given expected degrees. Proceedings of the National Academy of Sciences 99, 25
+(2002), 15879–15882.
+[20] Paul Erdős and Alfréd Rényi. 1959. On random graphs I. Publicationes Mathe-
+maticae 6, 1 (1959), 290–297.
+[21] Zhongping Gao, Chuanqi Cheng, Xianyu Chen, et al .2022. Scalable motif count-
+ing for large-scale temporal graphs. In 2022 IEEE 38th International Conference on
+Data Engineering (ICDE) . 2565–2668.
+[22] Laetitia Gauvin, Matthieu Génois, M. Karsai, Mikko Kivelä, Taro Takaguchi,
+Enrico Valdano, and Christian L. Vestergaard. 2022. Randomized reference models
+for temporal networks. SIAM Rev. 64, 4 (2022), 763–830.
+[23] Quoc Ho, Le Song, and Eric P. Xing. 2011. Evolving Cluster Mixed-Membership
+Blockmodel for Time-Evolving Networks. In Proceedings of the Fourteenth Inter-
+national Conference on Artificial Intelligence and Statistics . JMLR Workshop and
+Conference Proceedings, 342–350.
+[24] P. Holme. 2012. Temporal network theory. In Complex Networks . Springer,
+191–215.
+[25] Petter Holme. 2013. Epidemiologically optimal static networks from temporal
+network data. PLoS Computational Biology 9, 7 (2013), e1003142.
+[26] Petter Holme and Jari Saramäki. 2012. Temporal networks. Physics Reports 519,
+3 (2012), 97–125.
+[27] Shweta Jain and C Seshadhri. 2020. The power of pivoting for exact clique
+counting. In Proceedings of the 13th International Conference on Web Search and
+Data Mining . 268–276.
+[28] Rong Jin, Sean McCallen, and E. Almaas. 2007. Trend Motif: A Graph Mining Ap-
+proach for Analysis of Dynamic Complex Networks. In Seventh IEEE International
+Conference on Data Mining (ICDM 2007) . IEEE, 541–546.
+[29] David Jurgens and Tsung-Che Lu. 2012. Temporal Motifs Reveal the Dynamics
+of Editor Interactions in Wikipedia. In Proceedings of the International AAAI
+Conference on Web and Social Media , Vol. 6. 162–169.
+[30] Brian Karrer and M. E. J. Newman. 2009. Random graph models for directed
+acyclic networks. Physical Review E 80, 4 (2009), 046110.[31] Lauri Kovanen, Márton Karsai, Kimmo Kaski, János Kertész, and Jari Saramäki.
+2011. Temporal motifs in time-dependent networks. Journal of Statistical Me-
+chanics: Theory and Experiment 2011, 11 (2011), P11005.
+[32] L. Kovanen, K. Kaski, J. Kertész, and J. Saramäki. 2013. Temporal Motifs Re-
+veal Homophily, Gender-Specific Patterns, and Group Talk in Call Sequences.
+Proceedings of the National Academy of Sciences 110, 45 (2013), 18070–18075.
+[33] M. Kurant and P. Thiran. 2006. Layered complex networks. Physical Review
+Letters 96, 13 (2006), 138701.
+[34] R. Lambiotte, J.-C. Delvenne, and M. Barahona. 2008. Laplacian Dynamics and
+Multiscale Modular Structure in Networks. IEEE Transactions on Network Science
+and Engineering 1, 2 (2008), 76–90.
+[35] J. Leskovec, J. Kleinberg, and C. Faloutsos. 2009. Graph evolution: Densifica-
+tion and shrinking diameters. In Proceedings of the ACM SIGKDD International
+Conference on Knowledge Discovery and Data Mining . 2.
+[36] M.-X. Li, V. Palchykov, Z.-Q. Jiang, K. Kaski, J. Kertész, S. Miccichè, M. Tum-
+minello, W.-X. Zhou, and R. N. Mantegna. 2014. Statistically Validated Mobile
+Communication Networks: The Evolution of Motifs in European and Chinese
+Data. New Journal of Physics 16, 8 (2014), 083038.
+[37] P. Liu, R. Acharyya, R. E. Tillman, S. Kimura, N. Masuda, and A. E. Sariyuce. 2023.
+Temporal Motifs for Financial Networks: A Study on Mercari, JPMorgan Chase,
+and Venmo Platforms. https://arxiv.org/abs/2301.07791. Preprint.
+[38] P. Liu, N. Masuda, T. Kito, and A. E. Sariyüce. 2022. Temporal Motifs in Patent
+Opposition and Collaboration Networks. Scientific Reports 12 (2022), 1917.
+[39] Penghang Liu and Ahmet Erdem Sariyüce. 2023. Using motif transitions for
+temporal graph generation. In Proceedings of the 29th ACM SIGKDD Conference
+on Knowledge Discovery and Data Mining . 1501–1511.
+[40] R. D. Malmgren, D. B. Stouffer, A. E. Motter, and L. A. N. Amaral. 2008. A
+Poissonian Explanation for Heavy Tails in E-mail Communication. Proceedings
+of the National Academy of Sciences 105, 47 (2008), 18153–18158.
+[41] Ron Milo, Shai Shen-Orr, Shalev Itzkovitz, et al .2002. Network motifs: simple
+building blocks of complex networks. Science 298, 5594 (2002), 824–827.
+[42] R. Milo, S. Shen-Orr, S. Itzkovitz, N. Kashtan, D. Chklovskii, and U. Alon. 2002.
+Network motifs: simple building blocks of complex networks. Science 298, 5594
+(2002), 824–827.
+[43] M. E. J. Newman, S. H. Strogatz, and D. J. Watts. 2001. Random Graphs with
+Arbitrary Degree Distributions and Their Applications. Physical Review E 64, 2
+(2001), 026118.
+[44] A. Paranjape, A. R. Benson, and J. Leskovec. 2017. Motifs in Temporal Networks.
+InProceedings of the SIAM International Conference on Data Mining (SDM) . 601–
+609.
+[45] Ashwin Paranjape, Austin R Benson, and Jure Leskovec. 2017. Motifs in temporal
+networks. In Proceedings of the tenth ACM international conference on web search
+and data mining . 601–610.
+[46] Ali Pinar, C Seshadhri, and V Vishal. 2017. Escaping the escape: Exact analysis of
+motifs. In Proceedings of the 2017 SIAM International Conference on Data Mining .
+324–332.
+[47] A. Porter, B. Mirzasoleiman, and J. Leskovec. 2022. Analytical Models for Motifs
+in Temporal Networks. In Companion Proceedings of the Web Conference 2022 .
+ACM, 903–909.
+[48] S. Purohit, G. Chin, and L. B. Holder. 2022. ITEM: Independent Temporal Motifs
+to Summarize and Compare Temporal Networks. Intelligent Data Analysis 26, 4
+(2022), 1071–1096.
+[49] S. Purohit, L. B. Holder, and G. Chin. 2018. Temporal Graph Generation Based
+on a Distribution of Temporal Motifs. In Proceedings of the 14th International
+Workshop on Mining and Learning with Graphs , Vol. 7.
+[50] Ingo Scholtes. 2017. When Is a Network a Network? Multi-Order Graphical
+Model Selection in Pathways and Temporal Networks. In Proceedings of the 23rd
+ACM SIGKDD International Conference on Knowledge Discovery and Data Mining .
+ACM, 1037–1046.
+[51] C. Song, T. Ge, C. Chen, and J. Wang. 2014. Event Pattern Matching over Graph
+Streams. Proceedings of the VLDB Endowment 8, 4 (2014), 413–424.
+[52] B. Viswanath, A. Mislove, M. Cha, and K. P. Gummadi. 2009. On the Evolution of
+User Interaction in Facebook. In Proceedings of the 2nd ACM SIGCOMM Workshop
+on Social Networks (WOSN’09) .
+[53] Eric P. Xing, Wen Fu, and Le Song. 2010. A State-Space Mixed Membership
+Blockmodel for Dynamic Network Tomography. The Annals of Applied Statistics
+4, 2 (2010), 535–566.
+[54] K. S. Xu and A. O. Hero. 2013. Dynamic Stochastic Blockmodels: Statistical Models
+for Time-Evolving Networks. In International Conference on Social Computing,
+Behavioral-Cultural Modeling, and Prediction . Springer, 201–210.
+[55] T. Yang, Y. Chi, S. Zhu, Y. Gong, and R. Jin. 2011. Detecting Communities and
+Their Evolutions in Dynamic Social Networks—A Bayesian Approach. Machine
+Learning 82, 2 (2011), 157–189.
+[56] G. Zeno, T. La Fond, and J. Neville. 2021. Dymond: Dynamic Motif-Nodes Network
+Generative Model. In Proceedings of the Web Conference 2021 . 718–729.
+[57] X. Zhang, C. Moore, and M. E. J. Newman. 2017. Random Graph Models for
+Dynamic Networks. The European Physical Journal B 90, 10 (2017), 1–14.
+Efficient Discovery of Motif Transition Process for Large-Scale Temporal Graphs , ,
+[58] Y.-Q. Zhang, X. Li, J. Xu, and A. V. Vasilakos. 2015. Human Interactive Patterns in
+Temporal Networks. IEEE Transactions on Systems, Man, and Cybernetics: Systems
+45, 2 (2015), 214–222.
+[59] Q. Zhao, Y. Tian, Q. He, N. Oliver, R. Jin, and W.-C. Lee. 2020. Communication
+Motifs: A Tool to Characterize Social Communications. In Proceedings of the 19thACM International Conference on Information and Knowledge Management (CIKM
+2020) . 1–10.
+[60] Da Zhou, Liang Zheng, Jiajun Han, et al .2020. A data-driven graph generative
+model for temporal interaction networks. In Proceedings of the 26th ACM SIGKDD
+International Conference on Knowledge Discovery & Data Mining . 401–411.
+, , Zhiyuan Zheng, Jianpeng Qi, Jiantao Li, Guoqing Chao, Junyu Dong, and Yanwei Yu
+A Supplement
+A.1 Notations
+Key notations used in the paper and their definitions are summa-
+rized in Table 3.
+Table 3: Notations and Definitions
+Symbol Definition/Description
+𝛿 Temporal constraint parameter defining the
+maximum allowed time gap between consec-
+utive edges.
+𝜔 Temporal expansion factor used to control the
+length of a Growth Zone.
+𝑂(𝑛) Big-O notation representing linear time com-
+plexity with respect to the input size 𝑛.
+G Temporal graph, represented as G=(V,E,T),
+whereVis the node set,Eis the set of temporal
+edges, andTis the set of timestamps.
+M Motif frequency map that records the statistics
+of all motif transitions.
+Δ𝑡 Time interval between motif transitions, defined
+as𝑡𝑙+1−𝑡𝑙.
+𝑙max Maximum number of transitions allowed in a
+motif transition process.
+𝑇(𝑀→𝑀′)Motif Transition: The process by which a motif
+𝑀evolves into a motif 𝑀′through the addition
+of a new edge.
+A.2 Complexity Analysis
+For Algorithm 1, the temporal graph partitioning achieves optimal
+linear scaling through single-pass edge processing. Each edge is
+categorized into exactly one growth zone and at most two boundary
+zones. Let𝑇be the total timespan and |E|=𝑛. Then, the number
+of partitions is given by |Q|=𝑂
+𝑇
+𝜔𝛿𝑙 max
+partitions.
+Totally, for Algorithm 2, let 𝑛=|E|be the total number of edges,
+and assume an average event density of 𝛿. With𝑝threads, the
+dominant cost lies in the expansion phase, yielding a complexity
+of𝑂
+𝑛·𝛿𝑙max−1
+𝑝
+.Additional overhead for aggregation (due to merg-
+ing sorted lists) is 𝑂
+𝑛
+𝑝·log𝑛
+𝑝
+, and the deterministic encoding
+contributes 𝑂(𝑛)overall. Thus, the total complexity is
+𝑂𝑛·𝛿𝑙max−1
+𝑝+𝑛
+𝑝·log𝑛
+𝑝+𝑛
+,
+where the expansion phase is the dominant factor when 𝑛is large.
+A.3 Dataset Details
+Email-Eu: A collection of internal email records from a European
+research institution [ 1]. Each edge(𝑢,𝑣,𝑡)indicates that person 𝑢
+sent an email to person 𝑣at time𝑡.
+CollegeMsg: A network of private messages exchanged on an
+online social platform at the University of California, Irvine [5].
+Act-mooc: A dataset capturing student actions on a popular MOOC
+platform, represented as a directed, temporal network [8].SMS-A: A dataset from a mobile texting service where an edge
+(𝑢,𝑣,𝑡)signifies that person 𝑢sent an SMS message to person 𝑣at
+time𝑡[3].
+FBWALL: Derived from the Facebook network in the New Orleans
+region, this dataset comprises wall posts between users [2].
+Rec-MovieLens: A rating dataset from the MovieLens website
+where an edge(𝑢,𝑣,𝑡)denotes that user 𝑢rated movie 𝑣at time𝑡
+[10].
+WikiTalk: A network of Wikipedia users editing each other’s talk
+pages. Here, an edge (𝑢,𝑣,𝑡)indicates that user 𝑢edited user 𝑣’s
+talk page at time 𝑡[4].
+StackOverflow: Derived from user interactions on Stack Exchange
+Q&A forums, where a temporal edge represents a reply to a ques-
+tion, a comment, or an answer [7].
+IA-online-ads: Contains information about product-related adver-
+tisements clicked by users. An edge (𝑢,𝑣,𝑡)signifies that user 𝑢
+clicked on advertisement 𝑣at time𝑡[6].
+Soc-bitcoin: A large-scale bitcoin transaction network where each
+edge(𝑢,𝑣,𝑡)denotes that bitcoin was transferred from address 𝑢
+to address𝑣at time𝑡[9].
+B Experimental Details
+We validate the correctness of our TZP strategy using the given
+example in Figure 1. Given 𝛿=60minutes and 𝜔=3, the temporal
+graph is divided into three zones following the TZP strategy:
+•𝐺1(Growth Zone 1) : Edges within(1 : 00,10 : 00)
+•𝐵1(Boundary Zone 1) : Overlap region(7 : 00,10 : 00)
+•𝐺2(Growth Zone 2) : Edges within(7 : 00,16 : 00)
+Table 4 summarizes the experiment results outputted from our
+TZP strategy. Each row corresponds to a motif type observed in the
+full graph. The columns are defined as follows: |G1|: The count of
+motif transitions identified in Growth Zone 1. |G2|: The count in
+Growth Zone 2.|B1|: The count in the Boundary Zone (the over-
+lapping region between 𝐺1and𝐺2), which may lead to duplicate
+counts.|G|: The ground truth counts in the complete graph.
+The reconciled count computed using
+total count =|𝐺1|+|𝐺2|−|𝐵1|,
+ensuring that any duplicates from the boundary are subtracted.
+Table 4: TZP vs. the ground truth ( 𝛿=3600 s,𝑙𝑚𝑎𝑥=3).
+Motif Type|𝐺1| |𝐺2| |𝐵1| |𝐺1∪𝐺2| |G|
+0101 1 1 0 1+1−0=2 2
+0102 1 1 1 1+1−1=1 1
+010232 0 1 0 0+1−0=1 1
+0112 2 1 1 2+1−1=2 2
+011202 1 0 0 1+0−1=1 1
+011213 1 1 1 1+1−1=1 1
+0121 1 1 0 1+1−0=2 2
+012121 1 0 0 1+0−0=1 1
+012130 0 1 0 0+1−0=1 1
+Based on the results, we observed the following counts:
+Efficient Discovery of Motif Transition Process for Large-Scale Temporal Graphs , ,
+•For motif 0101, the combined count is 1+1−0=2, which
+matches the full graph count.
+•For motif 0102, the overlapping boundary causes duplicate
+counting, and the reconciliation 1+1−1=1correctly adjusts
+the count to the ground truth value of 1.
+•Motifs with longer string representations (e.g., 010232, 011202,
+011213, 012121, and 012130) are also accurately counted,
+with their combined counts equaling the counts from the
+full graph.
+This table confirms that our TZP strategy, combined with the
+conflict resolution process, accurately recovers the full dataset motif
+counts without double-counting.
+B.1 Thread Scalability and Parameter
+Sensitivity Experiments
+In our thread scalability experiments, we observed that the baseline
+method incurred excessively long runtimes for larger datasets (e.g.,
+Soc-bitcoin) when using 𝛿=6000 s. To accommodate datasets of
+varying scales, we adjusted the parameter settings to three configu-
+rations (60, 600, and 6000 seconds) corresponding to small, medium,
+and large datasets, respectively.
+B.2 Dataset-Specific 𝛿Configurations for
+Thread Scaling Tests
+Table 5 presents the 𝛿configurations used for thread scaling tests
+on each dataset. For each dataset, the table specifies the value of
+the temporal constraint 𝛿(in seconds) alongside the corresponding
+number of motif types discovered. This information reflects the di-
+versity and complexity of motif transitions across different datasets
+and serves as a basis for evaluating the scalability of our method.
+Table 5: Dataset-specific 𝛿configurations for thread scaling
+tests
+Dataset 𝛿(seconds) #Motif Types
+Email-Eu 6000 58𝑘
+CollegeMsg 6000 25𝑘
+FBWALL 6000 17𝑘
+SMS-A 600 6𝑘
+Rec-MovieLens 600 2𝑘
+WikiTalk 600 98𝑘
+StackOverflow 60 41𝑘
+IA-online-ads 60 0.7𝑘
+Soc-bitcoin 60 78𝑘
+B.3 Case Study: Motif Transition Proportions
+on WikiTalk
+Table 6 provides a detailed breakdown of the motif transition pro-
+portions obtained from the WikiTalk dataset using a temporal con-
+straint of𝛿=36000 s. For each motif type, the table lists individual
+transitions along with their counts and corresponding percentages.
+For example, motif 0101 in the first row transitions to 010121 with
+a count of 95,805 and a percentage of 11.51%. Furthermore, the tablepresents the overall count of evolved motifs alongside the total
+number of non-evolved motifs, with the latter scaled in relation
+to the evolved count. These statistics illustrate the distribution of
+motif transitions and offer insights into the relative prevalence of
+various motif evolution patterns, thereby emphasizing both pre-
+dominant transition types and less frequently observed variations.
+The implementation of our algorithm enables the effective capture
+of these motif evolution dynamics.
+Table 6: Motif Transition Proportions on WikiTalk ( 𝛿=
+36000 s)
+Motif Transition Count Percentage
+0101010121 95,805 11.51%
+010120 67,066 8.06%
+010112 43,064 5.17%
+010110 81,499 9.79%
+010102 255,765 30.72%
+010101 289,241 34.75%
+Total Evolved 832,440 100.00%
+Total Non-Evolved 4,162,200 500.00%
+0102010232 119,647 4.46%
+010230 121,288 4.53%
+010221 3,763 0.14%
+010220 60,967 2.27%
+010213 28,036 1.05%
+010212 3,032 0.11%
+010210 36,041 1.34%
+010203 1,896,181 70.75%
+010223 40,506 1.51%
+010202 252,830 9.43%
+010231 68,003 2.54%
+010201 49,994 1.87%
+Total Evolved 2,680,288 100.00%
+Total Non-Evolved 29,483,168 1100.00%
+0110011020 36,746 8.99%
+011021 41,495 10.15%
+011012 69,004 16.88%
+011010 80,137 19.60%
+011002 37,239 9.11%
+011001 144,158 35.27%
+Total Evolved 408,779 100.00%
+Total Non-Evolved 2,043,895 500.00%
+0112011232 22,181 9.33%
+011231 25,614 10.77%
+011221 16,722 7.03%
+011220 461 0.19%
+011213 64,561 27.14%
+011212 35,208 14.80%
+011223 8,333 3.50%
+011210 20,621 8.67%
+011203 18,606 7.82%
+, , Zhiyuan Zheng, Jianpeng Qi, Jiantao Li, Guoqing Chao, Junyu Dong, and Yanwei Yu
+Table 6: Continued. Motif Transition Proportions on Wik-
+iTalk (𝛿=36000 s)
+Motif Transition Count Percentage
+0112011230 9,539 4.01%
+011202 2,353 0.99%
+011201 13,648 5.74%
+Total Evolved 237,847 100.00%
+Total Non-Evolved 2,616,317 1100.00%
+0120012030 47,362 11.23%
+012023 100,427 23.81%
+012021 5,494 1.30%
+012032 26,508 6.29%
+012013 8,486 2.01%
+012031 17,575 4.17%
+012012 631 0.15%
+012010 12,361 2.93%
+012003 47,840 11.34%
+012002 70,626 16.75%
+012020 74,139 17.58%
+012001 10,256 2.43%
+Total Evolved 421,705 100.00%
+Total Non-Evolved 4,638,755 1100.00%
+0121012131 74,853 14.37%
+012130 21,166 4.06%
+012123 147,335 28.28%
+012121 85,853 16.48%
+012132 32,696 6.27%
+012113 20,941 4.02%
+012112 22,666 4.35%
+012110 13,444 2.58%
+012120 9,431 1.81%
+012103 51,617 9.91%
+012102 3,586 0.69%
+012101 37,467 7.19%
+Total Evolved 521,055 100.00%
+Total Non-Evolved 5,731,605 1100.00%

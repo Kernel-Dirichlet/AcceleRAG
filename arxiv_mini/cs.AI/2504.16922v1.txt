@@ -1,0 +1,1409 @@
+Generalized Neighborhood Attention:
+Multi-dimensional Sparse Attention at the Speed of Light
+Ali Hassani1,2, Fengzhe Zhou1, Aditya Kane1, Jiannan Huang1,
+Chieh-Yun Chen1, Min Shi1, Steven Walton1, Markus Hoehnerbach2,
+Vijay Thakkar1,2, Michael Isaev2, Qinsheng Zhang2, Bing Xu2, Haicheng Wu2,
+Wen-mei Hwu2,3, Ming-Yu Liu2, Humphrey Shi1,3
+1Georgia Tech,2NVIDIA,3UIUC
+https://github.com/SHI-Labs/NATTEN
+NA
+GNA
+(NA + stride)
+Query
+Query
+Group
+Context
+Window
+SA
+NA GNAFLOP-wise speedup @ 91% sparsity
+2.8 X7.4 X
+3.2 X10.7 X
+3.3 X11.1 X
+HunyuanVideoOp-level Speedup
+NA GNAFLOP-wise speedup @ 89% sparsity
+3 X5.5 X
+3.8 X9.2 X
+5.2 X9.2 X
+CosmosNA GNAFLOP-wise speedup @ 90% sparsity
+4 X6.7 X
+5 X10.2 X
+6.1 X10.2 X
+FLUX 4KActual Actual excluding memory ops Theoretical Max (simulated)
+Figure 1. Generalized Neighborhood Attention adds a new “stride” parameter to neighborhood attention, which introduces a delay
+in the sliding window by grouping queries together and forcing them to share their context window. This increases density in matrix
+multiplications, while maintaining overall sparsity, leading to speedups more proportional to savings in FLOPs. Our Blackwell kernel can
+as a result realize the maximum speedup theoretically possible in some cases, with respect to both FLOPs and simulation.
+Abstract
+Many sparse attention mechanisms such as Neighbor-
+hood Attention have typically failed to consistently deliver
+speedup over the self attention baseline. This is largely due
+to the level of complexity in attention infrastructure, and the
+rapid evolution of AI hardware architecture. At the same
+time, many state-of-the-art foundational models, particu-
+larly in computer vision, are heavily bound by attention,
+and need reliable sparsity to escape the O(n2)complexity.
+In this paper, we study a class of promising sparse atten-
+tion mechanisms that focus on locality, and aim to develop
+a better analytical model of their performance improve-
+ments. We first introduce Generalized Neighborhood At-
+tention (GNA), which can describe sliding window, strided
+sliding window, and blocked attention. We then consider
+possible design choices in implementing these approaches,and create a simulator that can provide much more real-
+istic speedup upper bounds for any given setting. Finally,
+we implement GNA on top of a state-of-the-art fused multi-
+headed attention (FMHA) kernel designed for the NVIDIA
+Blackwell architecture in CUTLASS. Our implementation
+can fully realize the maximum speedup theoretically pos-
+sible in many perfectly block-sparse cases, and achieves
+an effective utilization of 1.3 petaFLOPs/second in FP16.
+In addition, we plug various GNA configurations into off-
+the-shelf generative models, such as Cosmos-7B, Hunyuan-
+Video, and FLUX, and show that it can deliver 28% to 46%
+end-to-end speedup on B200 without any fine-tuning. We
+will open source our simulator and Blackwell kernels di-
+rectly through the NATTEN project.
+1arXiv:2504.16922v1  [cs.CV]  23 Apr 2025
+1. Introduction
+Fast sparse attention has been long sought-after [5, 9,
+33, 35, 37, 43, 53], but rarely without complications. In-
+frastructure continues to be a challenge for attention in
+general, as implementations of attention rarely come close
+to adequately utilizing the computational power of mod-
+ern GPUs, at least compared to dense linear algebra prim-
+itives, such as generalized matrix-matrix multiplications
+(GEMMs), which typically utilize around 80% of peak
+FLOPs/second. The most successful example to date is
+Flash Attention 3 [39], utilizing up to 75% of the peak
+FLOPs/second in the NVIDIA Hopper architecture with
+half precision. However, lower precision still trails behind,
+and with every new architecture, and changes in the pro-
+gramming model, new challenges in infrastructure arise.
+Sparse approaches that require changes to the core attention
+implementation have therefore lagged behind. One exam-
+ple is approaches that specifically target sparsity in attention
+weights, such as sliding window [5, 21, 33, 37] and blocked
+attention [31, 43], which can only accelerate computation
+by utilizing block-sparsity. Block-sparsity is primarily com-
+prised of skipping tiles of computation that are fully masked
+in some pre-defined attention mask. Implementing block-
+sparsity can be non-trivial, and at times comes with signif-
+icant overhead that can undo performance gains, assuming
+the base implementation is already the state of the art. As
+a result, these approaches usually leave some performance
+on the table, with lower utilization than dense attention.
+Despite these challenges, sliding window and blocked
+attention have been successfully built into large language
+models [3, 10, 25], where block-sparsity and fine-grained
+masking are concerned with a single-dimensional token lay-
+out. This makes their implementation significantly simpler
+compared to applications such as images and videos, which
+step into 2-D and 3-D token layouts. As a direct result of
+this, implementations focused on multi-dimensional token
+layouts typically fall behind even further. One such example
+is Fused Neighborhood Attention (FNA) [19], which imple-
+ments multi-dimensional sliding window attention, but suf-
+fers a considerable performance gap due to overheads that
+worsen with higher dimensionality, namely software pred-
+ication and fine-grained masking. At the same time, FNA
+targets the NVIDIA Ampere architecture, which results in
+even larger gap compared to the state-of-the-art on newer
+architectures, such as Hopper. While some successful im-
+plementations of multi-dimensional local attention have re-
+cently appeared [54], they are not as flexible in terms of pat-
+tern and parameters, offering only fully block-sparse masks,
+and are tied to very specific use cases.
+Presently a variety of frameworks that provide linear
+algebra and tensor layout primitives exist, such as CuTe
+and CULTASS [41], Triton [42], and compilers specifically
+designed for block-sparse attention, such as Flex Atten-tion [14]. Despite the amount of impact this has had on
+the advancement of research, wildly different implemen-
+tations of different approaches make it increasingly diffi-
+cult to analyze the exact performance differences in these
+multi-dimensional sparse attention methods, and identify
+their root causes.
+To that end, we propose Generalized Neighborhood At-
+tention (GNA), an extension to Neighborhood Attention
+(NA) [21], itself a sliding window approach, which aims
+to unify many existing approaches under one definition.
+GNA can offer a tradeoff space between efficiency, and
+quality and inductive biases (i.e. translational equivari-
+ance). Approaches implementable with GNA can be clas-
+sified into sliding window [21, 33, 37], strided sliding win-
+dow [43, 54], and blocked [31, 43] attention. We revisit the
+problem of sliding window vs strided sliding window and
+blocked attention discussed in HaloNet [43], but with focus
+on speedup as opposed to memory operations. An illustra-
+tion of different GNA patterns is presented in Fig. 2.
+We further create a simulation tool, which can compute
+the upper-bound speedup achievable by any approach de-
+fined under GNA, under different use cases, and implemen-
+tation design choices. Through abstracting away implemen-
+tation details, and defining speedup with tile/block granu-
+larity as opposed to FLOP/FMA granularity, we can finally
+fairly compare these different approaches analytically.
+Finally, we implement GNA on top of CUTLASS’s
+attention kernel for the NVIDIA Blackwell architecture,
+which is one of the best-performing choices available to-
+day, and show that we can successfully realize up to 100%
+of the FLOP-wise efficiency in many GNA configurations.
+Although attention itself typically does not come close
+to standard GEMMs in terms of Speed-of-Light (SoL) per-
+formance1, given the negligible performance overhead of
+our implementation, we believe our methodology can be a
+recipe for sparse and local attention methods to finally catch
+up to the performance of standard FMHA implementations.
+We identify variants of GNA that can exhibit perfect
+speedup, and introduce both them, and standard Neighbor-
+hood Attention into generative and foundation models, such
+as Cosmos [1], HunyuanVideo [27], and Flux [28]. We
+show that using our Blackwell kernel, which we have di-
+rectly integrated into the NATTEN project, we can accel-
+erate these models without fine-tuning up to 63% end-to-
+end. Beyond improving and accelerating NATTEN , and
+supporting more sparse attention patterns, we hope to pro-
+vide a useful set of tools, such as our simulator, to help re-
+searchers find the most useful configurations for their mod-
+els, and easily ablate over a useful set of parameters, instead
+of being lost at the outrageously large parameter space that
+GNA has to offer. All of our work will be open-sourced.
+1https : / / docs . nvidia . com / nsight - compute /
+ProfilingGuide/index.html#roofline-charts
+2
+stride = 1 × 1
+(= Neighborhood Attention)
+stride = 2 × 2
+ stride = 3 × 3
+ stride = 6 × 6
+ stride = window size
+(= Blocked Attention)
+Query
+ Query Group
+ Context WindowFigure 2. Generalized Neighborhood Attention allows customizable “delay steps” in the sliding window pattern through the new stride
+parameter. Stride can take any positive integer value smaller than or equal to window size. Stride of 1 is equivalent to standard neighborhood
+attention. When stride is equal to window size, it is equivalent to blocked attention (a.k.a. Window Self Attention).
+2. Related Works
+Attention has been widely called out for being a com-
+putationally intensive operation, as a result of its quadratic
+complexity with respect to number of tokens. This has of-
+ten been one of the motivations behind research into sparse
+forms of attention. Dot-product attention, the most widely
+used form of attention, consists primarily of two matrix
+multiplications, which means it can enjoy many forms of
+sparsity which exist for matrix multiplies, such as structured
+sparsity [8], and low-rank approximations [7, 46]. Sparsity
+can also be introduced into attention by choosing coarser
+targets of sparsity, which is sometimes application-specific.
+For example, some approaches are designed specifically for
+introducing sparsity into LLM inference workloads, where
+KV caching is a necessity, and therefore calls for some form
+of sparsity or compression [4, 30, 40]. Approaches such as
+Token Merging [6] attempt to directly reduce the number
+of both query and context tokens together, and have been
+shown to be effective in certain vision tasks.
+Sparse Attention approaches can also be classified into
+static and dynamic approaches. Dynamic approaches [6,
+8, 38] can be more effective without further fine-tuning,
+whereas static approaches [5, 7, 9, 33, 37] are more likely to
+achieve better speedup [10,25,31]. Some approaches can be
+classified as hybrids [6, 48, 49], where statistics gathered at
+runtime guide re-layout of computation, and then use static
+methods such as block-sparsity [35]. Some may even use
+entirely dense computations [6, 31]. Some, such as Native
+Sparse Attention [52], combine multiple sparse approaches,
+both static and dynamic.
+In this paper, we specifically focus on static methods,
+where the target of sparsity is the attention weight matrix
+itself, and therefore the token coordinate space determines
+whether or not a region / weight is masked. Local atten-tion is the most prominent example, but variants of local
+attention where global context is introduced through non-
+contiguous context windows [5, 20] also fall into this cate-
+gory. The success of local approaches [11,16,23,26,29,31]
+can be attributed to the fact that they require little to no
+change to the Transformer [44] architecture, as well as spa-
+tial locality being a bias that exists in nature. Past [25] and
+recent [3, 10] large language models also adopt local meth-
+ods into their architecture in addition to standard self atten-
+tion.
+2.1. (Locally) Sparse Attention
+Over the years, many proposed introducing locality into
+attention, some for the inductive biases, some as a means
+to achieve subquadratic complexity, and some for both. In
+this section, we summarize these approaches into three cat-
+egories, which are described below.
+Sliding Window Attention. Some of the earliest works
+proposing this were Image Transformer [33] and Stand-
+Alone Self-Attention (SASA) [37], where they specifically
+designed a form of attention sharing some of the inductive
+biases present in convolution. The sliding window pattern
+itself is quite similar to, and sometimes inspired by, con-
+volution. However, they did not become widely adopted
+at first, particularly in vision, due to a lack of infrastruc-
+ture. Ramachandran et al. [37] stated that while their model
+achieved superior accuracy to a comparable CNN, it re-
+quired more resources and time to be trained. The same
+concept, but in a single-dimensional causal domain, was
+later used in language, in works such as Longformer [5],
+and extended to a “dilated” form, which can introduce
+global context with the same complexity as standard lo-
+cal attention. Years later, neighborhood attention (NA) [21]
+3
+revisited this concept for hierarchical vision transformers.
+The key difference between SASA and NA is in the han-
+dling of corner cases in the coordinate space. SASA em-
+ployed a zero-padded feature map, similar to padding in
+convolution. NA “reflects” the window back, so that every
+query is guaranteed to attend to a fixed number of context
+tokens, regardless of its position in the coordinate space and
+window size. This behavior also guarantees that NA numer-
+ically matches self attention when window size is equal to
+input size. Similar to Longformer, but again in the context
+of vision, a dilated form of NA was later introduced [20].
+The combination of standard and dilated NA in a hierarchi-
+cal vision transformer surpassed the original model in ac-
+curacy across various tasks [20, 45], without incurring any
+additional cost.
+Strided Sliding Window Attention. Also referred to as
+blocked local attention [43], this approach effectively in-
+troduces a delay step into sliding window attention. This
+was originally motivated by the fact that typical implemen-
+tations of sliding window attention [33, 37] required ex-
+plicit memory operations that extract sliding windows from
+context, which can quickly undo any savings in computa-
+tion, in addition to growing the memory footprint. This
+form of sliding window attention has an extreme case,
+called Blocked Attention, where stride is as large as the
+window size, which results in non-overlapping local win-
+dows. More recently, this approach was revisited in Sliding
+Tile Attention (STA) [54], where the objective was achiev-
+ing perfectly block-sparse masks as a means to minimize
+masked, and therefore wasted FLOPs in sliding window
+methods [21, 33, 37]. We will further clarify this approach
+in Sec. 2.3.
+Blocked Attention. This approach effectively partitions
+the query and context set, and performs self attention on
+each partition independently (and in parallel) to the rest. In
+addition to HaloNet [43], Window Self Attention (WSA)
+from Swin Transformer [31] is another instance of blocked
+attention. Blocked attention is easy to implement, and em-
+barrassingly parallel along blocks, but this comes at the cost
+of no cross-block interactions. This can be remedied by in-
+troducing global attention, or varying window (block) sizes
+across layers (Swin’s Shifted WSA), or introducing con-
+volution. This approach has been adopted in many vision
+models such as Segment Anything [26], and ViTDet [29].
+2.2. (Sparse) Attention Infrastructure
+Sliding window attention, specifically in the context of
+vision, was commonly considered inefficient [31, 43], but
+that was predicated on the assumption that any form of
+transformation to context tokens (keys and values) mustbe explicit in global memory. One of the key contribu-
+tions of Neighborhood Attention Transformer [21] was a set
+of naive CUDA kernels that simply computed the vector-
+matrix multiplication problem without such explicit copies
+in global memory. These kernels were packaged as a Py-
+Torch extension, called NATTEN . However, around the
+same time as the initial release, implementation of attention
+in general was about to undergo a massive change.
+Until 2022 [13, 36], most implementations of dot-
+product attention, especially those not tied to specific infer-
+ence use cases, were implemented with two matrix multipli-
+cations, with the softmax operator in between. In most deep
+learning frameworks, the former typically targets General
+Matrix-Matrix Multiplication (GEMM) routines in power-
+ful dense linear algebra packages, i.e. cuBLAS and CUT-
+LASS [41] for NVIDIA GPUs, and these routines typi-
+cally offer great performance, usually up to 80% of the
+peak FLOPs/second utilization. The issue with this ap-
+proach however is that the size of the intermediary matrix,
+the attention weight matrix, grows quadratically, resulting
+in a quadratic memory footprint, and by extension quadratic
+number of memory operations in both GEMMs. As a result,
+this implementation becomes heavily limited by memory
+bandwidth, which on most modern GPUs is orders of mag-
+nitude smaller than computation power (FLOPs/second).
+Flash Attention [13] showed that by fusing the two GEMMs
+and softmax into the same kernel, and utilizing online soft-
+max [24, 32], we can continuously accumulate context in
+SRAM without ever fully realizing the O(n2)weight ma-
+trix. This approach is also referred to as Fused Multi-
+headed Attention (FMHA). Flash Attention 2 [12] later im-
+proved upon the original, and is the state-of-the-art for the
+NVIDIA Ampere architecture. Flash Attention 3 [39] ex-
+tended the approach to the NVIDIA Hopper architecture by
+using the new programming model and hardware features
+through CuTe and CUTLASS [41].
+Due to the fact that self attention is the baseline for all
+sparse attention, and that baseline is improved significantly
+with FMHA, sparse attention approaches have had to follow
+suit. Mistral-7B [25] was one of the first models to use 1-
+D sliding window attention by directly implementing it as a
+block-sparse mask in state-of-the-art implementations, such
+as Flash Attention 2 [12]. More recently, language models
+such as Command A [10] have also adopted this approach,
+and use sliding window attention together with global self
+attention.
+However, implementations such as NATTEN faced ad-
+ditional challenges, due to the additional burden of dealing
+with multi-dimensional layouts of tokens, which makes ef-
+ficient block-sparsity for them non-trivial.
+4
+4x expected speedup1-D inputKernel view
+3x actual speedupUser experience
+4x expected speedup2-D input
+2x actual speedup
+Unmasked element
+Dense tileWasted FLOP due to fine-grained mask
+Wasted FLOP due to multi-dimensionalityFigure 3. Curse of multi-dimensionality : single-dimensional
+tiling opens up sparsity in multi-dimensional layouts of tokens
+to more wasted computation (FLOPs that are still computed but
+masked prior to softmax). While many fine-grained attention
+masks, even 1-D sliding window attention (top), can still have
+some FLOPs masked due to the fact that the vector-matrix mul-
+tiplies are packed into matrix-matrix multiplies, masked FLOPs
+due to multi-dimensionality can be much more significant (bot-
+tom). Note that the single-dimensional case is bi-directional and
+not causal for better comparison to the multi-dimensional case.
+2.3. Curse of Multi-Dimensionality
+Studies involving sparsity in attention weights have
+one key, and often undiscussed, difference between LLM-
+focused applications and vision applications, which is the
+multi-dimensional layout of visual data (images, videos).
+We consider this an additional burden, as design choices
+available for efficient implementations are limited, and of-
+ten with noticeable overhead. To illustrate this issue, we
+refer readers to Fig. 3. When considering for instance a
+2-dimensional layout of tokens (i.e. a feature map in an im-
+age model), if the FMHA implementation employs single-
+dimensional tiling over the typical layout of these tokens in
+memory, the potential for “wasted compute” increases, and
+according to the tile size.
+Fused Neighborhood Attention (FNA) [19] proposed
+solving this by employing multi-dimensional tiling which
+converts the GEMMs in the FMHA into an instance of ten-
+sor contractions. This implementation naturally improvednaive kernels in NATTEN by a significant margin, but it
+can also be greatly limited by the overhead of software pred-
+ication as a direct result of multi-dimensional tiling. While
+hardware predication, through components like NVIDIA’s
+Tensor Memory Accelerator (TMA)2, can likely minimize
+this overhead, they can also impact certain design choices
+critical to achieving optimal speedup, such as dynamic KV
+tiling.
+A more easily implementable alternative to multi-
+dimensional tiling is simulating the behavior through re-
+layout of tokens. One of the earliest demonstrations of this
+was in the implementation of FNA in Flex Attention [14]3.
+Flex Attention is a PyTorch API that evaluates user-defined
+attention masks, and compiles them into block-sparse Tri-
+ton kernels. This approach adds a non-avoidable overhead
+from the additional memory operations required for the re-
+layout. It also still requires some modification of the orig-
+inal attention kernel, but far fewer changes compared to
+fused multi-dimensional tiling. In the case of Flex Atten-
+tion, this can be handled by translating 1-D coordinates into
+coordinates in the new layout of tokens directly in the user-
+defined mask. Sliding Tile Attention (STA) [54] attempts to
+further minimize FLOPs wasted due to fine-grained mask-
+ing (see Fig. 3), and proposes defining neighborhood / slid-
+ing window attention on tiles / blocks instead of individ-
+ual tokens, with the tile / block size matching that of the
+underlying FMHA kernel. This closely resembles strided
+sliding window approaches such as HaloNet [43], but is
+instead motivated by computational density, and therefore
+speedup, instead of the cost of memory operations, which
+are non-existent with block-sparse FMHA kernels. STA’s
+implementation employs re-layout of tokens from Flex At-
+tention, instead of on-the-fly mutli-dimensional tiling, and
+successfully outperforms FNA given the same FLOP-wise
+sparsity. It is noteworthy that the implementation is specific
+to the Hopper architecture, whereas FNA targets Ampere
+tensor cores. Aside from this, the key limitation of STA
+is that like Blocked Attention, it assumes query and con-
+text tensors are always tiled according to the same tile size.
+This assumption is not guaranteed to hold in practice, and
+even if some implementations support it, there is no guar-
+antee that such configurations achieve optimal performance
+for the given use case.
+Given that there are many approaches to local sparse at-
+tention, and each with various design choices in their im-
+plementation, and the various properties and performance
+levels of different hardware architectures, we aim to dis-
+ambiguate their differences and similarities. To do so, we
+first unify them under a new framework, which we call
+“Generalized Neighborhood Attention ” (GNA). Under
+2https://docs.nvidia.com/cuda/hopper- tuning-
+guide/index.html#tensor-memory-accelerator
+3Dubbed “Tiled NATTEN”.
+5
+this framework, we create unified implementations for slid-
+ing window [33, 37] / neighborhood [21] attention, strided
+sliding window attention [43], blocked attention [31, 43],
+and approaches that fall in between, including special cases
+such as STA [54]. This includes extending NATTEN to
+support all of these methods.
+We further build an analytical tool, called
+NATTEN Sim, which computes a more fine-grained
+upper-bound speedup for these approaches under different
+implementation design choices. This is helpful for both
+optimizing speed or accuracy given an existing implemen-
+tation, as well as for investigating whether or not a new
+design choice / implementation is justified based on its
+implications on end-to-end speedup.
+Finally, we create a new FNA kernel for the Blackwell
+architecture inspired by the original FNA [19], and based
+on CUTLASS’s Blackwell FMHA kernel [41], and show
+that in many cases, we can completely match the analytical
+speedup, both with respect to FLOPs and with respect to
+NATTEN Sim.
+3. Methodology
+In this section, we define Generalized Neighborhood At-
+tention, which introduces a new dimension to the neigh-
+borhood attention family of static attention patterns, and is
+solely aimed at providing a tradeoff space between accuracy
+and translational equivariance, and efficiency. We then de-
+scribe design choices in implementations of such methods,
+which is one of our motivations for creating our analytical
+tool,NATTEN Sim. We describe how the simulator func-
+tions, and how it can be used to guide the process of select-
+ing parameters for GNA based on information about the use
+case, design choices, and even hardware-specific details.
+We finally move on to our implementation for the Black-
+well architecture, which was in part motivated by studies
+conducted with our analytical tool. This implementation is
+based on one of the best-performing FMHA kernels avail-
+able for the Blackwell architecture, and was done within the
+powerful CuTe and CUTLASS [41] framework.
+3.1. Generalized Neighborhood Attention
+Neighborhood Attention (NA) [21], and more generally,
+sliding window attention patterns are fine-grained masks
+that allow each query token to have a unique context win-
+dow of fixed size, which is determined based on its coor-
+dinate. The effect of this is similar to that of convolution,
+where a filter of a fixed size is applied to sliding window
+regions, and contracted to a single point in the output. The
+key difference between the approaches is that the filter in
+convolution is static and typically learned through gradient
+descent, whereas in sliding window attention, the “filter”
+is dynamic, and based on context. Previous works have
+extended NA to support dilated windows [20], mimickingdilation in convolution, as well as causal masking [19],
+which can be useful for video applications, where an atomic
+spatio-temporal attention mask may be required.
+In this work, we start with relaxing the definition of stan-
+dard NA to allow for even values for window size. NA was
+originally defined on odd values for window size, as the
+goal is for the query to be perfectly centered in its neighbor-
+hood. We do so by splitting window size into two: window
+size left, and window size right. In the standard definition of
+NA, both are equivalent to the floor of window size divided
+by two. In the case of even-sized windows, we can choose
+either side to be larger by 1. By default, we choose this to
+be the left side, meaning given window size 8, a non-corner
+token attends to 4 tokens on its left side, itself, and 3 tokens
+on its right side.
+We further add a fourth parameter to NA, which we call
+“stride ”, as it can be reminiscent of stride in convolution.
+As in convolution, stride adds a delay step to the sliding
+windows in NA, meaning a stride of 1 would be equiva-
+lent to standard NA, moving the sliding window for every
+query token, while a stride of 2 moves the sliding window
+for every two query tokens. Another way of viewing this
+is that stride groups queries together , and forces them to
+share the same neighborhood (context window). Queries in
+each group statically elect a leader query and attend to its
+neighborhood, as defined by standard NA. The choice of
+the leader, similar to window left and window right, can be
+user-defined, but the default choice in GNA is the center-
+most query in the group, for consistency with the original
+NA work. If the group is evenly-sized, it would be biased
+towards the right side4. Stride can take any positive integer
+value less than or equal to window size. Strides larger than
+window size introduce “holes” in attention, where some
+context tokens are never attended to, and are therefore dis-
+allowed. We present a visualization of different strides for
+a fixed window size in Fig. 2. Strided NA exhibits similar
+behavior as blocked local attention in HaloNet [43], with
+their “block size” parameter introducing the same delay step
+effect into sliding window attention [33, 37] as stride does
+in neighborhood attention [21]. Another interesting prop-
+erty in both is that when stride is equal to window size, the
+pattern will be equivalent to (fully) blocked attention, also
+known as Window Self Attention (WSA) [31]. In some
+cases, Strided NA can also implement STA [54], but we
+note this is only guaranteed when certain assumptions are
+made with respect to the underlying implementation. We
+will clarify this further in Secs. 3.2 and 3.3.
+Stride being a new key parameter in the NA family of
+sparse attention patterns is largely motivated by the fact
+thatsliding window attention cannot achieve speedup that
+4The reason for this choice is that query group leader being biased by
+one to the right can cancel out window size left being biased by one on the
+left in some cases, which can enable perfect block-sparsity.
+6
+34567891011Maximum Achievable Speedup
+stride = 1 x 1 x 13.3× speedupstride = 2 x 1 x 13.6× speedupstride = 1 x 1 x 85.5× speedupstride = 2 x 1 x 86.0× speedupstride = 1 x 8 x 89.1× speedupstride = 2 x 8 x 810.0× speedup stride = 16 x 8 x 811.1× speedupHunyuanVideo | 91% SparsityFigure 4. Sweep of different stride values and their analytical speedup according to NATTEN Sim, with a window size of 18 × 24 × 24
+(≈91% sparsity). The simulation assumes a Q tile shape of 4 × 8 × 8, and KV tile shape of 2 × 8 × 8, a combination supported by our
+Blackwell kernel. Standard neighborhood attention (stride 1) is limited by a 3.3× speedup, while some larger strides can improve upon
+that, and eventually cross 9× speedup with a stride of 8 × 8 across the spatial axes. With some larger strides along the temporal axis, it can
+reach perfect block-sparsity, and yield a speedup of 11.1×, which is equivalent to its FLOP-wise speedup.
+is perfectly proportional to its sparsity ratio . This is simply
+because sliding window attention is a vector-matrix multi-
+plication5problem commonly implemented with matrix-
+matrix multiplies (GEMMs) [19] and masking over dot
+products. Masking ensures correctness but at the same time
+it is wasting work (FLOPs) already done. On the other
+hand, stride forces queries in the same group to share their
+entire neighborhood, which aligns the boundaries of their
+windows together. This means stride can bridge the gap be-
+tween sliding window approaches [21, 33, 37], and blocked
+approaches [31, 43, 54]. The advantage of blocked ap-
+proaches is that given certain assumptions, they can mainly
+perform dense computation, and do not require fine-grained
+masking of attention weights, and by extension do not
+“waste” FLOPs. More specifically, any approach that is
+guaranteed to be perfectly block-sparse [35] by definition
+only involves dense computation, and can lead to speedups
+more proportional to savings in FLOPs. As a result, we
+aim to answer questions such as: how much work is ex-
+actly wasted, and do larger strides guarantee fewer wasted
+FLOPs. In order to do so, we created an analytical tool
+for simulating the behavior of common implementations for
+such methods, and use it to compute how many tilesof work
+is each combination saving.
+3.2. Analytical tool for GNA
+Stride extends an already vast parameter space. This,
+along with the different design choices and configura-
+tions in implementation, specifically that of FMHA kernels,
+makes it difficult to find useful parameters for end-users that
+5Generalized Matrix-Vector Multiply (GEMV) in BLAS.offer the best tradeoff. We therefore created an analytical
+tool called NATTEN Sim, which can shed light on exactly
+that.NATTEN Sim computes the number of context (KV)
+tiles visited by an implementation, taking into account vari-
+ous design choices such as dynamic vs static KV tiling, 1-D
+vs multi-dimensional tiling, and of course tile shapes for
+query (Q) and context (KV) tensors.
+Design choice: tile sizes. Among the most important con-
+figurations for any GEMM or GEMM-based kernel, tile
+sizes directly determine how the workload is divided up and
+scheduled among workers. In most FMHA kernels, which
+fuse together two GEMMs, they are forced to share most of
+their tile sizes, but with a permutation. In the first GEMM,
+query tensor (Q) is tiled along the query sequence mode
+with some tile size TQ, key tensor (K) is tiled along the
+context sequence mode with some tile size TK. The shared
+head dim mode, which is the contracting mode, is tiled by
+some tile size TD. In the second GEMM, the lefthandside
+operand is a tile of attention weights of shape TQ×TK,
+which means the righthandside operand, tile from value ten-
+sor (V), must match the tile size along the contracting di-
+mension, which is now the context sequence mode. There-
+fore, K and V take the same tile size, which we will hence-
+forth refer to as TKV. The head dim mode of V is also
+typically tiled by TD.
+Tile sizes TQandTKV therefore directly affect the
+number of FLOPs masked (wasted). Many factors can
+determine valid choices for these tile sizes, such as the
+amount of SRAM available, number of stages in the GEMM
+pipeline, layout transformations required for the operands,
+7
+and of course shapes of the underlying matrix multiply-and-
+accumulates (MMAs), or Tensor Core instruction shapes in
+the case of NVIDIA GPUs. With modern architectures such
+as Hopper and Blackwell, and in the case of GEMMs, there
+are many choices for tile sizes available, which exhibit dif-
+ferent performance levels on different problem shapes. One
+key limitation in works such as STA [54] is that the method-
+ology assumes TQis always equivalent to TKV, thus limit-
+ing the number of choices. This is while performant FMHA
+kernels are not guaranteed to always provide the same level
+of flexibility when it comes to picking tile sizes as in stan-
+dard dense GEMMs.
+Design choice: Single-dimensional vs multi-dimensional
+tiling. Most FMHA kernels assume a single-dimensional
+layout of tokens, which given attention’s permutation equiv-
+ariance is logical. This however creates a challenge for
+cases where tokens assume a multi-dimensional layout,
+such as visual models where tokens represent patches of
+pixels in images and videos. This opens up those appli-
+cations to more wasted FLOPs, as illustrated in Fig. 3. A
+natural fix is to tile in multiple dimensions and with re-
+spect to the original multi-dimensional layout, which essen-
+tially converts the GEMM problem into a tensor contraction
+(GETT6). This solution was employed by FNA [19], where
+TQandTKVin the base FMHA kernel were re-interpreted
+as multi-dimensional tiles (i.e. TQ= 64→TQ= 8×8).
+One downside to this is that this can introduce a significant
+overhead due to additional software predication logic, and
+given that the kernel was designed for the Ampere architec-
+ture, hardware predication was not an option. A practical
+solution to this is taking multi-dimensional tiling out of the
+kernel and instead implementing it as a re-layout operation.
+This solution was employed by Flex Attention [14] in their
+implementation of multi-dimensional NA masks (referred
+to as “Tiled NATTEN”). The only potential downside to
+this approach is the unavoidable fixed cost of memory op-
+erations, which is independent of the level of sparsity, and
+only a function of the size of the Q, K, V , and output ten-
+sors. We dub this approach token permutation , as it is
+mainly comprised of a re-layout of the token space, and is
+agnostic to batch, heads, and head dim.
+Design choice: KV tiling. Tiling is typically static, and in
+many block-sparse FMHA kernels, static KV tiles are either
+visited, or skipped, according to the mask definition. How-
+ever, some implementations, such as FNA [19], first slice
+out the region in the KV token space that would be required
+to be visited, and dynamically tile the region. This can save
+some additional computation, and result in minimal wasted
+FLOPs possible. On the other hand, this approach is not
+6Generalized Tensor-Tensor Contraction (GETT).always realizable, especially in designs that rely on hard-
+ware predication. For instance, the Hopper Tensor Memory
+Accelerator (TMA) requires determining the parameters of
+tiled copies (tensor maps) prior to kernel launch. While on-
+the-fly modification/replacement of tensor maps is possible,
+it is not without overhead.
+Use cases. Problem shape (layout of tokens), window
+size, dilation, stride, and causal masking are all user-
+specified, and play a role in determining computational sav-
+ings in terms of tiles.
+Tiling simulation. NATTEN Sim’s primary goal is to
+simulate how a given use case is tiled according to design
+choices in the implementation. Through basic operations
+on coordinates, and by using an exact definition of the core
+GNA mask, NATTEN Sim computes the coordinates of
+each KV tile visited by each Q tile. If we consider the
+worst case of all Q tiles (maximum number of KV tiles), we
+can compute a more realistic and fine-grained upper bound
+speedup than FLOP-wise speedup, with respect to self at-
+tention for each use case. For instance, a perfectly blocks-
+sparse mask and sliding window attention mask with 90%
+sparsity both have a FLOP-wise upper-bound speedup of
+10× (1
+1−90%), but the latter never get away with performing
+exactly1
+10of the FLOPs unless implemented as a vector-
+matrix multiplication.
+WithNATTEN Sim, we can achieve the following:
+1. Compare different design choices, and pick the one
+best trading off implementation difficulty and speedup.
+2. Find perfectly block-sparse cases, where no fine-
+grained masking is required, and simulated speedup
+matches FLOP-wise speedup, as illustrated in Fig. 4.
+Under dynamic KV tiling, any setting in which TKV
+evenly divides window size, and TQevenly divides
+stride achieves this. Under static KV tiling, it is less
+straightforward, and some simulation may be required
+to find those points.
+3. Predict end-to-end speedup upper bounds for any
+given model under a specific set of parameters and de-
+sign choices.
+3.3. Implementation for the Blackwell architecture
+We start off with the CUTLASS FMHA kernel for
+Blackwell [41], which can achieve up to 1.2 petaFLOPs/s
+with FP16 and up to 1.7 petaFLOPs/s with FP8 precision
+(w/ per-tensor scaling). While our implementation specif-
+ically focuses on the Blackwell architecture, the design
+choices in the implementation are primarily architecture-
+agnostic. This implementation closely follows the origi-
+nal FNA kernel [19], with the exception of taking multi-
+dimensional tiling outside the kernel, and instead relying
+8
+1x1x1 1x8x1 1x1x16 1x8x163456789FLOP-wise speedup @ 89% sparsity
+3X3.2X3.8X5.5X
+3.8X4.1X5.3X9.2X
+5.2X6.1X7.9X9.2X
+StrideSpeedupCosmos-7B (Attention only) | 89% sparsity
+Actual Actual excluding memory ops Analytical ( NASim)(a)Cosmos-7B use case with 89% sparse GNA (window size 16 × 24 × 16).
+1x1 16x1 16x1645678910FLOP-wise speedup @ 90% sparsity
+4X4.8X6.7X
+5X6.3X10.2X
+6.1X8.5X10.2X
+StrideSpeedupFlux.1-dev (4K) (Attention only) | 90% sparsity
+Actual Actual excluding memory ops Analytical ( NASim) (b)FLUX.1-dev (4K) use case with 90% sparse GNA (window size 80 × 80).
+1x1x1 2x1x1 1x1x8 2x1x8 1x8x8 2x8x8 16x8x8246810FLOP-wise speedup @ 91% sparsity
+2.8X 2.9X3.9X4.1X5X 5.1X7.4X
+3.2X 3.3X4.7X 4.8X6.2X6.4X10.7X
+3.3X3.6X5.5X6X9.1X10X11.1X
+StrideSpeedupHunyuanVideo (Attention only) | 91% sparsity
+Actual Actual excluding memory ops Analytical ( NASim)
+(c)HunyuanVideo use case with 91% sparse GNA (window size 18 × 24 × 24).
+Figure 5. Operation-level (attention only) speedups on Cosmos, FLUX, and HunyuanVideo with ≈90% sparsity through GNA. Analytical
+speedup is according to NATTEN Sim, and actual speedups are measured by running on B200. Note that with the perfectly block-sparse
+strides, our kernel can come very close to or fully match the full the analytical speedup, but is limited by the naive implementation of the
+the memory operation (token permute).
+on token permutation. This also forces static KV tiling in-
+stead of dynamic KV tiling in the original FNA. We chose
+this design for the following reasons:
+1. If using the TMA for data movement, static KV tiling
+is the only choice.
+2. Fusing multi-dimensional tiling into existing FMHA
+kernels can break too many assumptions made with
+respect to the sequence mode, even with CuTe facil-
+itating layout transformations and interfacing with theTMA.
+3. We are not leaving much performance on the table, as
+long as we are not limited by the memory transfer time
+from token permutation and reverse permutation. For
+example, considering use cases from Cosmos-7B [1]
+and HunyuanVideo [27], this would be only 6.9 and
+10.5GB respectively. If we utilize even half of the
+8TB/s HBM bandwidth of a single B200, this would
+be 1.9% and 1% of the FMHA time, which would only
+limit very large levels of sparsity.
+9
+4. In many cases, token permutation and reverse permu-
+tation can be done only once: permute before the first
+transformer layer, and reverse after the last layer. Most
+transformer architectures are equivariant to permuta-
+tion, and this holds true for both ViT [15] and DiT [34],
+which are prominent in vision.
+5. Fusing additional context tokens is trivial with token
+permutation. Certain models, such as Hunyuan [27]
+and Flux [28] cross attend visual tokens with text to-
+kens. NATTEN has usually supported those sce-
+narios by launching an additional FMHA kernel, and
+“merging” the two outputs using their logsumexp.
+However, we implement this feature within the same
+kernel, allowing some KV tokens to take a completely
+different layout and mask.
+Since we implement multi-dimensional tiling, spatial lo-
+cality allows us to define visited KV tiles as the range be-
+tween the last KV tile coordinate required by the last query
+in the Q tile, and the first KV tile coordinate required by the
+first query in the Q tile. Most of the kernel remains agnostic
+to the multi-dimensional tiling, and only the producer and
+softmax warps take this into account. Producer warp sim-
+ply maps iteration index to the multi-dimensional tile coor-
+dinate, and then to the static 1-D tile index, which directly
+interfaces with the indexing of TMA loads through CuTe.
+Softmax warp(s) likewise have to map the 1-D Q and KV
+coordinates back into the original multi-dimensional coor-
+dinates, and apply the fine-grained GNA mask. However,
+given the overhead of masking, we also implement predi-
+cates for perfectly block-sparse cases, and for any additional
+KV tokens, which can in some cases completely eliminate
+our implementation overhead.
+In the current iteration, we implement token permuta-
+tion as a copy operation through PyTorch directly. Problem
+shapes that are not evenly divisible are manually padded,
+output tensor is cropped after reverse token permutation,
+and kernel handles predication for KV padding. In future
+versions, we hope to also improve upon token permuta-
+tion, as the current solution typically utilizes approximately
+1/8th of the memory bandwidth. The kernel and the ad-
+ditional memory operations, and potential padding, is di-
+rectly integrated into NATTEN , and exposed via the typi-
+calna{1,2,3}d API.
+4. Experiments
+In order to evaluate GNA’s applicability and perfor-
+mance, we carefully selected applications with multi-
+dimensional layouts of tokens that are suitable for sparse
+attention. Our primary criterion for choosing applications
+is whether or not at least 40% of their end-to-end workload
+is self attention specifically. Our final candidates are Cos-
+mos [1] (World Foundation Model), HunyuanVideo [27]Use case % SA in % DiT in % SA in
+DiT E2E workload E2E workload
+Cosmos-7B 58.7% >99% 58.7%
+HunyuanVideo 65.4% 92.8% 60.7%
+FLUX.1-dev (4K) 56.8% 91.2% 51.8%
+Table 1. Workload distribution with respect to self attention in
+Cosmos-7B, HunyuanVideo, and FLUX.1-dev. Measurements
+were done on a single B200 and without any additional perfor-
+mance optimizations, and using the original FP16/BF16 precision.
+Window Stride # SA E2E Speedup ↑
+Size Steps Analytical Actual
+FLOP-wise NASim
+56% sparsity
+16 × 32 × 48 1 × 1 × 1 0 1.50× 1.35× 1.18×
+16 × 32 × 48 1 × 8 × 1 0 1.50× 1.42× 1.20×
+16 × 32 × 48 1 × 1 × 16 0 1.50× 1.42× 1.21×
+16 × 32 × 48 1 × 8 × 16 0 1.50× 1.50× 1.46×
+16 × 32 × 48 1 × 1 × 1 12 1.28× 1.21× 1.11×
+16 × 32 × 48 1 × 8 × 1 12 1.28× 1.24× 1.12×
+16 × 32 × 48 1 × 1 × 16 12 1.28× 1.24× 1.13×
+16 × 32 × 48 1 × 8 × 16 12 1.28× 1.28× 1.26×
+89% sparsity
+16 × 24 × 16 1 × 1 × 1 0 2.10× 1.90× 1.76×
+16 × 24 × 16 1 × 8 × 1 0 2.10× 1.96× 1.79×
+16 × 24 × 16 1 × 1 × 16 0 2.10× 2.05× 1.88×
+16 × 24 × 16 1 × 8 × 16 0 2.10× 2.10× 2.05×
+16 × 24 × 16 1 × 1 × 1 12 1.52× 1.45× 1.40×
+16 × 24 × 16 1 × 8 × 1 12 1.52× 1.48× 1.40×
+16 × 24 × 16 1 × 1 × 16 12 1.52× 1.51× 1.44×
+16 × 24 × 16 1 × 8 × 16 12 1.52× 1.52× 1.50×
+Table 2. Cosmos-7B end-to-end speedups from GNA under differ-
+ent sparsity levels and strides. We report both analytical speedups
+based on NATTEN Sim, as well as actual speedups on B200.
+We also report two settings: one with all diffusion steps done with
+GNA, and the other with the first 12 steps done with self attention.
+The former can be more representative of cases where the model
+can be fine-tuned with GNA, while the latter is more applicable
+for off-the-shelf applications.
+(video generation), and FLUX [28] (image generation). We
+additionally note that FLUX only meets the criterion when
+generating resolutions higher than 2K. We present the work-
+load distribution for those models in Tab. 1.
+4.1. GNA Performance
+We first consider cases under which these applications
+introduce roughly 90% of sparsity into attention, and run
+their problem shapes through NATTEN Sim, sweeping
+over all possible stride values. For each use case, we
+selected Q and KV tile shapes ( TQandTKV) according
+to the shape of the token layout (feature map size). We
+chose window sizes that are evenly divisible by the KV tile
+shape ( TKV), as this can result in perfectly block-sparse
+forms of GNA, which waste no FLOPs and can potentially
+10
+Window Stride # SA E2E Speedup ↑
+Size Steps Analytical Actual
+FLOP-wise NASim
+58% sparsity
+30 × 40 × 40 1 × 1 × 1 0 1.55× 1.21× 1.15×
+30 × 40 × 40 1 × 1 × 8 0 1.55× 1.44× 1.26×
+30 × 40 × 40 1 × 32 × 8 0 1.55× 1.55× 1.53×
+30 × 40 × 40 1 × 1 × 1 15 1.33× 1.14× 1.08×
+30 × 40 × 40 1 × 1 × 8 15 1.33× 1.27× 1.15×
+30 × 40 × 40 1 × 32 × 8 15 1.33× 1.33× 1.30×
+91% sparsity
+18 × 24 × 24 1 × 1 × 1 0 2.23× 1.73× 1.73×
+18 × 24 × 24 2 × 1 × 1 0 2.23× 1.78× 1.77×
+18 × 24 × 24 1 × 1 × 8 0 2.23× 1.99× 1.95×
+18 × 24 × 24 2 × 1 × 8 0 2.23× 2.02× 1.98×
+18 × 24 × 24 1 × 8 × 8 0 2.23× 2.17× 2.09×
+18 × 24 × 24 2 × 8 × 8 0 2.23× 2.20× 2.11×
+18 × 24 × 24 16 × 8 × 8 0 2.23× 2.23× 2.23×
+18 × 24 × 24 1 × 1 × 1 15 1.63× 1.42× 1.42×
+18 × 24 × 24 2 × 1 × 1 15 1.63× 1.44× 1.44×
+18 × 24 × 24 1 × 1 × 8 15 1.63× 1.53× 1.51×
+18 × 24 × 24 2 × 1 × 8 15 1.63× 1.55× 1.54×
+18 × 24 × 24 1 × 8 × 8 15 1.63× 1.61× 1.58×
+18 × 24 × 24 2 × 8 × 8 15 1.63× 1.62× 1.59×
+18 × 24 × 24 16 × 8 × 8 15 1.63× 1.63× 1.63×
+Table 3. HunyuanVideo end-to-end speedups from GNA under
+different sparsity levels and strides. We report both analytical
+speedups based on NATTEN Sim, as well as actual speedups on
+B200. We also report two settings: one with all diffusion steps
+done with GNA, and the other with the first 15 steps done with self
+attention. The former can be more representative of cases where
+the model can be fine-tuned with GNA, while the latter is more
+applicable for off-the-shelf applications.
+achieve perfect speedup. A similar observation was made in
+STA [54], with the exception that STA does not differentiate
+between TQandTKV, and that their step size parameter is
+fixed.
+In addition, we prune the results of the simulator ac-
+cording to a simple but useful filter. We use the product
+of stride values as a measure for grouping different strides,
+and eliminate any configuration in which larger strides do
+not improve performance compared to smaller strides. For
+instance, if any case with stride >1 achieves worse ana-
+lytical speedup over NA itself (stride 1), we do not report
+it. This is especially helpful, since larger strides trade off
+translational equivariance and potentially quality for poten-
+tially better performance, and if the latter is not realized un-
+der some setting, that configuration is unlikely to have any
+advantage over others.
+We present one instance of results obtained through
+NATTEN Sim in Fig. 4, which is on the HunyuanVideo
+use case with approximately 90% sparsity. Unlike most
+others, in this particular use case we have many choices
+with varying upper-bound speedups, any of which may offer
+the best accuracy-efficiency trade-off if further fine-tunedWindow Stride # SA E2E Speedup ↑
+Size Steps Analytical Actual
+FLOP-wise NASim
+80 × 80 1 × 1 0 1.88× 1.76× 1.65×
+80 × 80 16 × 1 0 1.88× 1.84× 1.72×
+80 × 80 16 × 16 0 1.88× 1.88× 1.82×
+80 × 80 1 × 1 9 1.46× 1.42× 1.37×
+80 × 80 16 × 1 9 1.46× 1.45× 1.40×
+80 × 80 16 × 16 9 1.46× 1.46× 1.45×
+Table 4. FLUX-1.dev with URAE [51] end-to-end speedups from
+GNA under different strides. We report both analytical speedups
+based on NATTEN Sim, as well as actual speedups on B200.
+We also report two settings: one with all diffusion steps done with
+GNA, and the other with the first 9 steps done with self attention.
+The former can be more representative of cases where the model
+can be fine-tuned with GNA, while the latter is more applicable
+for off-the-shelf applications.
+or trained with. We also report the actual performance of
+our Blackwell kernel on the three models with 90% spar-
+sity, and compare against the analytical upper bound re-
+ported by NATTEN Sim in Fig. 5. Two observations can
+immediately be made: 1. In perfectly block-sparse cases,
+our kernel either fully or almost fully realizes the analyti-
+cal speedup, which is also the FLOP-wise speedup (maxi-
+mum achievable). This comes at no surprise, since the use
+of the fine-grained masking in the softmax stage is condi-
+tioned on whether or not it is required. 2. In the case of
+Hunyuan, even the standard Neighborhood Attention comes
+very close to realizing its full analytical speedup. However,
+the cost of fine-grained masking can still bear some non-
+negligible overhead in cases that are not perfectly block-
+sparse.
+We report end-to-end measures of speedup in Tabs. 2 to 4.
+In addition, we present qualitative results, as well as some
+quantitative benchmarks on these use cases in the next two
+subsections.
+4.2. Video Generation
+We conduct experiments on the aforementioned video
+generation models: Cosmos-7B [1] and Hunyuan-
+Video [27]. Both use an isotropic Transformer architecture
+(DiT [34] and MMDiT [17] respectively) with full self at-
+tention. In both cases, we generate 5 seconds of video at
+720p. In the case of Cosmos-7B, the token layout (DiT fea-
+ture map shape) is 16 × 44 × 80, for which we use GNA
+with a window size of 16 × 32 × 48, which is approximately
+56.4% sparsity. We found that going beyond this level
+of sparsity without further training/fine-tuning we cannot
+maintain visual quality. We tried both the best-performing
+GNA configuration (stride 1 × 8 × 16), and standard NA
+(stride 1 × 1 × 1). Since the initial diffusion steps have
+11
+Method Window Size Stride Attention VBench Runtime ↓ End-to-End Speedup ↑
+Sparsity Total↑Quality ↑Semantic ↑ on B200 Analytical Actual
+(seconds) FLOP-wise NASim
+SA(baseline) - - 0.0% 83.08% 85.01% 75.35% 628
+As reported in STA [54]
+Tiled NATTEN (= NA) 30 × 41 × 41 - 58.3% 82.69% 84.61% 75.00% - 1.55× - -
+Swin (= WSA) 30 × 40 × 40 - 58.3% 77.53% 78.84% 72.28% - 1.55× - -
+STA 30 × 40 × 40 - 58.3% 82.46% 84.63% 73.83% - 1.55× - -
+STA 18 × 24 × 24 - 91.0% 80.58% 81.47% 77.03% - 2.23× - -
+STA w/ training 18 × 24 × 24 - 91.0% 82.62% 84.76% 74.05% - 2.23× - -
+Ours
+GNA (= NA) 30 × 40 × 40 1 × 1 × 1 58.3% 83.24% 84.70% 77.42% 546 1.55× 1.21× 1.15×
+GNA (= WSA) 30 × 40 × 40 30 × 40 × 40 58.3% 82.25% 83.11% 78.83% 491 1.55× 1.44× 1.28×
+GNA 30 × 40 × 40 1 × 32 × 8 58.3% 83.40% 84.77% 77.92% 411 1.55× 1.55× 1.53×
+GNA (= NA) 18 × 24 × 24 1 × 1 × 1 91.0% 82.36% 83.03% 79.68% 359 2.23× 1.73× 1.73×
+GNA (= WSA) 18 × 24 × 24 18 × 24 × 24 91.0% 80.25% 80.97% 77.38% 314 2.23× 2.06× 2.00×
+GNA 18 × 24 × 24 16 × 8 × 8 91.0% 82.04% 82.62% 79.69% 277 2.23× 2.23× 2.23×
+Table 5. HunyuanVideo VBench performance across different GNA configurations. Following STA [54], these configurations do not have
+any self attention steps. We do not report model FLOPs, as it is a poor measure of efficiency, and instead report two analytical speedups:
+one based on FLOPs, which would be the same across methods for any given attention sparsity, and another based on NATTEN Sim. We
+also report actual speedup based on GNA runtimes, which use our Blackwell FNA kernel. However, note that the above runtimes can vary
+±3.5%. We do not report end-to-end speedups from STA, as our study was done on the Blackwell architecture, and STA’s implementation
+was specific to the Hopper architecture, and the difference in workload distribution would skew the comparison. We further note it is not
+possible to run kernels that target Hopper Tensor Cores on any architecture other than Hopper. In addition, STA’s step size of 6 × 8 × 8
+by definition requires tile size 384 for both Q and KV , which is not implementable with the current Blackwell FMHA, and therefore our
+implementation. We finally point out that with a speedup of approximately 2.23× in the 91% sparsity case, GNA achieves the maximum
+speedup theoretically possible for this exact level of sparsity (with respect to reduction in FLOPs).
+a significant impact on the overall structure of the gener-
+ated video, we retain self attention for the first 12 diffusion
+steps and use GNA for the remaining 23 diffusion steps. Be-
+cause of this, GNA’s share of the end-to-end workload de-
+creases to approximately 39%, which in turn further limits
+achievable end-to-end speedup to approximately 1.64×. We
+present sample frames from some of the generated videos
+in Fig. 6, where we observe GNA can produce videos of
+comparable quality to that of the self attention baseline.
+In HunyuanVideo, the token layout (MMDiT feature
+map shape) is 30 × 48 × 80 for which we use GNA with
+a window size of 18 × 24 × 24, which is approximately
+91% sparsity, and a stride of 16 × 8 × 8. Similar to Cos-
+mos, we retain self attention for some of the initial diffu-
+sion steps, which in this case we set to 15, and run GNA
+for the remaining 35 steps. This decreases GNA’s share of
+the end-to-end workload to approximately 42%, which in
+turn limits achievable end-to-end speedup to approximately
+1.72×. We again try both the best-performing GNA config-
+uration (stride 16 × 8 × 8), and standard NA (stride 1 × 1 ×
+1). We present sample frames from output videos in Fig. 7.
+We additionally evaluate GNA with HunyuanVideo on
+VBench [22]. In this case, we follow STA [54] by apply-
+ing sparsity to all 50 steps. However, we only report results
+without any additional training or fine tuning. In Tab. 5,
+NA and GNA with 58.3% sparsity achieve VBench scores
+of 83.24% and 83.40% respectively, both of which are com-parable to the self attention baseline at 83.08%. However,
+they can only achieve end-to-end speedups of 1.11× and
+1.23× respectively. When using higher sparsity of 91%,
+the VBench score drops moderately to 82.36% and 82.04%,
+but with more significant end-to-end speedups of 1.73× and
+2.27× respectively.
+4.3. Image Generation
+We conduct our experiments with image generation on
+FLUX-1.dev, which similar to the video models uses an
+isotropic Transformer architecture (MMDiT [17]) with full
+self attention. We only study generating 4K images, which
+result in 256 × 256 feature maps, as smaller resolution
+workloads aren’t as limited by the cost of self attention. For
+generating 4K images, we use adapters from URAE [51],
+as FLUX-1.dev does not natively support 4K image genera-
+tion. We experiment with a window size of 80 × 80 (90.2%
+sparsity), and strides 1 × 1, 16 × 1, 16 × 16, which were
+the optimal choices from NATTEN Sim. Stride 1 × 1 is
+standard neighborhood attention, and stride 16 × 16 is per-
+fectly block-sparse, which can realize the full 10.2× ana-
+lytical op-level speedup. For preserving quality and global
+structure, we follow our video generation experiments, in
+which we retain self attention in the first few diffusion steps,
+which in this case we set to the first 9 out of the 28 diffu-
+sion steps. This shrinks the share of GNA in the end-to-
+end workload to approximately 35%, and by extension the
+12
+HPD↑ GenEval ↑ Runtime E2E Speedup ↑
+Configuration MAN-IQA QualiCLIP Overall Single Two Counting Colors Position Color on B200 ↓ Analytical Actual
+Object Objects Attr. (seconds) FLOP-wise NASim
+SA(baseline) 0.3718 0.4235 0.5750 0.9594 0.6313 0.5500 0.7793 0.1450 0.3850 129
+GNA with window size = 80 × 80 (90% sparsity)
+s=1 × 1 0.3467 0.4243 0.5743 0.9500 0.6742 0.5031 0.7686 0.1500 0.4000 94 1.46× 1.42× 1.37×
+s=16 × 1 0.3467 0.4243 0.5742 0.9625 0.6607 0.4873 0.7739 0.1480 0.4125 92 1.46× 1.45× 1.40×
+s=16 × 16 0.3462 0.4247 0.5785 0.9656 0.6717 0.4969 0.7819 0.1400 0.4150 89 1.46× 1.46× 1.45×
+Table 6. 4K image generation results from FLUX-1.dev [28, 51] on MAN-IQA [50], QualiCLIP [2], and GenEval [18]. All GNA
+configurations retain self attention in the first 9 (out of 28) diffiusion steps, and use window size 80 × 80, which is approximately 90%
+sparsity. Similar to Tab. 5, we report generation runtime on the B200, and two measures for expected speedup: one based on reduction in
+FLOPs, and the other based on NATTEN Sim. We also report actual speedup based on GNA runtimes, which use our Blackwell FNA
+kernel.
+upper-bound end-to-end improvement to 1.46×. However,
+we successfully realize almost all of that with a speedup of
+1.45× over the self attention baseline. In terms of quality,
+we observe very few notable differences when using GNA,
+even with a high stride of 16 × 16, as illustrated in Fig. 8.
+We also present some quantitative metrics for these configu-
+rations. Following URAE [51], we evaluate them on MAN-
+IQA [50] and QualiCLIP [2] by generating images with
+prompts from the HPDv2 [47] test dataset. We addition-
+ally evaluate text-to-image alignment using GenEval [18],
+which is an object-focused evaluation benchmark. This
+benchmark is comprised of various categories, each respon-
+sible for measuring a different compositional property, such
+as color, positioning, attribute binding, object count, and
+the like. We report the results of all three benchmarks in
+Tab. 6. In summary, we observe FLUX-1.dev with GNA to
+be on par with the self attention baseline in terms of quality,
+while offering up to 45% end-to-end speedup on the B200.
+5. Conclusion
+Sliding window and blocked attention are two extremes
+of locality-focused sparse attention methods, with the for-
+mer enjoying inductive biases such as translational equivari-
+ance [21,33,37,43] and arguably potential for higher quality
+and expressiveness, and the latter potentially more efficient
+and trivial to implement.
+In this paper, we extend the neighborhood attention fam-
+ily of patterns, which were already flexible in terms of
+choice for window size, dilation, and causal masking, and
+add a new “stride” parameter. Just as in convolution, this
+parameter adds a delay step to the sliding window effect, al-
+lowing it to implement many existing sparse attention meth-
+ods. Those include, but are not limited to, blocked local
+attention [43], blocked / window self attention [31], and
+sliding tile attention [54], in addition to the existing sliding
+window [33, 37] and neighborhood attention [21] methods.
+While the concept of a delay step in sliding window atten-
+tion is by no means new [43], we revisit it for a different
+reason compared to the original work. While Vaswani etal. [43] were concerned with the cost of explicit memory
+operations, the focus of this work is maximizing speedup
+from these methods to the point of being proportional to the
+level of sparsity (i.e. 10× speedup from 90% sparsity).
+We created an analytical model for GNA, called
+NATTEN Sim, which can simulate tiling behavior under
+various design choices, and compute the number of KV tiles
+visited per query tile, through which we compute more reli-
+able upper-bound speedups for different configurations un-
+der GNA. These measures help quantitatively compare the
+upper-bound performance of different approaches without
+being biased by differences in implementation. In addition,
+we find that many GNA configurations exist that are per-
+fectly block-sparse, under which speedup proportional to
+FLOPs is possible, and they do not necessarily fit the defi-
+nition of either blocked attention or sliding tile attention.
+We further implement GNA on top of CUTLASS FMHA
+for the Blackwell architecture, which can achieve an ef-
+fective 1.2 petaFLOPs/s with FP16 and 1.7 petaFLOPs/s
+with FP8, and show that specifically in the case of perfectly
+block-sparse configurations it can fully realize the analyt-
+ical speedup computed by NATTEN Sim. We also high-
+light 3 potential applications for GNA, all of which we con-
+firm spend the majority of their workload on self attention,
+and report end-to-end speedups close to or matching the ex-
+pected FLOP-wise speedup. On Cosmos-7B [1] and with
+56% sparsity introduced into 23 of 35 diffusion steps, we
+achieve a speedup of 1.26×, with FLOP-wise speedup be-
+ing 1.28×. On HunyuanVideo [27], and with 91% sparsity
+introduced into 35 of 50 diffusion steps, we fully realize the
+FLOP-wise speedup of 1.63×. On FLUX-1.dev [28], and
+with 90% sparsity introduced into 19 of 28 diffusion steps,
+we achieve a speedup of 1.45×, with FLOP-wise speedup
+being 1.46×. All three of the aforementioned configurations
+can still produce visually acceptable outputs, without any
+further training or fine-tuning.
+We hope that Generalized Neighborhood Attention can
+serve as a recipe for Speed-of-Light local attention beyond
+the use cases and hardware studied in this paper.
+13
+6. Future work
+Our new implementation can be further optimized by
+predicating fine-grained masking further in the event that
+fully dense tiles exist in settings that are not perfectly block-
+sparse. Since multi-dimensional tiling preserves spatial lo-
+cality, if the intersection between the neighborhoods of the
+first and last query in the Q tile spans entire KV tiles, fine-
+grained masking can be skipped. Our current implementa-
+tion does this for perfectly block-sparse configurations. In
+addition to this, it is possible to performance-optimize the
+fine-grained mask logic itself. These optimizations can fur-
+ther close the gap between the analytical speedup expected,
+and the actual speedup achieved in cases that are only par-
+tially block-sparse, or not at all.
+Token permutation and reverse permutation are also im-
+plemented naively with PyTorch, and barely utilize 1/8th of
+the B200’s peak memory bandwidth, and can be further op-
+timized with specialized copy kernels and activation mem-
+ory management. However, as noted earlier in the paper,
+the number of calls to these operations can be greatly re-
+duced in certain architectures, and with certain assumptions
+(i.e. isotropic Transformer architecture, and no dilation in
+GNA).
+Other extensions can include transferring this design to
+other SOTA implementations for earlier architectures (i.e.
+Flash Attention 3 [39] for Hopper and Flash Attention
+2 [12] for Ampere).
+Acknowledgments
+We thank Alexander Kranias and Kai Wang for their
+feedback on this paper.
+A.H. thanks Thomas M. Conte for inspiring some of the
+ideas in this project.
+14
+GNA(s=1x8x16)1.26xspeedupGNA(s=1x1x1)1.11xspeedupSelf AttentionBaseline
+GNA(s=1x8x16)1.26xspeedupGNA(s=1x1x1)1.11xspeedupSelf AttentionBaseline
+GNA(s=1x8x16)1.26xspeedupGNA(s=1x1x1)1.11xspeedupSelf AttentionBaseline
+GNA(s=1x8x16)1.26xspeedupGNA(s=1x1x1)1.11xspeedupSelf AttentionBaselineFigure 6. Sample frames from videos generated by Cosmos-7B, with GNA introduced into the last 23 of the 35 diffusion steps. Window
+size is 16 × 32 × 48 ( ≈56% sparsity). Speedup limit under this setting, with the same level of sparsity, is 1.28×.
+15
+GNA(s=16x8x8)1.63xspeedupGNA(s=1x1x1)1.42xspeedupSelf AttentionBaseline
+GNA(s=16x8x8)1.63xspeedupGNA(s=1x1x1)1.42xspeedupSelf AttentionBaseline
+GNA(s=16x8x8)1.63xspeedupGNA(s=1x1x1)1.42xspeedupSelf AttentionBaselineFigure 7. Sample frames from videos generated by HunyuanVideo, with GNA introduced into the last 35 of the 50 diffusion steps. Window
+size is 18 × 24 × 24 ( ≈91% sparsity). Speedup limit under this setting, with the same level of sparsity, is 1.63×.
+16
+Self AttentionBaselineGNA (s=1x1)1.37x speedupGNA (s=16x16)1.45x speedupFigure 8. Images generated by ultra-resolution FLUX [28, 51] with GNA introduced into the last 19 of the 28 diffusion steps. Window
+size is 80 × 80 ( ≈90% sparsity). Speedup limit under this setting, with the same level of sparsity, is 1.46×.
+17
+References
+[1] Niket Agarwal, Arslan Ali, Maciej Bala, Yogesh Balaji,
+Erik Barker, Tiffany Cai, Prithvijit Chattopadhyay, Yongxin
+Chen, Yin Cui, Yifan Ding, et al. Cosmos world foun-
+dation model platform for physical ai. arXiv preprint
+arXiv:2501.03575 , 2025. 2, 9, 10, 11, 13
+[2] Lorenzo Agnolucci, Leonardo Galteri, and Marco Bertini.
+Quality-aware image-text alignment for real-world image
+quality assessment. arXiv preprint arXiv:2403.11176 , 5(6),
+2024. 13
+[3] Meta AI. The llama 4 herd: The beginning of a new era of
+natively multimodal ai innovation, 4 2025. Accessed: 2025-
+04-16. 2, 3
+[4] Joshua Ainslie, James Lee-Thorp, Michiel de Jong, Yury
+Zemlyanskiy, Federico Lebron, and Sumit Sanghai. Gqa:
+Training generalized multi-query transformer models from
+multi-head checkpoints. In Proceedings of the 2023 Confer-
+ence on Empirical Methods in Natural Language Processing ,
+2023. 3
+[5] Iz Beltagy, Matthew E Peters, and Arman Cohan. Long-
+former: The long-document transformer. arXiv preprint
+arXiv:2004.05150 , 2020. 2, 3
+[6] Daniel Bolya, Cheng-Yang Fu, Xiaoliang Dai, Peizhao
+Zhang, Christoph Feichtenhofer, and Judy Hoffman. Token
+merging: Your vit but faster. In ICLR , 2023. 3
+[7] Beidi Chen, Tri Dao, Eric Winsor, Zhao Song, Atri Rudra,
+and Christopher R ´e. Scatterbrain: Unifying sparse and low-
+rank attention. Advances in Neural Information Processing
+Systems (NeurIPS) , 2021. 3
+[8] Zhaodong Chen, Zheng Qu, Yuying Quan, Liu Liu, Yufei
+Ding, and Yuan Xie. Dynamic n: M fine-grained structured
+sparse attention mechanism. In Proceedings of the 28th ACM
+SIGPLAN Annual Symposium on Principles and Practice of
+Parallel Programming , 2023. 3
+[9] Rewon Child, Scott Gray, Alec Radford, and Ilya Sutskever.
+Generating long sequences with sparse transformers. arXiv
+preprint arXiv:1904.10509 , 2019. 2, 3
+[10] Team Cohere, Arash Ahmadian, Marwan Ahmed, Jay Alam-
+mar, Yazeed Alnumay, Sophia Althammer, Arkady Arkhang-
+orodsky, Viraat Aryabumi, Dennis Aumiller, Rapha ¨el Ava-
+los, et al. Command a: An enterprise-ready large language
+model. arXiv preprint arXiv:2504.00698 , 2025. 2, 3, 4
+[11] Katherine Crowson, Stefan Andreas Baumann, Alex Birch,
+Tanishq Mathew Abraham, Daniel Z Kaplan, and Enrico
+Shippole. Scalable high-resolution pixel-space image syn-
+thesis with hourglass diffusion transformers. In International
+Conference on Machine Learning (ICML) , 2024. 3
+[12] Tri Dao. Flashattention-2: Faster attention with better par-
+allelism and work partitioning. In International Conference
+on Learning Representations (ICLR) , 2023. 4, 14
+[13] Tri Dao, Daniel Y Fu, Stefano Ermon, Atri Rudra, and
+Christopher R ´e. Flashattention: Fast and memory-efficient
+exact attention with io-awareness. In Advances in Neural
+Information Processing Systems (NeurIPS) , 2022. 4
+[14] Juechu Dong, Boyuan Feng, Driss Guessous, Yanbo Liang,
+and Horace He. Flex attention: A programming modelfor generating optimized attention kernels. arXiv preprint
+arXiv:2412.05496 , 2024. 2, 5, 8
+[15] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov,
+Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner,
+Mostafa Dehghani, Matthias Minderer, Georg Heigold, Syl-
+vain Gelly, et al. An image is worth 16x16 words: Trans-
+formers for image recognition at scale. In International Con-
+ference on Machine Learning (ICML) , 2020. 10
+[16] Haoxing Du, Lyna Kim, Joan Creus-Costa, Jack Michaels,
+Anuj Shetty, Todd Hutchinson, Christopher Riedel, and John
+Dean. Weathermesh-3: Fast and accurate operational global
+weather forecasting. arXiv preprint arXiv:2503.22235 ,
+2025. 3
+[17] Patrick Esser, Sumith Kulal, Andreas Blattmann, Rahim
+Entezari, Jonas M ¨uller, Harry Saini, Yam Levi, Dominik
+Lorenz, Axel Sauer, Frederic Boesel, et al. Scaling recti-
+fied flow transformers for high-resolution image synthesis.
+InInternational Conference on Machine Learning (ICML) ,
+2024. 11, 12
+[18] Dhruba Ghosh, Hannaneh Hajishirzi, and Ludwig Schmidt.
+Geneval: An object-focused framework for evaluating text-
+to-image alignment. Advances in Neural Information Pro-
+cessing Systems (NeurIPS) , 2023. 13
+[19] Ali Hassani, Wen-Mei Hwu, and Humphrey Shi. Faster
+neighborhood attention: Reducing the O(n2)cost of self at-
+tention at the threadblock level. In Advances in Neural In-
+formation Processing Systems (NeurIPS) , 2024. 2, 5, 6, 7,
+8
+[20] Ali Hassani and Humphrey Shi. Dilated neighborhood atten-
+tion transformer. arXiv preprint arXiv:2209.15001 , 2022. 3,
+4, 6
+[21] Ali Hassani, Steven Walton, Jiachen Li, Shen Li, and
+Humphrey Shi. Neighborhood attention transformer. In Pro-
+ceedings of the IEEE/CVF Conference on Computer Vision
+and Pattern Recognition (CVPR) , 2023. 2, 3, 4, 6, 7, 13
+[22] Ziqi Huang, Yinan He, Jiashuo Yu, Fan Zhang, Chenyang Si,
+Yuming Jiang, Yuanhan Zhang, Tianxing Wu, Qingyang Jin,
+Nattapol Chanpaisit, Yaohui Wang, Xinyuan Chen, Limin
+Wang, Dahua Lin, Yu Qiao, and Ziwei Liu. VBench: Com-
+prehensive benchmark suite for video generative models. In
+CVPR , 2024. 12
+[23] Jitesh Jain, Jiachen Li, Mang Tik Chiu, Ali Hassani, Nikita
+Orlov, and Humphrey Shi. Oneformer: One transformer
+to rule universal image segmentation. In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition (CVPR) , 2023. 3
+[24] Hanhwi Jang, Joonsung Kim, Jae-Eon Jo, Jaewon Lee, and
+Jangwoo Kim. Mnnfast: A fast and scalable system archi-
+tecture for memory-augmented neural networks. In Proceed-
+ings of the 46th International Symposium on Computer Ar-
+chitecture , 2019. 4
+[25] Albert Q Jiang, Alexandre Sablayrolles, Arthur Mensch,
+Chris Bamford, Devendra Singh Chaplot, Diego de las
+Casas, Florian Bressand, Gianna Lengyel, Guillaume Lam-
+ple, Lucile Saulnier, et al. Mistral 7b. arXiv preprint
+arXiv:2310.06825 , 2023. 2, 3, 4
+[26] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao,
+Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer White-
+18
+head, Alexander C Berg, Wan-Yen Lo, et al. Segment any-
+thing. In Proceedings of the IEEE/CVF International Con-
+ference on Computer Vision (ICCV) , 2023. 3, 4
+[27] Weijie Kong, Qi Tian, Zijian Zhang, Rox Min, Zuozhuo Dai,
+Jin Zhou, Jiangfeng Xiong, Xin Li, Bo Wu, Jianwei Zhang,
+et al. Hunyuanvideo: A systematic framework for large video
+generative models. arXiv preprint arXiv:2412.03603 , 2024.
+2, 9, 10, 11, 13
+[28] Black Forest Labs. Flux. https://github.com/
+black-forest-labs/flux , 2024. 2, 10, 13, 17
+[29] Yanghao Li, Hanzi Mao, Ross Girshick, and Kaiming He.
+Exploring plain vision transformer backbones for object
+detection. In European Conference on Computer Vision
+(ECCV) , 2022. 3, 4
+[30] Aixin Liu, Bei Feng, Bin Wang, Bingxuan Wang, Bo Liu,
+Chenggang Zhao, Chengqi Dengr, Chong Ruan, Damai Dai,
+Daya Guo, et al. Deepseek-v2: A strong, economical, and
+efficient mixture-of-experts language model. arXiv preprint
+arXiv:2405.04434 , 2024. 3
+[31] Ze Liu, Yutong Lin, Yue Cao, Han Hu, Yixuan Wei, Zheng
+Zhang, Stephen Lin, and Baining Guo. Swin transformer:
+Hierarchical vision transformer using shifted windows. In
+Proceedings of the IEEE/CVF International Conference on
+Computer Vision (ICCV) , pages 10012–10022, 2021. 2, 3, 4,
+6, 7, 13
+[32] Maxim Milakov and Natalia Gimelshein. Online normalizer
+calculation for softmax. arXiv preprint arXiv:1805.02867 ,
+2018. 4
+[33] Niki Parmar, Ashish Vaswani, Jakob Uszkoreit, Lukasz
+Kaiser, Noam Shazeer, Alexander Ku, and Dustin Tran. Im-
+age transformer. In International Conference on Machine
+Learning (ICML) , 2018. 2, 3, 4, 6, 7, 13
+[34] William Peebles and Saining Xie. Scalable diffusion models
+with transformers. In Proceedings of the IEEE/CVF Inter-
+national Conference on Computer Vision (ICCV) , 2023. 10,
+11
+[35] Jiezhong Qiu, Hao Ma, Omer Levy, Wen-tau Yih, Sinong
+Wang, and Jie Tang. Blockwise self-attention for long docu-
+ment understanding. In Findings of the Association for Com-
+putational Linguistics: EMNLP 2020 , 2020. 2, 3, 7
+[36] Markus N Rabe and Charles Staats. Self-attention does
+not need O(n2)memory. arXiv preprint arXiv:2112.05682 ,
+2021. 4
+[37] Prajit Ramachandran, Niki Parmar, Ashish Vaswani, Irwan
+Bello, Anselm Levskaya, and Jon Shlens. Stand-alone self-
+attention in vision models. In Advances in Neural Informa-
+tion Processing Systems (NeurIPS) , 2019. 2, 3, 4, 6, 7, 13
+[38] Aurko Roy, Mohammad Saffar, Ashish Vaswani, and David
+Grangier. Efficient content-based sparse attention with rout-
+ing transformers. Transactions of the Association for Com-
+putational Linguistics , 2021. 3
+[39] Jay Shah, Ganesh Bikshandi, Ying Zhang, Vijay Thakkar,
+Pradeep Ramani, and Tri Dao. Flashattention-3: Fast and
+accurate attention with asynchrony and low-precision. arXiv
+preprint arXiv:2407.08608 , 2024. 2, 4, 14
+[40] Noam Shazeer. Fast transformer decoding: One write-head
+is all you need. arXiv preprint arXiv:1911.02150 , 2019. 3[41] Vijay Thakkar, Pradeep Ramani, Cris Cecka, Aniket Shivam,
+Honghao Lu, Ethan Yan, Jack Kosaian, Mark Hoemmen,
+Haicheng Wu, Andrew Kerr, Andrew Nicely, Duane Merrill,
+Dustyn Blasig, Fengqi Qiao, Piotr Majcher, Paul Springer,
+Markus Hohnerbach, Jin Wang, and Manish Gupta. Cutlass.
+2, 4, 6, 8
+[42] Philippe Tillet, Hsiang-Tsung Kung, and David Cox. Tri-
+ton: an intermediate language and compiler for tiled neu-
+ral network computations. In Proceedings of the 3rd ACM
+SIGPLAN International Workshop on Machine Learning and
+Programming Languages , 2019. 2
+[43] Ashish Vaswani, Prajit Ramachandran, Aravind Srinivas,
+Niki Parmar, Blake Hechtman, and Jonathon Shlens. Scaling
+local self-attention for parameter efficient visual backbones.
+InProceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition (CVPR) , 2021. 2, 4, 5, 6, 7,
+13
+[44] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-
+reit, Llion Jones, Aidan N Gomez, Ł ukasz Kaiser, and Illia
+Polosukhin. Attention is all you need. In Advances in Neural
+Information Processing Systems (NeurIPS) , 2017. 3
+[45] Steven Walton, Ali Hassani, Xingqian Xu, Zhangyang Wang,
+and Humphrey Shi. Stylenat: Giving each head a new per-
+spective. arXiv preprint arXiv:2211.05770 , 2022. 4
+[46] Sinong Wang, Belinda Z Li, Madian Khabsa, Han Fang, and
+Hao Ma. Linformer: Self-attention with linear complexity.
+arXiv preprint arXiv:2006.04768 , 2020. 3
+[47] Xiaoshi Wu, Yiming Hao, Keqiang Sun, Yixiong Chen, Feng
+Zhu, Rui Zhao, and Hongsheng Li. Human preference score
+v2: A solid benchmark for evaluating human preferences of
+text-to-image synthesis. arXiv preprint arXiv:2306.09341 ,
+2023. 13
+[48] Haocheng Xi, Shuo Yang, Yilong Zhao, Chenfeng Xu,
+Muyang Li, Xiuyu Li, Yujun Lin, Han Cai, Jintao Zhang,
+Dacheng Li, et al. Sparse videogen: Accelerating video
+diffusion transformers with spatial-temporal sparsity. arXiv
+preprint arXiv:2502.01776 , 2025. 3
+[49] Ruyi Xu, Guangxuan Xiao, Haofeng Huang, Junxian Guo,
+and Song Han. Xattention: Block sparse attention with an-
+tidiagonal scoring. arXiv preprint arXiv:2503.16428 , 2025.
+3
+[50] Sidi Yang, Tianhe Wu, Shuwei Shi, Shanshan Lao, Yuan
+Gong, Mingdeng Cao, Jiahao Wang, and Yujiu Yang.
+Maniqa: Multi-dimension attention network for no-reference
+image quality assessment. In Proceedings of the IEEE/CVF
+conference on computer vision and pattern recognition ,
+pages 1191–1200, 2022. 13
+[51] Ruonan Yu, Songhua Liu, Zhenxiong Tan, and Xinchao
+Wang. Ultra-resolution adaptation with ease. arXiv preprint
+arXiv:2503.16322 , 2025. 11, 12, 13, 17
+[52] Jingyang Yuan, Huazuo Gao, Damai Dai, Junyu Luo, Liang
+Zhao, Zhengyan Zhang, Zhenda Xie, YX Wei, Lean Wang,
+Zhiping Xiao, et al. Native sparse attention: Hardware-
+aligned and natively trainable sparse attention. arXiv
+preprint arXiv:2502.11089 , 2025. 3
+[53] Manzil Zaheer, Guru Guruganesh, Kumar Avinava Dubey,
+Joshua Ainslie, Chris Alberti, Santiago Ontanon, Philip
+19
+Pham, Anirudh Ravula, Qifan Wang, Li Yang, et al. Big bird:
+Transformers for longer sequences. In Advances in Neural
+Information Processing Systems (NeurIPS) , 2020. 2
+[54] Peiyuan Zhang, Yongqi Chen, Runlong Su, Hangliang
+Ding, Ion Stoica, Zhenghong Liu, and Hao Zhang. Fast
+video generation with sliding tile attention. arXiv preprint
+arXiv:2502.04507 , 2025. 2, 4, 5, 6, 7, 8, 11, 12, 13
+20

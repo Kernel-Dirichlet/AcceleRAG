@@ -269,3 +269,4 @@ class TextIndexer(Indexer):
             if 'conn' in locals():
                 conn.close()
                 logging.info("Database connection closed") 
+

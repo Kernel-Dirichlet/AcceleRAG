@@ -28,8 +28,7 @@ class ImageEmbedder(Embedder):
         """Compute embedding for a single image."""
         try:
             # Load and preprocess image
-            import pdb ; pdb.set_trace()
-            image = Image.open(image_path,'rb').convert('RGB')
+            image = Image.open(image_path).convert('RGB')
             image_tensor = self.preprocess(image).unsqueeze(0).to(self.device)
             
             # Generate embedding

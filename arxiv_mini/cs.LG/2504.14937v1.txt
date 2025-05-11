@@ -1,0 +1,2119 @@
+Causal DAG Summarization (Full Version)
+Anna Zeng
+annazeng@mit.edu
+CSAIL, MIT
+USAMichael Cafarella
+michjc@csail.mit.edu
+CSAIL, MIT
+USABatya Kenig
+batyak@technion.ac.il
+Technion
+Israel
+Markos Markakis
+markakis@mit.edu
+CSAIL, MIT
+USABrit Youngmann
+brity@technion.ac.il
+Technion
+IsraelBabak Salimi
+bsalimi@ucsd.edu
+University of California, San Diego
+USA
+ABSTRACT
+Causal inference aids researchers in discovering cause-and-effect
+relationships, leading to scientific insights. Accurate causal esti-
+mation requires identifying confounding variables to avoid false
+discoveries. Pearl’s causal model uses causal DAGs to identify con-
+founding variables, but incorrect DAGs can lead to unreliable causal
+conclusions. However, for high dimensional data, the causal DAGs
+are often complex beyond human verifiability. Graph summariza-
+tion is a logical next step, but current methods for general-purpose
+graph summarization are inadequate for causal DAG summariza-
+tion. This paper addresses these challenges by proposing a causal
+graph summarization objective that balances graph simplification
+for better understanding while retaining essential causal informa-
+tion for reliable inference. We develop an efficient greedy algorithm
+and show that summary causal DAGs can be directly used for in-
+ference and are more robust to misspecification of assumptions,
+enhancing robustness for causal inference. Experimenting with
+six real-life datasets, we compared our algorithm to three existing
+solutions, showing its effectiveness in handling high-dimensional
+data and its ability to generate summary DAGs that ensure both
+reliable causal inference and robustness against misspecifications.
+1 INTRODUCTION
+Causal inference is central to informed decision-making in econom-
+ics, sociology, medicine, and in helping analysts unravel complex
+cause-effect relationships [ 30,43,105]. It has become increasingly
+critical in machine learning, where it supports algorithmic fair-
+ness [ 90], data debiasing [ 117,117,118], explainable AI [ 11,28,
+64,65], and enhanced robustness [ 53,91,102]. Causal inference
+has also become a major theme in recent data management re-
+search [ 13,59,61,84,89], integrating causality into data manage-
+ment tasks such as finding input responsibilities toward query an-
+swers [ 59–61], explaining for query results [ 85,88,111,112], data
+discovery [ 27,113], data cleaning [ 79,90], hypothetical reasoning
+[26], and large system diagnostics [7, 29, 36, 55, 56].
+Drawing causal conclusions from data fundamentally hinges on
+access to background knowledge and assumptions, as data alone
+cannot establish causality [ 74,87]. A principled way to encode
+such background knowledge is through Causal Directed Acyclic
+Graphs (DAGs) [ 74]. These graphs explicitly represent assumed
+causal relationships, enabling systematic reasoning about interven-
+tions. Causal DAGs can be used together with graphical criteria
+such as the backdoor criterion, or in general, Pearl’s 𝑑𝑜-calculus [ 74]
+to determine whether the effect of interventions can be answeredusing data and available background knowledge. If so, they help
+identify the right set of confounding variables to control for, ensur-
+ing sound causal inference given the background knowledge.
+However, the soundness and robustness of causal inference
+hinges on the availability of high-quality causal DAGs, which are
+often not readily available. These DAGs are typically constructed
+using domain knowledge [ 16,57,106] or through causal discov-
+ery methods [ 20,35,95,108,119]. This elicitation process is costly,
+error-prone [69], and time-consuming. Causal discovery methods,
+while useful, are fundamentally restrictive as they identify a class
+of DAGs compatible with observed data rather than a singular, de-
+finitive model [ 35]. Moreover, existing discovery methods often do
+not perform well on real-world data and require significant human
+intervention for verification [ 21,40,98]. The problem is even worse
+for high-dimensional data, increasing the need for efficient meth-
+ods to simplify and verify causal models while retaining essential
+information [71]. We illustrate this with an example:
+Example 1. Consider the application of performance diagnosis
+for a cloud-based data warehouse service. Specifically, consider a
+dataset collected from the monitoring views in Amazon Redshift
+Serverless [ 8], including performance metrics and query-extracted
+features, such as the number of unique tables and columns refer-
+enced in the executed query. This dataset enables answering crucial
+causal queries for optimizing performance. For example, under-
+standing the impact of caching on latency (i.e., Result Cache Hit
+onElapsed Time ) can help tune caching mechanisms, or analyzing
+the effect of join complexity on the query planner’s performance
+(i.e.,Num Joins onPlan Time ) can optimize query execution strate-
+gies. However, the necessary causal DAG to answer such questions
+is not readily available, and getting it right is non-trivial.
+Figure 1 shows an example causal DAG covering variables from
+just one monitoring view [ 6] and a few query features, chosen for
+illustration. This is just a small part of the overall high dimensional
+dataset. Edges in causal DAGs represent potential cause-effect rela-
+tionships. In our example, for instance, the edge from Num Columns
+toExec. Time suggests that the number of columns referenced in
+a query may influence the query’s execution time.
+To answer the above causal queries, Query Template is a critical
+confounder that must be adjusted for because it influences both
+the performance metrics (e.g., Elapsed Time ,Plan Time ) and the
+analyzed mechanisms (e.g., Result Cache Hit ,Num Joins ). Failing
+to adjust for this variable can lead to biased estimations and incor-
+rect conclusions. Hence, any possible misspecification in the causal
+DAG that would fail to identify this variable as a confounder wouldarXiv:2504.14937v1  [cs.LG]  21 Apr 2025
+Anna Zeng, Michael Cafarella, Batya Kenig, Markos Markakis, Brit Youngmann, and Babak Salimi
+result in incorrect effect estimations. Such sensitivity to graph er-
+rors makes domain expert verification essential for each existing
+or missing edge. This task can be overwhelming, even in this small
+example with only 12nodes, as it involves inspecting 66potential
+edges, one per pair of nodes. In the full dataset, the number of
+variables would be much higher, further complicating the task. □
+Graph summarization is a logical next step, as it reduces the
+number of nodes and edges, making it easier for users to verify and
+inspect causal DAGs in high-dimensional datasets. Graph summa-
+rization has been extensively studied, with state-of-the-art methods
+designed to efficiently generate concise representations aimed at
+minimizing reconstruction errors [ 47,110], or facilitating accurate
+query answering [ 52,96]. However, we argue that while general-
+purpose methods are adept at managing massive graphs, they are
+inadequate for summarizing causal graphs, a task that demands the
+preservation of causal information crucial for reliable inference.
+In this paper, we propose a graph summarization technique tai-
+lored for causal inference. It simplifies high-dimensional causal
+DAGs into manageable forms without compromising essential
+causal information, thereby improving interpretability. Our ap-
+proach introduces a causal DAG summarization objective, which
+balances simplifying the graph for enhanced comprehensibility and
+retaining essential causal information. Using our technique, one
+can summarize an initial causal DAG (constructed using partial
+domain knowledge or causal discovery) for simpler verification and
+elicitation. Additionally, the summary causal DAG can be directly
+used for causal inference and is more robust to misspecification of
+assumptions. Our approach thereby improves interpretability ,veri-
+fiability , and robustness in causal inference, facilitating the adoption
+of these techniques in practice. We illustrate this with an example:
+Example 2. Consider Fig. 2a, which shows the summary graph
+generated by SSumM [ 47] for the causal DAG of Fig. 1. SSumM is
+a top-performing general-purpose graph summarization method
+that effectively balances conciseness and reconstruction accuracy.
+However, the generated graph can no longer be interpreted as a
+causal DAG, since it exhibits cycles and self-loops. For example,
+computing the causal effect of Num Joins onPlan time is impossi-
+ble due to the bidirectional edge between their cluster nodes. Other
+methods (e.g., [ 110]) exhibit similar weaknesses, making them un-
+suitable for summarizing causal DAGs. An in-depth comparison
+with another graph summarization method [ 103] is provided in
+Section 8. We show that although this method can be adapted to
+generate summary DAGs compatible with causal inference prin-
+ciples, it does not optimally preserve critical causal information,
+reducing the accuracy of the inference over the summary DAG.
+In contrast, Fig.2b shows the 5-node summary DAG generated by
+our approach, which preserves critical causal information, offering
+a more interpretable summary that can be directly used for infer-
+ence. This summary DAG makes it easier to verify the soundness of
+assumptions it encodes. Furthermore, this summary DAG is inher-
+ently more robust to misspecification, because our summarization
+process creates a summary DAG compatible with a setof possi-
+ble initial DAGs. Hence, even if the original causal DAG missed
+an edge, our summarization algorithm can still create the neces-
+sary connections and maintain causal integrity. Using the summary
+DAG for inference intuitively leads to a more conservative set ofQuery
+TemplateReturned
+RowsReturned
+Bytes
+Num
+JoinsNum
+TablesNum
+ColumnsResult
+Cache
+Hit
+Compile
+TimePlan
+TimeLock
+Wait
+TimeExec.
+Time
+Elapsed
+Time
+Figure 1: Example causal DAG
+Query
+TemplateRet. Rows,
+Ret. Bytes,
+Num
+Columns
+Num Joins,
+Num Tables,
+Result
+Cache Hit,
+Elapsed
+Time
+Compile
+TimePlan Time,
+Exec. Time,
+Lock Wait
+Time
+(a) Problematic Summary GraphQuery
+Template,
+Ret. Rows,
+Ret. Bytes,
+Num
+Columns
+Num
+Joins,
+Num
+TablesResult
+Cache Hit,
+Exec. Time
+Plan
+Time,
+Lock Wait
+TimeCompile
+Time,
+Elapsed
+Time
+(b) Our Summary DAG
+Figure 2: 5-node summary graphs for the DAG in Fig. 1.
+confounders: it may lead to adjusting for redundant attributes, but
+they will only be ones that do not hurt the analysis. □
+Our main contributions are summarized as follows.
+Causal DAG Summarization . We introduce the problem of sum-
+marizing causal DAGs in a way that preserves their utility for
+reliable causal inference (Section 3). This necessitates preserving
+the causal information encoded in the input DAG. Causal DAGs
+encode information through missing edges, which imply Condi-
+tional Independence (CI) constraints. We therefore formalize causal
+DAG summarization as finding a summary DAG that preserves CI
+statements to the greatest extent possible, while meeting a node
+number constraint. We prove that this problem is NP-hard.
+Summary Causal DAGs . We introduce the concept of summary
+causal DAGs , derived by grouping nodes within the original DAG
+vianode contractions . Despite inherently leading to information loss,
+node contraction enables summary DAGs to compactly encapsulate
+potential causal DAGs from which the summary DAG could have
+originated. We show that contracting nodes is akin to adding edges
+to the input causal DAG. Based on this connection, we develop a
+sound and complete algorithm for identifying all CIsencoded by a
+summary DAG. This connection is crucial for utilizing summary
+causal DAGs for causal inference. (Section 4).
+TheCaGreS Algorithm . We devise an efficient heuristic greedy
+algorithm called CaGreS . A key feature of CaGreS is its approach
+to choosing which node pair to contract. This process is informed
+by the connection between node contraction and the addition of
+edges to the input DAG, prioritizing node pairs that add the fewest
+edges upon contraction. Additionally, CaGreS incorporates several
+optimizations, including caching mechanisms, making it a practical
+tool for generating summary causal DAGs (Section 5).
+Causal DAG Summarization (Full Version)
+𝐴
+𝐵 𝐶
+𝐷
+𝐸
+(a)G1𝐴
+𝐵 𝐶
+𝐷
+𝐸
+(b)G2𝐴
+𝐵 𝐶
+𝐷
+𝐸
+(c)G3
+Figure 3: Three causal DAGs over the same set of nodes.
+Causal Inference over Summary Causal DAGs We show that
+summary causal DAGs can be directly utilized for causal inference.
+We establish that Pearl’s do-calculus framework [ 74], which pro-
+vides a set of sound and complete rules for reasoning about the
+effects of interventions using causal DAGs, remains sound and com-
+plete for summary DAGs. By examining the connection between
+node contractions and the addition of edges, we offer clear insights
+into how these modifications affect the soundness and completeness
+of do-calculus within the framework of summary DAGs (Section 6).
+Experimental Evaluation We demonstrate how summary DAGs
+offer robustness against errors in the input causal DAG (Section 7).
+We conduct extensive experiments over six datasets demonstrating
+the effectiveness of CaGreS compared to existing solutions and two
+variations of CaGreS . The results show the efficiency of CaGreS
+in handling high-dimensional datasets and its ability to generate
+summary DAGs that ensure reliable inference (Section 8).
+2 BACKGROUND
+We consider a single-relation database over a schema A. We use
+upper case letters to denote a variable from Aand bold symbols for
+sets of variables. The broad goal of causal inference is to estimate the
+effect of an exposure variable 𝑇∈Aon an outcome variable 𝑂∈A. We
+use Pearl’s model for causal inference on observational data [74].
+To get an unbiased estimate for the causal effect of the exposure
+𝑇on the outcome 𝑂, one must mitigate the effect of confounding
+variables , i.e., variables that can affect the exposure assignment and
+outcome [ 74]. For instance, when estimating how query execution
+time affects the elapsed time, one would avoid a source of confound-
+ing bias by considering the number of columns and tables. Pearl’s
+model provides ways to account for confounding variables to get
+an unbiased causal estimate using causal DAGs [74]. Causal DAGs
+provide a simple way of representing causal relationships within a
+set of variables. A causal DAG Gfor the variables in Ais a specific
+type of a Bayesian network and is formally defined as follows:
+Causal DAG . A Bayesian network is a DAG Gin which nodes
+represent random variables and edges express direct dependence
+between the variables. Each node 𝑋𝑖is associated with the condi-
+tional distribution P(𝑋𝑖|𝜋(𝑋𝑖)), where𝜋(𝑋𝑖)is the set of parents
+of𝑋𝑖inG. The joint distribution over all variables P(𝑋1,...,𝑋𝑛),
+is given by the product of all conditional distributions. That is,
+P(𝑋1,...,𝑋𝑛)=𝑛Ö
+𝑖=1P(𝑋𝑖|𝜋(𝑋𝑖)) (1)
+A causal DAG is a Bayesian network where edges signify direct
+causal influence rather than statistical dependence. We say that 𝑋
+is a potential cause of 𝑌if there is a directed path from 𝑋to𝑌.
+𝑑-Separation. 𝑑-separation is a criterion in a causal DAG that de-
+termines whether two sets of nodes are conditionally independent,given a third set, by checking whether all paths between the sets
+are “blocked” based on specific structural rules. If two sets of nodes
+are𝑑-separated, by definition it means that all paths connecting
+them are blocked by other nodes. Formally, a trail𝑡=(𝑋1,...,𝑋𝑛)
+is a sequence of nodes s.t. there is a a distinct edge between 𝑋𝑖and
+𝑋𝑖+1for every𝑖. That is,(𝑋𝑖→𝑋𝑖+1)∈E(G)or(𝑋𝑖←𝑋𝑖+1)∈E(G)for
+every𝑖. A node𝑋𝑖is said to be head-to-head with respect to 𝑡if
+(𝑋𝑖−1→𝑋𝑖)∈E(G)and(𝑋𝑖←𝑋𝑖+1)∈E(G). A trail𝑡=(𝑋1,...,𝑋𝑛)
+isactive given Z⊆Xif (1) every𝑋𝑖that is a head-to-head node with
+respect to𝑡either belongs to Zor has a descendant in Z, and (2)
+every𝑋𝑖that is not a head-to-head node w.r.t. 𝑡does not belong to
+Z. If a trail𝑡is not active given Z, then it is blocked given Z[74]. In
+a DAG, two sets of nodes XandYare𝑑-separated by a third set of
+nodes Zif all trails connecting XandYare blocked by Z.
+Conditional Independence. Causal DAGs encode a set of Condi-
+tional Independence statements ( CIs) that can be read off the graph
+using𝑑-separation [ 74]. These statements describe the absence of
+an active trail between two sets of variables when conditioning on
+other variables. If two sets of nodes XandYare𝑑-separated by Z,
+thenXandYare conditionally independent given Z.
+Example 3. Examples of CIsencoded in the causal DAG depicted
+in Fig. 3(a) include: ( 𝐵⊥⊥𝑑𝐶|𝐴), and (𝐷⊥⊥𝑑𝐴|𝐵𝐶).□
+CIs & Missing Edges. In causal DAGs, the information encoded
+by missing edges implies the set of CIsthe DAG represents. Namely,
+removing edges can undermine the causal model as it implies CIs
+that do not necessarily hold in the distribution. On the other hand,
+existing edges indicate potential causal dependence. This implies
+that adding edges to a causal DAG, provided acyclicity is maintained,
+does not necessarily compromise validity [74].
+The Recursive Basis. The Recursive Basis (RB) [ 33] for a causal
+DAG comprises a set of at most 𝑛CIs, signifying that each node
+is conditionally independent of its non-descendants nodes given
+its parents. This succinct set of CIsholds significance, as it can be
+used for constructing the causal DAG, and all other CIsencoded
+in the DAG can be deduced from it. Formally, given a causal DAG
+G, let⟨𝑋1,...,𝑋𝑛⟩denote a complete topological order over V(G).
+Equation 1 implicitly encodes a set of 𝑛CIs, called the RB for G,
+defined as follows:
+ΣRB(G)def={(𝑋𝑖⊥⊥𝑋1...𝑋𝑖−1\𝜋(𝑋𝑖)|𝜋(𝑋𝑖)):𝑖∈[𝑛]} (2)
+It has been shown [ 32,33,107] that both the semi-graphoid axioms
+(see Appendix A) and 𝑑-separation are sound and complete for
+inferring CIsfrom the RB, which matches the CIsencoded by the
+causal DAG.
+Example 4. Consider the causal DAG G1in Fig. 3(a). In the nodes’
+topological order, 𝐴precedes𝐵and𝐶, which in turn, precedes
+𝐷. The last node is 𝐸. The RB ofG1is given in Table 1. Given
+the topological order over the nodes and the RB, G1can be fully
+constructed. Further, any CI statement encoded in G1can be implied
+from this RB by using the semi-graphoid axioms. □
+ATE& do-Calculus. The𝑑o-operator, a fundamental concept in
+causal inference, is used to denote interventions on variables in a
+causal model. It represents the intervention on a variable to observe
+the resulting change in an outcome variable while holding the
+Anna Zeng, Michael Cafarella, Batya Kenig, Markos Markakis, Brit Youngmann, and Babak Salimi
+external factors constant. In computing the Average Treatment Effect
+(ATE) [ 74], a popular measure of causal estimate, the 𝑑𝑜-operator
+is applied to represent the treatment assignment for treatment and
+control groups. The ATE quantifies the average causal effect of a
+treatment𝑇on an outcome variable 𝑂in a population:
+𝐴𝑇𝐸(𝑇,𝑂)=E[𝑂|𝑑𝑜(𝑇=1)]−E[𝑂|𝑑𝑜(𝑇=0)] (3)
+To compute the causal effect of 𝑇on𝑂, it is crucial to identify
+and adjust for confounders. The backdoor criterion [ 74] provides a
+sufficient condition by identifying a set of variables Zthat blocks all
+backdoor paths between 𝑇and𝑂, enabling confounder adjustment
+within the causal DAG framework. However, it is part of the 𝑑𝑜-
+calculus system, an axiomatic framework designed for reasoning
+about interventions and their effects within causal models. The
+𝑑𝑜-calculus comprises three rules that facilitate the substitution of
+probability expressions containing the 𝑑𝑜-operator with standard
+conditional probabilities [ 74]. It provides a systematic method for
+deriving causal relationships from observational data. Due to its
+soundness and completeness, the framework offers a broad toolkit
+for causal inference. Since these concepts are not directly used in
+this paper, we omit a detailed review.
+3 PROBLEM FORMULATION
+Our goal is to distill a causal DAG1into an interpretable summary
+by grouping nodes while preserving its utility for causal inference.
+Thus, the summary DAG should meet the following criteria:
+Size Constraint: The summary DAG should be concise to reduce
+the cognitive load on analysts [ 14]. We therefore impose a size
+constraint to enhance the summary DAG’s intelligibility, ensuring
+the core complexity of the original DAG is maintained.
+Preserving Causal Information: The summary DAG must main-
+tain the causal dependencies present in the original DAG: If variable
+𝐴has a directed causal path to 𝐵in the original DAG, this rela-
+tionship should be faithfully preserved in the summary DAG. The
+summary DAG should also preserve the CIs represented in the orig-
+inal DAG. If variables 𝐴and𝐵are conditionally independent, this
+lack of dependence should be reflected in the summary DAG. Lastly,
+the summary DAG should not introduce any spurious conditional
+independencies that the original causal DAG does not imply.
+Our objective is to preserve the utility of the summary causal
+DAG for causal inference. As mentioned, in causal DAGs, the infor-
+mation encoded by missing edges implies the set of CIsthe DAG
+represents. Therefore, removing edges can undermine the causal
+model as it implies CIsthat do not necessarily hold in the original
+DAG. On the other hand, existing edges indicate potential causal
+dependence. This implies that adding edges to a causal DAG, pro-
+vided acyclicity is maintained, does not necessarily compromise
+validity. We, therefore, rigorously enforce conditions on the sum-
+mary DAG to ensure that the directionality is faithfully preserved
+and assert that the summary DAG should preserve, to the greatest
+extent possible, a subset of the independence assumptions encoded
+in the original DAG. We show that, with these considerations, the
+summary causal DAG remains a viable tool for causal inference.
+We first formalize the concept of a summary causal DAG, then
+rigorously formalize the problem of causal DAG summarization.
+1For a discussion of other causal graph formats like mixed graphs, see Appendix C𝐴
+BC
+𝐷
+𝐸
+(a)H1𝐴
+BD𝐶
+𝐸
+(b)H2ABC
+𝐷
+𝐸
+(c)H3𝐴
+BC
+DE
+(d)H4H1
+H3H4
+H2
+(e) Order
+Figure 4: Summary causal DAGs for G1and the partial order
+among them.
+3.1 Summary Causal DAGs
+Asummary graph is obtained by applying node contraction oper-
+ations [ 76]. The resulting graph retains the essential connectivity
+information of the original graph with a reduced number of nodes.
+Given a graphG, the contraction of a pair of nodes 𝑈,𝑉∈V(G)
+is the operation that produces a graph Hin which the two nodes
+𝑈and𝑉are replaced with a single node C={𝑈,𝑉}∈V(H), where C
+is now neighbors with nodes that 𝑈and𝑉were originally adjacent
+to (edge directionality is preserved). If 𝑈and𝑉were connected by
+an edge, the edge is removed upon contraction.
+Definition 1 (Summary-DAG) .A summary DAG of a DAG Gis
+a pair(H,𝑓), whereHis a DAG with nodes V(H), edges E(H),
+and𝑓:V(G)→ V(H) is a function that partitions the nodes V(G)
+among the nodes V(H), such that: If(𝑈,𝑉)∈E(G), then𝑓(𝑈)=𝑓(𝑉)
+or(𝑓(𝑈),𝑓(𝑉))∈E(H). We define the inverse 𝑓−1:V(H)→ 2V(G)
+as follows:𝑓−1(𝑋)def={𝑉∈V(G) :𝑓(𝑉)=𝑋}
+To simplify the notations, we omit 𝑓whenever possible.
+Example 5. Consider Fig. 3(a) which depicts a DAG G1. After
+contracting 𝐵and𝐶, the resulting summary DAG H1is displayed
+in Fig. 4(a). InH1, the nodes𝐵and𝐶have been contracted into the
+nodeBC. Namely,𝑓(𝐵)=𝑓(𝐶)=BC, and𝑓−1(BC)={𝐵,𝐶}.□
+A causal DAGGis said to be compatible with a summary DAG H,
+if, there exists a function 𝑓that partitions the nodes V(G)among
+the nodes V(H), such that: If(𝑈,𝑉)∈E(G), then𝑓(𝑈)=𝑓(𝑉)or
+(𝑓(𝑈),𝑓(𝑉))∈E(H). Namely,His a summary DAG of G.
+Definition 2 (Compatibility) .Let(H,𝑓)be a summary DAG. A
+DAGGiscompatible withHifHis a summary DAG for G. We
+use{G𝑖}Hto denote the set of all causal DAGs compatible with H.
+We also use the term compatibility to describe the relationship
+between two causal DAGs sharing the same set of nodes, where
+the edges of one are fully contained in the set of edges of another
+graph. LetGbe a causal DAG and let G′be a causal DAG where
+V(G)=V(G′). We say thatG′is asupergraph ofGifE(G)⊆ E(G′).
+In this case, we also say that Giscompatible withG′.
+Example 6. Consider again Fig. 3. Both G1andG2are compatible
+with the summary DAG H1shown in Fig. 4(a) (achieved by con-
+tracting𝐵and𝐶). However,G3is not compatible with H1, since
+the edge between 𝐷and𝐴is not preserved. □
+We aim to find acyclic summary graphs. Thus, we prove a simple
+lemma characterizing node contractions that preserve acyclicity.
+Causal DAG Summarization (Full Version)
+Table 1: The recursive bases of the summary DAGs in Figure 4
+Graph Recursive Basis
+G1(𝐶⊥⊥𝐵|𝐴),(𝐷⊥⊥𝐴|𝐵𝐶),(𝐸⊥⊥𝐴𝐵𝐶|𝐷)
+H1(𝐷⊥⊥𝐴|𝐵𝐶),(𝐸⊥⊥𝐴𝐵𝐶|𝐷)
+H2 (𝐸⊥⊥𝐴𝐶|𝐵𝐷)
+H3 (𝐸⊥⊥𝐴𝐵𝐶|𝐷)
+H4 (𝐷𝐸⊥⊥𝐴|𝐵𝐶)
+Lemma 3.1. LetGbe a DAG, and let 𝑉,𝑈∈V(G). LetH𝑉𝑈denote
+the summary graph that results from Gby contracting 𝑉and𝑈. Then
+H𝑉𝑈contains a directed cycle if and only if Gcontains a directed
+path𝑃from𝑉to𝑈(or𝑈to𝑉), where|𝑃|≥2.
+Asummary causal DAG is a specific type of summary graph
+obtained through node contraction operations over a causal DAG
+Gand ensures acyclicity.
+As mentioned, the RB of a causal DAG, as defined by Eq. (2),
+comprises a set of at most 𝑛CIs(where𝑛=|V(G)|), signifying that
+each node is conditionally independent of its preceding nodes2
+given its parents. This succinct set of CIsholds significance, because
+it enables the derivation of all other CIsrepresented in the causal
+DAG. The RB of a summary causal DAG is defined in a similar
+manner. The only difference is that in a summary causal DAG, a
+node may represent a subset of nodes of the original DAG.
+Example 7. Figure 4 displays four summary graphs for the causal
+DAG in Figure 3(a). Table 1 shows the RBs of these summary causal
+DAGs. InH4, for instance, there are only three nodes and therefore
+the RB includes a single CI statement. □
+3.2 The Causal DAG Summarization Problem
+As mentioned, we aim to reduce an input causal DAG by contracting
+its nodes, retaining maximal causal information. We covered the
+two criteria of our problem before proceeding with formalizing it.
+Size Constraint A size constraint is a key motivating constraint
+for graph summarization work and may be imposed on the number
+of nodes, storage space, minimum description length, etc. [ 51].
+We focus on a node-based size constraint as limited-size graphs
+are generally more accessible for inspection [14, 39]. Additionally,
+setting and adjusting a limit on the number of nodes is shown to be
+relatively straightforward for analysts [ 42,103]. We also observe
+that other summarization problems share similar hyperparameters,
+such as many clustering algorithms or k-nearest neighbors [ 45,49].
+Causal Information Preservation As mentioned, if two variables
+have a directed path between them in the original DAG, then this
+relationship should be faithfully preserved in the summary DAG.
+Indeed, this follows from the definition of a summary DAG (Def. 1).
+Given two summary DAGs derived from the same causal DAG
+G, both adhering to the size constraint, we prefer the one that
+preserves, to a larger degree, the set of CIsrepresented inG. To
+this end, we devise a measure to compare summary DAGs based on
+their RBs. When comparing two summary DAGs H1andH2, we
+assert thatH1issuperior toH2if the RB ofH2is implied by the RB
+ofH1. Namely, all the CIsencoded byH2can also be deduced from
+H1. We are searching for a maximal summary causal DAG, namely,
+that its RB is not implied by any other valid summary DAG.
+As mentioned, a summary DAG should not introduce any spuri-
+ous CIs that the original causal DAG does not imply. However, it
+2According to a given full topological order of the nodesmay overlook some CIs that are present in the original DAG. We
+refer to this property as an I-Map. Formally, Let Ωdef={𝑋1,...,𝑋𝑛}
+be a set of jointly distributed random variables with distribution P
+(i.e., nodes of the original DAG). Formally,
+Definition 3 (I-Map) .A DAGGis an I-Map forPif for every
+disjoint sets X,Y, and Zit holds that(X⊥⊥𝑑Y|Z)Gonly if
+(X⊥⊥PY|Z).
+LetG1andG2be two DAGs that are I-Maps for P. We say that
+G2is superior toG1, in notationG2≻G 1, if for every 𝜎∈ΣRB(G1),
+it holds that ΣRB(G2)=⇒𝜎. Note that the relation ≻does not
+necessarily form a complete order. We say that Gismaximal for P
+ifGis an I-Map for P, and there does not exist any G′∈G(P)such
+thatG′≻G. Our goal is to find a summary DAG that is an I-Map for
+Pand maximal for P, given a constraint on the number of nodes.
+Example 8. Consider the causal DAG G1in Fig. 3(a). Fig. 4(a)
+presents a 4-size summary DAG H1forG1. The RBs of both DAGs
+are shown in Table 1. Clearly, ΣRB(H1)⊂ΣRB(G1), and henceH1is
+an I-Map for P. Fig. 4(b) presentsH2, another 4-size summary DAG
+forG1, where ΣRB(H2)={(𝐸⊥⊥𝐴𝐶|𝐵𝐷)}. From the semi-graphoid
+axioms, it holds that (𝐸⊥⊥𝐴𝐵𝐶|𝐷)=⇒(𝐸⊥⊥𝐴𝐶|𝐵𝐷). Thus,
+H1≻H 2. Hence,H1is a superior summary DAG. Similarly, Fig-
+ures 4(c) and 4(d) illustrate H3andH4,3-size summary DAGs for
+G1. Their RBs are given in Table 1. The partial order among all sum-
+mary DAGs is presented in Fig. 4(e). Despite H3having only three
+nodes, it surpassesH2. However,H3andH4are incomparable, i.e.,
+neither ΣRB(H3)=⇒ΣRB(H4)norΣRB(H4)=⇒ΣRB(H3).□
+Problem 1 (Causal DAG Summarization) .Given a causal DAG G
+defined over a joint distribution P, and a bound 𝑘, find a summary
+causal DAGHs.t. (i) the number of nodes in His≤𝑘; (ii)Gis
+compatible withH, is an I-Map for Pand is maximal for P.
+Example 9. Consider again the causal DAG in Fig. 1. We set 𝑘=5.
+Fig. 2b depicts an optimal summary causal DAG. Namely, the RB
+of any other summary causal DAG with 5 or fewer nodes is not
+superior to RB of this 5-node summary causal DAG. □
+We show that the causal DAG summarization problem is 𝑁𝑃-
+hard via a reduction from the 𝑘-Max-Cut problem [38].
+Theorem 3.2. Causal DAG summarization is an NP-hard problem.
+As the proof relies on the relationship between node contractions
+and the addition of edges, established in the next section, we will
+explain the intuition behind this theorem in Section 4.1.
+4 NODE-CONTRACTION AS EDGE ADDITION
+Next, we establish the connection between node contractions and
+the addition of edges to the input causal DAG. This connection
+will be used to read off, from a given summary causal DAG, all
+theCIsit encodes. It also serves as a pivotal factor in guiding our
+algorithm for selecting promising node pairs to merge. Additionally,
+in Section 6, we will leverage this connection to demonstrate how
+causal inference can be directly conducted over summary DAGs.
+We note that the canonical causal DAG is not an objective of our
+problem; rather, it serves as a tool to formally define causal inference
+over summary DAGs and to guide our algorithm in identifying node
+contractions that minimize information loss.
+Anna Zeng, Michael Cafarella, Batya Kenig, Markos Markakis, Brit Youngmann, and Babak Salimi
+𝐴
+𝐵 𝐶
+𝐷
+𝐸
+(a) Causal DAGABC
+𝐷
+𝐸
+(b) Summary DAG𝐴
+𝐵 𝐶
+𝐷
+𝐸
+(c) Canonical causal DAG
+Figure 5: A causal DAG, its summary DAG, and the corre-
+sponding canonical causal DAG
+.
+4.1 The Canonical Causal DAG
+Given a summary causal DAG H, we define its corresponding
+canonical causal DAG , denoted asGH. In this causal DAG, cluster
+nodes are decomposed into distinct nodes connected by edges. We
+show that the RB of the canonical causal DAG isequivalent to that
+ofH. We first define the notion of equivalence for sets of CIs.
+Definition 4 (CI Sets Equivalence) .LetSandTdenote two sets
+ofCIsover the variable-set {𝑋1,...,𝑋𝑛}. We say that S=⇒Tif
+S=⇒𝜎for every CI 𝜎∈T. We say that SandTareequivalent , in
+notation S≡T, ifS=⇒TandT=⇒S.
+Next, we formally define the notion of the canonical causal DAG
+for a given summary DAG.
+Definition 5 (Canonical Causal DAG) .Let(H,𝑓)be a summary
+DAG for a causal DAG G. Let⟨𝑋1,...,𝑋𝑛⟩denote a complete topo-
+logical order over V(G). We define the canonical causal DAG asso-
+ciated with(H,𝑓), denotedGHas follows: V(GH)=V(G), and
+(𝑋𝑖,𝑋𝑗)∈E(GH)if and only if (𝑋𝑖,𝑋𝑗)∈E(G)
+or(𝑓(𝑋𝑖),𝑓(𝑋𝑗))∈ E(H)
+or 𝑓(𝑋𝑖)=𝑓(𝑋𝑗)and𝑖<𝑗
+We observe that, by definition, GHis compatible with the sum-
+mary DAG(H,𝑓).
+Example 10. Consider Figures 5(a) and 5(b) that depict an input
+causal DAG, and a 3-node summary. Fig. 5(c) depicts the correspond-
+ingcanonical causal DAG . In the topological order 𝐴precedes𝐵
+which in turn precedes 𝐶. All nodes within the node ABC are con-
+nected by edges in the canonical causal DAG, according to the
+topological order. Since ABC is the parent of 𝐷in the summary
+DAG, in the canonical causal DAG all𝐴,𝐵 and𝐶are parents of 𝐷.
+Note that Fig. 5(c) contains two more edges than Fig. 5(a), which
+represents conditional independence relationships which are not
+captured in the 3-node summary graph Figure 5(b). □
+We show that the RB of the canonical causal DAG GHis equiva-
+lent to that of the summary DAG Hobtained by node contractions
+to a causal DAGG. In other words, node contractions can be con-
+ceptualized as the addition of edges to the input causal DAG.
+Theorem 4.1. LetHbe a summary causal DAG, and GHis its cor-
+responding canonical causal DAG. We have: ΣRB(H)≡ ΣRB(GH).
+Continuing with Example 10, the RB of GH3is(𝐸⊥⊥𝐴𝐵𝐶|𝐷),
+which is identical to that of H3(see Table 1).
+Proof Intuition for Theorem 3.2 . In our proof we rely on the
+connection between a summary DAG and it canonical causal DAG .Specifically, Theorem 3.2 establishes that finding a summary DAG
+(H,𝑓)whose canonical causal DAG GHresults in the smallest num-
+ber of added edges |E(GH)|−| E(𝐺)|is NP-Hard. Specifically, our
+proof shows that finding a summary DAG (H,𝑓)where|V(H)|=𝑘
+and|E(GH)|−| E(𝐺)| ≤𝜏for some threshold 𝜏>0is an NP-
+complete problem. In fact, we prove the stronger claim that finding
+a summary DAG(H,𝑓)where|V(H)|=𝑘and
+{(𝑋𝑖,𝑋𝑗)∈E(GH)\E(𝐺):𝑓(𝑋𝑖)=𝑓(𝑋𝑗}≤𝜏 (4)
+is NP-hard. If|E(GH)|−| E(𝐺)|≤𝜏, then (4)must hold as well. We
+establish that finding a summary DAG where (4)holds is NP-Hard,
+and hence finding a summary DAG where |E(GH)|−| E(𝐺)|≤𝜏is
+NP-Hard as well. The full proof is provided in the Appendix.
+4.2𝑠-Separation
+We introduce the notion of 𝑠-separation , an extension of 𝑑-separation,
+tailored to identify CIsencoded by a summary DAG. Intuitively,
+a summary DAG represents a collection of causal DAGs that are
+compatible with it, meaning that it could have been obtained from
+any of those DAGs (similar to possible worlds [23]). Each of these
+DAGs encodes a different set of CIs. The set of CIsencoded by a
+summary DAG is the intersection of CIsthat holds in all compat-
+ible DAGs. In this way, we can ensure we restrict ourselves only
+toCIsthat are certainly present in a particular context and can
+be reliably used for inference. 𝑠-separation extends 𝑑-separation,
+which allows the identification of valid CIs within a summary DAG.
+We also introduce a sound and complete 𝑠-separation algorithm
+that leverages the standard 𝑑-separation algorithm.
+The validity of a CI statement, as derived from summary DAG
+H, is given by the following definition:
+Definition 6 (Validity of a CI in a summary DAG) .A CI statement
+is deemed valid in a summary causal DAG Hif and only if it is
+implied by all causal DAGs within {G𝑖}H.
+𝑠-separation captures all certain CIsthat hold across all DAGs
+in{G𝑖}H. We propose the following criterion for 𝑠-separation to
+encapsulate this notion of validity.
+Definition 7 (𝑠-separation) .Given a summary DAG (H,𝑓)and
+disjoint subsets X,Y,Z⊆V(H), we say that XandYare𝑠-separated
+inHbyZ, denoted by(X⊥⊥𝑆Y|Z)H, iff𝑓−1(X)and𝑓−1(Y)are
+𝑑-separated by 𝑓−1(Z)in every causal DAG within {G𝑖}H.
+We say that XandYare𝑠-connected in(H,𝑓)byZ, if there
+exists a causal DAG G∈{G𝑖}H, such that𝑓−1(X)and𝑓−1(Y)are
+𝑑-connected inGby𝑓−1(Z).
+4.2.1𝑠-separation Algorithm. Given a summary causal DAG
+H, we aim to derive the set of CIsit encodes. A naive approach
+would be to employ 𝑑-separation algorithms [ 74]. However,H
+can potentially encompass more CIsthan those discerned through
+𝑑-separation alone, as demonstrated in the following example.
+Example 11. Referring back to Fig. 3, (𝐵⊥⊥𝑑𝐸|𝐷),(𝐶⊥⊥𝑑𝐸
+|𝐵,𝐷), and(𝐵,𝐶⊥⊥𝑑𝐸|𝐷)all hold inG1andG2. Likewise,
+(BC⊥⊥𝑑𝐸|𝐷)holds inH1(Fig. 4(a)). However, since H1does not
+contain𝐵or𝐶as separate nodes, we cannot establish (𝐵⊥⊥𝑑𝐸|𝐷)
+or(𝐶⊥⊥𝑑𝐸|𝐵,𝐷)fromH1using𝑑-separation. □
+Causal DAG Summarization (Full Version)
+To address this, a simple solution is to find the set of CIsshared
+across all DAGs compatible with H. However, this approach is
+costly. We, therefore, present a simple algorithm for 𝑠-separation
+that leverages the connection between a summary DAG and its
+canonical causal DAG. This algorithm operates as follows: Given
+a summary DAGH, establish a topological order for its nodes.3
+Using this order, construct the canonical causal DAG GH. Next,
+apply𝑑-separation overGHand return the resulting CI set. We
+demonstrate that this algorithm is sound and complete.
+Theorem 4.2 (Soundness and Completeness of 𝑠-separation).
+In a summary DAG (H,𝑓), letX,Y,Z⊆V(H) be disjoint sets of nodes.
+IfXandYare𝑑-separated by ZinH, then in any causal DAG
+G∈{G𝑖}H,𝑓−1(X)and𝑓−1(Y)are𝑑-separated by 𝑓−1(Z). That is:
+(X⊥⊥𝑑Y|Z)H=⇒(𝑓−1(X)⊥⊥𝑑𝑓−1(Y)|𝑓−1(Z))G=⇒(X⊥⊥𝑠Y|Z)H
+IfXandYare𝑑-connected by ZinH, then there exists a DAG G∈{G𝑖}H,
+s.t𝑓−1(X)and𝑓−1(Y)are𝑑-connected by 𝑓−1(Z)inG.
+5 THE CAGRES ALGORITHM
+As demonstrated in Theorem 3.2, the causal DAG summarization
+problem is NP-hard and therefore it is not trivial to devise an effi-
+cient algorithm with theoretical guarantees. We, therefore, intro-
+duce a heuristic algorithm, named CaGreS for the causal DAG
+summarization problem. Although lacking theoretical guarantees,
+CaGreS effectively meets the size constraint and produces summary
+causal DAGs that can be directly used for sound causal inference. A
+brute force approach explores all summary DAGs with up to 𝑘nodes.
+It finds the optimal summary DAG, but runs in exponential time due
+to the exponential number of potential graphs. CaGreS addresses
+this by estimating the merging effect on the canonical causal DAG
+rather than iterating over all possible summary DAGs.
+Overview TheCaGreS algorithm follows a previous line of work
+[34,103], where a bottom-up greedy approach is used to identify
+promising node pairs for contraction. Its main contribution lies in
+how it estimates merge costs, to preserve the causal interpretation
+of the graph: It counts the number of edges to be added in the
+canonical causal DAG for each node pair (a proxy for the RB’s effect,
+as discussed in Section 4). In each iteration, the algorithm contracts
+the node pair resulting in the minimal number of additional edges.
+We also introduce optimizations for runtime efficiency, such as
+semantic constraint, fast low-cost merges, and caching mechanisms.
+TheCaGreS algorithm is given in Algorithm 1. Given a bound
+𝑘and an input causal DAG, this algorithm iteratively seeks the
+next-best pair of nodes to be merged, until the size constraint is met
+(lines 4-15). The next-best pair of nodes to merge is the node pair
+whose contraction has the lowest cost (lines 10-12). The algorithm
+randomly breaks ties (lines 13-14). The GetCost procedure is shown
+in Algorithm 2. The cost of merging two (clusters of) nodes Uand
+Vis equal to the number of edges to be added in the corresponding
+canonical causal DAG : (1) edges to be added between the nodes
+within the combined cluster UÐV(lines 3-4), (2) new parents for
+the nodes in UorVpost-merge (lines 6-11), and (3) new children
+for the nodes in UorVafter the merge (lines 13-18).
+We next propose three optimizations to improve runtime.
+3The order of nodes within a cluster is considered arbitrary, or it may be determined
+based on the topological order of the input causal DAG if such information is preserved.Algorithm 1: TheCaGreS Algorithm
+input : A causal DAGGand a number 𝑘.
+output: A summary causal DAG Hwith𝑘nodes.
+1H←G
+2H← LowCostMerges(H)
+3while size(H.𝑛𝑜𝑑𝑒𝑠)>𝑘do
+4𝑚𝑖𝑛_𝑐𝑜𝑠𝑡←∞
+5(𝑿,𝒀)←𝑁𝑢𝑙𝑙
+6for(𝑼,𝑽)∈H.nodes do
+7 ifIsValidPair (𝑼,𝑽,H)then
+8 cost𝑈𝑉←GetCost(𝑼,𝑽,H)
+9 ifcost𝑈𝑉<min_cost then
+10 min_cost←cost𝑈𝑉
+11(𝑿,𝒀)←(𝑼,𝑽)
+12 ifcost𝑈𝑉==min_cost then
+13 Randomly decide if to replace 𝑿and𝒀with𝑼and𝑽
+14H.Merge(𝑿,𝒀)
+15returnH
+Algorithm 2: The GetCost Procedure
+input : A summary causal DAG Hand a pair of nodes 𝑼and𝑽.
+output: The cost of contracting 𝑼and𝑽.
+1cost←0
+2/* New edges among the nodes in the cluster */
+3ifH.HasEdge(𝑼,𝑽)== False then
+4 cost←cost+𝑠𝑖𝑧𝑒(𝑼)·𝑠𝑖𝑧𝑒(𝑽)
+5/* New parents */
+6parents𝑈←H.GetPredecessors(𝑼)
+7parents𝑉←H.GetPredecessors(𝑽)
+8parentsOnlyU←parents𝑈\parents𝑉
+9cost←cost+size(parentsOnlyU)·size(𝑽)
+10parentsOnlyV←parents𝑉\parents𝑈
+11cost←cost+size(parentsOnlyV)·size(𝑼)
+12/* New children */
+13children𝑈←H.GetSuccessors(𝑼)
+14children𝑉←H.GetSuccessors(𝑽)
+15childrenOnlyU←children𝑈\children𝑉
+16cost←cost+size(childrenOnlyU)·size(𝑽)
+17childrenOnlyV←children𝑉\children𝑈
+18cost←cost+size(childrenOnlyV)·size(𝑼)
+19return cost
+Semantic Constraint : We can reduce the search space and ensure
+that only semantically related variables are merged, thereby sup-
+porting semantic coherence in the summary DAG. To achieve this,
+the user may specify which node pairs are allowed to be merged
+by providing a semantic similarity matrix and a threshold that indi-
+cates the maximum distance between two nodes within a cluster.
+The user can assess the semantic similarity using previous work
+on semantic similarity [37, 63] or large language models [5].
+Assume a semantic similarity measure 𝑠𝑖𝑚(·,·)that assigns a
+value between 0 and 1 to a pair of variables. For a summary DAG H
+and a threshold 𝜏, we say thatHsatisfies the semantic constraint
+if, for every cluster C∈V(H),𝑠𝑖𝑚(𝑉𝑖,𝑉𝑗)≥𝜏for every𝑉𝑖,𝑉𝑗∈C.
+Anna Zeng, Michael Cafarella, Batya Kenig, Markos Markakis, Brit Youngmann, and Babak Salimi
+This condition is checked in line 8 of the CaGreS algorithm when
+validating whether a pair of nodes is suitable for contraction.
+Caching : We use two caching mechanisms: one for storing invalid
+node pairs and another for cost scores. We demonstrated in Section
+8.5 that these caching mechanisms are effective in reducing runtime.
+We initialize the invalid pairs cache during a preprocessing phase.
+An invalid pair is a node pair with semantic similarity below the
+threshold or connected by a directed path of length above 2(Lemma
+3.1). During CaGreS ’s run, invalid pairs are cached, and each itera-
+tion checks the validity of node pairs before computing costs.
+The cost of a node pair U,Vremains unchanged after merging
+another node pair X,Yif neither UnorVare neighbors of Xor
+Y. Following the merge of XandY, we update the cost cache by
+removing the cost scores of all node pairs involving one of their
+neighbors. When calculating the cost for a node pair, we check if
+the score is in the cache. If not, we compute and add it, ensuring
+the cache reflects node pair mergers’ impact on neighboring pairs.
+Low Cost Merges : As pre-processing, we contract node pairs with
+low costs (line 4). This involves merging nodes that share identical
+children and parents. Additionally, we merge nodes linked along
+non-branching paths, each having at most one parent and one
+child. In Section 8.5, we experimentally show that this optimization
+benefits small or low-density causal DAGs.
+Time Complexity A single cost computation with 𝑛=|V(G)| takes
+𝑂(𝑛)due to the maximum number of neighbors a node can have.
+The algorithm undergoes 𝑛−𝑘iterations, evaluating all node pairs
+(O(𝑛2) such pairs) in the current summary DAG with no more than
+𝑛neighbors. Thus, the overall time complexity is 𝑂((𝑛−𝑘)·𝑛3).
+6DO-CALCULUS IN SUMMARY CAUSAL DAGS
+Next, we show that the rules of 𝑑𝑜-calculus are sound and complete
+in summary causal DAGs. This is vital to ensure that the summary
+causal DAGs are effective formats that support causal inference
+by enabling direct causal inference on the summary DAGs. Our
+proof relies on the equivalence between the RB of a summary
+DAG and its canonical causal DAG (Theorem 4.1). This result is
+not surprising because the canonical causal DAG is a supergraph
+of the input causal DAG. Pearl already observed in [ 74] that: “The
+addition of arcs to a causal diagram can impede, but never assist,
+the identification of causal effects in nonparametric models. This
+is because such addition reduces the set of 𝑑-separation conditions
+carried by the diagram; hence, if causal effect derivation fails in the
+original diagram, it is bound to fail in the augmented diagram” .
+Given a causal DAG G, for a set of nodes X⊆V(G), letGXdenote
+the graph that results from Gby removing all incoming edges to
+nodes in X, byGXthe graph that results from Gby removing all
+outgoing edges from the nodes in X. For a set of nodes X⊆V(𝐺)\Z,
+we denote byGXZthe graph that results from Gby removing all
+incoming edges into Xand all outgoing edges from Z.
+Theorem 6.1 (Soundness of Do-Calculus in summary causal
+DAGs). LetGbe a causal DAG encoding an interventional distribu-
+tion𝑃(·|𝑑𝑜(·)), compatible with the summary causal DAG (H,𝑓).Query
+TemplateReturned
+RowsReturned
+Bytes
+Num
+JoinsNum
+TablesNum
+ColumnsResult
+Cache
+Hit
+Compile
+TimePlan
+TimeLock
+Wait
+TimeExec.
+Time
+Elapsed
+Time
+Figure 6: Modifications to the Redshift DAG (Fig. 1).
+For any disjoint subsets X,Y,Z,W⊆V(H), the following rules hold:
+R1:(Y⊥⊥Z|X,W)HX=⇒𝑃(𝒀|𝑑𝑜(𝑿),𝒁,𝑾)=𝑃(𝒀|𝑑𝑜(𝑿),𝑾)
+R2:(𝒀⊥⊥𝒁|𝑿,𝑾)H𝑿𝒁=⇒𝑃(𝒀|𝑑𝑜(𝑿),𝑑𝑜(𝒁),𝑾)=𝑃(𝒀|𝑑𝑜(𝑿),𝒁,𝑾)
+R3:(𝒀⊥⊥𝒁|𝑿,𝑾)H𝑿𝒁(𝑾)=⇒𝑃(𝒀|𝑑𝑜(𝑿),𝑑𝑜(𝒁),𝑾)=𝑃(𝒀|𝑑𝑜(𝑿),𝑾)
+where, 𝑼def=(𝑈)for every𝑈∈V(H), and𝑍(𝑊)is the set of nodes
+in𝑍that are not ancestors of any node in 𝑊.
+Theorem 6.2 (Completeness of Do-Calculus in summary
+causal DAGs). Let(H,𝑓)be a summary causal DAG for G, and let
+𝑿,𝒀,𝑾,𝒁⊆V(H) be disjoint sets of variables. If 𝒀is𝑑-connected to 𝒁
+inH𝑿w.r.t.𝑿∪𝑾, then there exists a causal DAG G′compatible with
+H, such that𝑓(𝒀)is𝑑-connected to 𝑓(𝒁)inG′
+𝑓(𝑿)w.r.t.𝑓(𝑿∪𝑾).
+ATE Computation over Summary DAGs : We outline how to
+compute ATE (see Section 2) directly on the summary DAG. If
+the treatment or outcome is in a cluster node of H, we estimate
+𝐴𝑇𝐸(𝑈,𝑉)over the canonical causal DAG GH. To minimize the
+adjustment set, 𝑈is ordered before all nodes in its cluster in GH.
+Alternatively, an upper and lower bound can be derived by consid-
+ering all subsets in 𝑈’s cluster inH.
+7 ROBUSTNESS AGAINST DAG QUALITY
+We evaluate the effectiveness of summary DAGs in providing ro-
+bustness against a flawed input causal DAG. In a case study, we
+demonstrate that the summary DAG facilitates the handling of er-
+rors in the input DAG more effectively than directly examining the
+causal DAG (which may be overwhelming to the user). This study
+emphasizes that causal DAG summarization helps address quality
+issues and increases robustness against misspecifications.
+We revisit the Redshift causal DAG (Fig. 1). For each variable
+pair, we consulted GPT-4 [ 70] about the edge presence and direction,
+resulting in 55 detected edges. GPT-4 correctly identified 21 of the
+23 original edges, inverted 1, and missed 1. It also generated 33
+additional edges not in the original DAG. We will demonstrate how
+causal DAG summarization can reduce the impact of these errors.
+Missing Edges : Starting from the Redshift DAG (Fig. 1), we
+remove the edge GPT-4 failed to detect ( Result Cache Hit →
+Lock Wait Time ), marked in red in Fig. 6. As evident in Fig. 7a,
+CaGreS produces the same summary DAG as in Fig. 2b. The in-
+formation of which node in the cluster {Results Cache Hit ,
+Exec. Time} has a directed edge to one of the nodes in the cluster
+Causal DAG Summarization (Full Version)
+Query
+Template,
+Ret. Rows,
+Ret. Bytes,
+Num
+Columns
+Num
+Joins,
+Num
+TablesResult
+Cache Hit,
+Exec. Time
+Plan
+Time,
+Lock Wait
+TimeCompile
+Time,
+Elapsed
+Time
+(a) Summary After DeletionQuery
+Template,
+Num Joins,
+Num Tables,
+Num
+ColumnsRet.
+Rows,
+Ret.
+Bytes
+Result
+Cache Hit,
+Lock Wait
+Time
+Plan
+Time,
+Compile
+TimeExec.
+Time,
+Elapsed
+Time
+(b) Summary After Additions
+Figure 7: 5-node summary DAGs after DAG modifications.
+Table 2: Datasets
+Dataset # Nodes (Variables) # Edges # Tuples
+Redshift 12 23 9900
+Flights 11 15 1M
+Adult 13 48 32.5K
+German 21 43 1000
+Accidents 41 368 2.8M
+Urls 60 310 1.7M
+{Plan Time ,Lock Time} is lost upon summarization. Any causal
+estimation performed over the summary DAG considers all possible
+causal DAGs compatible with this summary DAG, including once
+where the edge is included. Thus, the impact of this error is reduced.
+Extraneous Edges : Starting again from the Redshift DAG, we
+add 5 random edges from the set of redundant edges produced
+by GPT-4, marked in blue in Fig. 6. These additional edges reduce
+the number of CIsentailed by the DAG, which can hurt causal
+inference accuracy. However, manually pruning extraneous edges
+would require having the user check each of the (now 28) edges in
+the DAG for correctness. If we instead summarize the DAG using
+CaGreS with𝑘=5, the user is faced with the simpler, 9-edge
+summary DAG shown in Fig. 7b. It is sufficient for the user to de-
+tect the 2 suspicious orange edges among these 9 to discover 3 of
+the 5 extraneous edges. The remaining 2 extraneous edges (from
+Num Columns toPlan Time andLock Wait Time ) are subsumed
+grouping Num Columns together with other, highly semantically
+similar, query-related features. As such, graph summarization effec-
+tively helps address extraneous edges by facilitating their detection.
+8 EXPERIMENTAL EVALUATION
+We empirically demonstrate the following claims: ( C1) Our sum-
+mary DAGs support reliable causal inference. ( C2) Our objective
+evaluation method effectively determines superior summary DAGs.
+(C3)CaGreS outperforms other methods and achieves efficient
+performance. ( C4) Our proposed optimizations help improve the
+runtime of CaGreS without compromising quality.
+8.1 Experimental Setting
+All algorithms are implemented in Python 3.7. Causal effect com-
+putation was performed using the DoWhy library [ 93]. The ex-
+periments were executed on a PC with a 4.8GHz CPU, and 16GB
+memory. Our code and datasets are available at [3].Datasets . We examine six datasets, as shown in Table 2. Five of the
+datasets are publicly available, while Redshift was collected by run-
+ning a publicly available benchmark on publicly available cloud re-
+sources. We use the DAG in Fig. 1 for Redshift and build the causal
+DAGs using [ 113] for the remaining datasets. Redshift : A dataset
+collected by running queries from the TPC-DS benchmark [ 80] on
+Amazon Redshift Serverless [ 8]. We execute 100 queries from the
+query benchmark and retrieve the associated entries in the moni-
+toring view [ 6].Flights [2]: a dataset describing domestic flight
+statistics in the US. We enriched it with attributes describing the
+weather, population, and the airline carriers. Adult [1]: a dataset
+comprises demographic information of individuals including their
+education, age, and income. German [10]: a dataset that contains
+details of bank account holders, including demographic and finan-
+cial information. Accidents [66]: This dataset includes key factors
+influencing car accident severity, such as weather and traffic signs.
+Urls [4]: a dataset containing descriptions of malicious and non-
+malicious URLs. It encompasses properties such as URL length, the
+number of digits, and the occurrence of sensitive words.
+We also created synthetic data using the DoWhy package [ 93],
+enabling manipulation of node count, edge count, and data size.
+Baselines . We examine the following baselines: Brute-Force :
+This algorithm implements an exhaustive search over all possible
+summary DAGs that satisfy the constraint yielding the optimal
+solution. k-Snap [103]: A general-purpose graph summarization
+algorithm that employs bottom-up node contractions (akin to Ca-
+GreS ). The primary distinction lies in the objective function: k-Snap
+focuses on ensuring homogeneity among nodes within a cluster. We
+have enhanced k-Snap to address acyclicity. Transit-Cluster
+In [104], the authors proposed Transit Clusters as a specific type
+of summary causal DAG that maintains identifiability properties
+under certain conditions. They introduced an algorithm to identify
+all transit clusters for a graph. For a fair comparison, we consider
+the transit cluster that meets the constraints and has the maximal
+RB.CIC [68] The authors of [ 68] proposed a Clustering Information
+Criterion (CIC) that represents various complex interactions among
+variables in a causal DAG. Based on this criterion, they developed
+a greedy-based approach to learn clustered causal DAGs directly
+from the data. Random : As a sanity check, this algorithm generates
+a random summary DAG that adheres to the size constraint.
+Metrics of evaluation . In some cases, summary DAGs are incom-
+parable, meaning their RBs do not strictly imply one another. To as-
+sess quality, we count additional edges in the canonical causal DAG
+absent from the original DAG—fewer edges indicate a sparser sum-
+mary DAG encoding more CIs.
+As a default configuration, we set the size constraint 𝑘to𝑛
+2,
+where𝑛is the number of nodes in the input causal DAG. The
+runtime cutoff was set at 1hour.
+8.2 Usability Evaluation (C1)
+8.2.1 The utility of the summary causal DAGs for causal inference.
+We assess the utility of the summary causal DAGs for causal infer-
+ence. To this end, we compare the causal effects estimated within
+the original DAG with those computed within the summary causal
+DAGs. Each causal effect estimation yields an interval (of 95% con-
+fidence). We compare the intervals derived from the input DAG
+Anna Zeng, Michael Cafarella, Batya Kenig, Markos Markakis, Brit Youngmann, and Babak Salimi
+20406080percentage overlapBrute-Force
+CaGreS
+k-Snap
+Random
+Transit-Cluster
+CIC
+(a)Flights
+20406080percentage overlap (b)German
+Figure 8: Average percentage overlap with ground truth.
+1030507090110130
+Number of Nodes020406080100percentage overlap
+CaGreS
+k-Snap
+Random
+(a)
+102103104105
+Number of Tuples020406080100percentage overlap
+ (b)
+Figure 9: Average percentage overlap vs. data properties.
+(the ground truth) with those obtained by the baselines. Given that
+the adjustment sets in the summary DAGs may differ from those
+in the original DAG, we anticipate getting different intervals.
+Average Percentage Overlap : We report the average percentage
+of overlap of the causal interval across all node pairs connected
+by a causal path in the input DAG. A higher percentage overlap
+indicates greater robustness in causal inference. The results for
+Flights andGerman are shown in Fig. 8 (similar trends were
+observed for the other datasets). CaGreS ’s average percentage
+overlap is close to that of Brute-Force , suggesting a high degree
+of similarity between the two summary DAGs. CaGreS surpasses
+all other competitors. This underscores the superior suitability of
+CaGreS for causal inference compared to the baselines.
+In what comes next, we use synthetic data, allowing us to manage
+the number of nodes in the input DAG and database tuples. We
+omit from presentation the Brute-Force ,Transit-Cluster , and
+CICbaselines as they exceeded our time limit cutoff.
+# of attributes : We examine how the number of nodes in the
+input causal DAG affects the performance. With a larger number
+of nodes, the task of finding the optimal summary DAG becomes
+harder. Here, the number of data tuples is fixed at 10K. The results
+are depicted in Fig. 9(a). For all baselines, with more data attributes,
+their alignment with the input causal DAG diminishes. Nevertheless,
+CaGreS consistently outperforms the competing methods.
+# of tuples : We analyze the impact of data size on performance,
+fixing the input causal DAG at 30 nodes. Since causal effects are
+sensitive to sample size, we expect larger datasets to yield effects
+on summary DAGs closer to those on the input DAG. As shown in
+Fig. 9(b), small data sizes produce noisy results, while larger sizes
+stabilize them. Again, CaGreS outperforms its competitors .
+8.3 Quality Evaluation (C2)
+When multiple summary DAGs achieve maximal RBs, we use three
+metrics to identify a superior summary DAG: (1) the percentage
+ofCIsin one summary DAG’s RB implied by another; (2) number
+of additional edges in the canonical causal DAG ; and (3) the size of
+adjustment sets in causal estimation, with smaller sets enhancing
+accuracy. As we show, these metrics are highly correlated.
+10 30 50 70 90110 130 150
+Number of Nodes020406080% of Implied CIsCaGreS -> k-Snap
+k-Snap -> CaGreS(a) Higher bars are better
+10 30 50 70 90110 130 150
+Number of Nodes102103104# Additional EdgesCaGreS
+k-Snap
+Random (b) Lower bars are better
+Figure 10: Quality metrics vs. the number of nodes.
+Table 3: Pair-wise percentage of the RB’s CIsimplied.
+Brute-Force CaGreS k-Snap Random TC CIC
+Brute-Force - 83.3% 50% 50% 16.6% 16.6%
+CaGreS 50% - 60% 16.6% 0% 16%
+k-Snap 0% 16.6% - 50% 16.6% 0%
+Random 16.6% 0% 50% - 0% 16.6%
+TC 0% 0% 16.6% 16.6% - 50%
+CIC 0% 0% 0% 16.6% 0% -
+We generated random causal DAGs with various number of
+nodes (five DAGs for each node count), while keeping all other
+parameters fixed. We omit from presentation the Brute-Force ,
+Transit-Cluster , and CIC baselines as they exceeded our time
+cutoff. The results are depicted in Fig. 10. Fig. 10(a) depicts the
+percentage of CIsin the RB of k-Snap that are implied by that
+ofCaGreS and vice versa. Similar trends were observed for Ran-
+dom. A higher percentage of k-Snap ’sCIsare implied by CaGreS
+compared to the percentage of CaGreS ’sCIsthat are implied by
+k-Snap . Hence, while no RB entirely implies the other, we can still
+conclude that the summary DAG of CaGreS is superior to that
+ofk-Snap . Fig. 10(b) depicts the number of additional edges in
+thecanonical causal DAG .CaGreS consistently yields summary
+DAGs with fewer edges. We also considered the average size of the
+adjustment sets in the computation of causal estimations (omitted
+from the presentation). We report that CaGreS outperforms the
+competitors, consistently yielding smaller adjustment sets. Since
+these metrics are closely interrelated, we deduce that it is appropriate
+to use the count of additional edges for comparing quality.
+8.4 Effectiveness Evaluation (C3)
+We assess CaGreS based on quality and runtime performance.
+Case Study: Flights We present the pairwise percentage of the
+CIsin the RB implied by all baseline pairs. The results are shown in
+Table 3. The summary DAGs obtained by CaGreS andk-Snap are
+given in Fig. 11 (The optimal summary DAG by Brute-Force is
+omitted from presentation). Brute-Force yields the most effective
+summary DAG, as it implies the highest percentage of CIsof any
+other baseline. While 60% of the CIsofk-Snap are implied by the
+RB of CaGreS , only 16% of the CIsofCaGreS are implied by the
+RB of k-Snap . This superiority of CaGreS over k-Snap is further
+supported by a lower number of additional edges (7 for CaGreS , 13
+forBrute-Force , and 14 for k-Snap ). Intuitively, this stems from
+k-Snap ’s decision to form two 3-size clusters, connected by an edge.
+In the resulting canonical causal DAG , every pair of nodes within
+and between the clusters is connected by an edge.
+Next, for each dataset, we report the runtime and the number of
+additional edges. The results are depicted in Fig. 12. Only CaGreS ,
+k-Snap , and Random can handle causal DAGs with more than 20
+nodes within a responsive runtime. While Random andk-Snap
+Causal DAG Summarization (Full Version)
+State City
+Humidity,
+Prec.Temp.
+DelayAirport,
+Pop.,
+Traffic
+Airline,
+Fleet
+(a)CaGreSState City
+Humidity Temp.
+Prec.Airport,
+Pop.,
+Traffic
+Airline,
+Fleet,
+Delay
+(b)k-Snap
+Figure 11: Summary causal DAGs for the Flights dataset.
+exhibit runtimes comparable to that of CaGreS ,CaGreS consis-
+tently produces summary DAGs with fewer additional edges. As
+expected, Brute-Force outperforms CaGreS in terms of quality
+but is impractical for interactive interaction. CICexhibits relatively
+low performance, primarily due to a causal discovery component.
+Transit-Cluster cannot handle large causal DAGs, as the algo-
+rithm materializes all transit clusters to select the maximal one.
+We next analyze the influence of different parameters on per-
+formance. In these experiments, our focus shifts to synthetic data,
+which enables us to manipulate data-related factors.
+Input DAG size We vary the number of nodes in the input DAG
+by generating a series of random DAGs varying the number of
+nodes (5 DAGs per node count) and keeping all other parameters
+constant. The results are shown in Fig. 13. As expected, k-Snap
+andCaGreS exhibit a polynomial increase in runtime (Fig. 13(a)).
+The improvement relative to k-Snap is attributed to our caching
+mechanisms. CaGreS consistently generates summary DAGs with
+fewer additional edges (Fig. 13(b)), indicating better quality.
+Summary size We vary the size constraint 𝑘. Here, the node count
+is set to 50, and the graph density is held constant at 0.3. The results
+are depicted in Fig.14. The runtime of both CaGreS andk-Snap
+demonstrate a linear increase with 𝑘(Fig. 14(a)). This is because
+larger𝑘values necessitate more merges. As expected, CaGreS
+manages to generate summary DAGs corresponding to canonical
+causal DAGs with fewer edges (Fig. 14(b)).
+Graph density We investigate the influence of graph density on
+performance. We observe a nearly linear increase in runtime for
+both CaGreS andk-Snap as graph density rises (Fig. 15(a)). This is
+because both algorithms examine neighboring nodes of each node
+pair, and higher density increases the number of neighbors. As
+density increases, both algorithms add more edges. However, at
+high densities (above 0.7), fewer edges remain to be added, so the
+number of additional edges decreases (Fig. 15(b)).
+Data size We report that the data size, i.e., number of tuples, has no
+effect on the performance of CaGreS andk-Snap . This is because
+both algorithms only examine the input causal DAGs.
+8.5 Optimizations (C4)
+We assess the effect of our optimizations on the performance of
+CaGreS . To this end, we examine three variants of CaGreS : (I) No
+Cache, a version of CaGreS without caching, (ii) No Preprocessing,
+a version without the low-cost merge optimization, and (iii) No
+Optimizations: a variant without either optimization.
+We used synthetic data to generate causal DAGs, varying node
+count and density as in Section 8.4. Figure 16 shows the results. Thenumber of additional edges remained constant across baselines, so
+we omit that plot. This confirms that our optimizations enhance run-
+time without sacrificing quality . Notably, caching improves runtime
+nearly threefold , while preprocessing has a modest effect. For large,
+dense DAGs, preprocessing may slightly slow the algorithm but
+benefits smaller, sparser ones.
+9 RELATED WORK
+Summary Causal DAGs . The abstraction of causal models has
+been studied in literature [ 91]. Previous work [ 12,72] investigated
+the problem of determining under what assumptions DAGs over
+sets of variables can represent the same CIs. The authors of [ 17,
+18,86] explored the problem of determining the causes of a target
+behavior (macro-variable) from micro-variables (e.g., image pixels).
+Other works consider chain or ancestral causal graphs [ 46,114].
+[81] presented a method to compress causal graphs by removing
+nodes to eliminate redundancy. In contrast, our work addresses
+causal DAG summarization, where some causal information is lost
+but the summary DAG still supports reliable causal inference. The
+authors of [ 9] expanded the do-calculus framework [ 74] to clustered
+causal graphs, a related but distinct concept. Our contribution lies
+in presenting a more streamlined proof of this principle, relying on
+the connection between node contraction and edge addition.
+General-Purpose Summary Graphs Graph summarization aims
+to condense an input graph into a more concise representation.
+Graph summarization has been extensively studied within the
+data management community [ 14,25,50,54,67], as summary
+graphs not only reduce the graph’s size but also enable efficient
+query answering [ 25,52,82,96], and enables enhanced data vi-
+sualization and pattern discovery [ 22,24,41,44,48,94], and sup-
+ports extraction of influence dynamics [ 58]. Various techniques
+have been explored, including grouping nodes based on similarity
+[47,50,62,67,82,96,97,99,103,110,116], reducing the number
+bits required to represent graphs [ 15,54,67,83,92], and removing
+unimportant nodes/edges [ 52,100]. We argue that existing tech-
+niques are ill-suited for the causal DAG summarization problem.
+Graph summarization objectives differ across applications, often
+prioritizing minimizing the reconstruction error [ 47,110], facili-
+tating accurate query answering [ 52,96], or selecting contractions
+that preserve shortest paths to facilitate routing queries [ 34]. Con-
+sequently, existing methods inadequately cater to the objective of
+preserving causal information, often yielding graphs unsuitable
+for causal inference, as shown in Section 1. Our algorithm follows
+a previous line of work [ 34,103], where a bottom-up greedy ap-
+proach is used to identify promising node pairs for contraction. Our
+main contribution lies in how it estimates merge costs related to the
+causal interpretation of the graph and the objective of preserving
+causal information.
+Causal Discovery . Causal discovery is a well-studied problem [ 35,
+113,115], whose goal is to infer causal relationships among vari-
+ables. While background knowledge is crucial [ 75], causal DAGs
+can be inferred from data under certain assumptions [ 20,35]. Exist-
+ing methods include constraint-based [ 101] and score-based algo-
+rithms [ 20,95,108,119]. Pashami et al. [ 73] proposed a cluster-based
+conflict resolution mechanism to determine the causal relationship
+among variables. Recent works [ 16,106] have explored the use of
+Anna Zeng, Michael Cafarella, Batya Kenig, Markos Markakis, Brit Youngmann, and Babak Salimi
+Brute-Force
+CaGreSk-Snap
+RandomTransit-Cluster
+CIC
+10 15 20 25 30
+# Additional Edges0123456Runtime (s)
+(a)Redshift
+7 10 13 16 19
+# Additional Edges0123456Runtime (s) (b)Flights
+30 35 40 45
+# Additional Edges101
+101103Runtime (s) (c)Adult
+60 80 100 120
+# Additional Edges0.000.010.020.030.040.05Runtime (s)
+(d)German
+0 100 200 300 400
+# Additional Edges0.00.20.40.60.8Runtime (s) (e)Accidents
+0 50 100 150 200 250
+# Additional Edges0.00.20.40.60.81.01.21.4Runtime (s) (f)Urls
+Figure 12: Number of additional edges vs. runtime. The optimal solution should be located in the lower right region.
+020406080100120140
+Number of Nodes0100020003000Runtime (s)
+CaGreS
+k-Snap
+(a) Runtime
+20406080100120140
+Number of Nodes02000400060008000# Additional EdgesCaGreS
+k-Snap (b) Quality
+Figure 13: Number of nodes vs. running times and quality.
+15 20 25 30 35 40 45
+k024681012Runtime (s)
+CaGreS
+k-Snap
+(a) Runtime
+15202530354045
+k503005508001050# Additional EdgesCaGreS
+k-Snap (b) Quality
+Figure 14: Summary size 𝑘vs. running times and quality.
+0.1 0.3 0.5 0.7 0.9
+Graph Density051015202530Runtime (s)
+CaGreS
+k-Snap
+(a) Runtime
+0.10.20.30.40.50.60.70.80.9
+Graph Density02505007501000# Additional EdgesCaGreS
+k-Snap (b) Quality
+Figure 15: Graph density vs. running times and quality.
+20 40 60 80 100 120
+Number of Nodes (n)02004006008001000Runtime (s)
+CaGreS
+No Cache
+No Preprocessing
+No Optimizations
+(a) Varying # nodes (density = 0.4)
+0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8
+Density0.40.60.81.01.21.4Runtime (s)
+ (b) Varying density (n = 30)
+Figure 16: Optimizations.
+LLMs for causal discovery. Our work serves as a complementary
+endeavor to existing research in causal discovery.10 CONCLUSIONS & LIMITATIONS
+A mixed graph is a typical output of causal discovery algorithms [ 19,
+77,101]. For simplicity in exposition, we concentrated on regular
+causal DAGs throughout this paper. Nevertheless, our results and
+algorithms apply to mixed graphs as well.
+This paper opens up promising future research directions. This
+includes the development of compact representations of node sets
+tailored specifically for causal inference, addressing additional size
+constraints, and refining algorithms with theoretical guarantees.
+Lastly, we note that the size constraint can impact the generated
+summary DAG, and users may need to adjust it to obtain a desirable
+summary. Future research will explore methods to recommend an
+optimal value for this parameter. For example, a heuristic stopping
+condition could be added to the algorithm, signaling it to halt if the
+next merge would result in a significant loss of information.
+ACKNOWLEDGMENTS
+We sincerely appreciate the support from DARPA ASKEM Award
+HR00112220042, the ARPA-H Biomedical Data Fabric project, and
+Liberty Mutual. We also want to thank the NSF Award IIS-2340124,
+NIH Grant U54HG012510, and the Israel Science Foundation (ISF)
+Grant No. 1442/24 for their partial funding of this work.
+Causal DAG Summarization (Full Version)
+REFERENCES
+[1] 2016. Adult Census Income Dataset. https://www.kaggle.com/datasets/uciml/
+adult-census-income. Accessed: 2024-04-04.
+[2]2020. Kaggle Datasets: Flights Delay. https://www.kaggle.com/usdot/flight-
+delays.
+[3] 2024. Code Repository. https://github.com/TechnionTDK/causalens. Accessed:
+2024-07-30.
+[4]2024. Kaggle Datasets: malicious url detection. https://www.kaggle.com/
+datasets/pilarpieiro/tabular-dataset-ready-for-malicious-url-detection. Ac-
+cessed: 2024-04-04.
+[5] 2024. OpenAI ChatGPT (3.5) [Large language model]. https://openai.com/blog/
+chatgpt. Accessed: 2024-04-04.
+[6]2024. SYS_QUERY_HISTORY - Amazon Redshift. https://docs.aws.amazon.
+com/redshift/latest/dg/SYS_QUERY_HISTORY.html. Accessed: 2024-04-04.
+[7] Abdullah Alomar, Pouya Hamadanian, Arash Nasr-Esfahany, Anish Agarwal,
+Mohammad Alizadeh, and Devavrat Shah. 2023. CausalSim: A Causal Frame-
+work for Unbiased Trace-Driven Simulation. In 20th USENIX Symposium on
+Networked Systems Design and Implementation (NSDI 23) . 1115–1147.
+[8] Amazon Web Services. 2024. Amazon Redshift Serverless. https://aws.amazon.
+com/redshift/redshift-serverless/.
+[9] Tara V Anand, Adele H Ribeiro, Jin Tian, and Elias Bareinboim. 2023. Causal
+Effect Identification in Cluster DAGs. In Proceedings of the AAAI Conference on
+Artificial Intelligence .
+[10] Arthur Asuncion and David Newman. 2007. UCI machine learning repository.
+[11] Sander Beckers. 2022. Causal explanations and XAI. In Conference on causal
+learning and reasoning . PMLR, 90–109.
+[12] Sander Beckers and Joseph Y Halpern. 2019. Abstracting causal models. In
+Proceedings of the aaai conference on artificial intelligence , Vol. 33. 2678–2685.
+[13] Leopoldo Bertossi and Babak Salimi. 2017. From causes for database queries to
+repairs and model-based diagnosis and back. Theory of Computing Systems 61
+(2017), 191–232.
+[14] Sourav S Bhowmick and Byron Choi. 2022. Data-driven visual query inter-
+faces for graphs: Past, present, and (near) future. In Proceedings of the 2022
+International Conference on Management of Data . 2441–2447.
+[15] Paolo Boldi and Sebastiano Vigna. 2004. The webgraph framework I: compres-
+sion techniques. In Proceedings of the 13th international conference on World
+Wide Web . 595–602.
+[16] Alessandro Castelnovo, Riccardo Crupi, Fabio Mercorio, Mario Mezzanzanica,
+Daniele Potertì, and Daniele Regoli. 2024. Marrying LLMs with Domain Expert
+Validation for Causal Graph Generation. (2024).
+[17] Krzysztof Chalupka, Frederick Eberhardt, and Pietro Perona. 2016. Multi-level
+cause-effect systems. In Artificial intelligence and statistics . PMLR, 361–369.
+[18] Krzysztof Chalupka, Pietro Perona, and Frederick Eberhardt. 2015. Visual causal
+feature learning. In Proceedings of the Thirty-First Conference on Uncertainty in
+Artificial Intelligence . AUAI Press, 181–190.
+[19] Wenyu Chen, Mathias Drton, and Ali Shojaie. 2023. Causal Structural Learning
+via Local Graphs. SIAM Journal on Mathematics of Data Science 5, 2 (2023),
+280–305.
+[20] D.M Chickering. 2002. Optimal structure identification with greedy search.
+JMLR 3, Nov (2002), 507–554.
+[21] Anthony C Constantinou, Yang Liu, Kiattikun Chobtham, Zhigao Guo, and
+Neville K Kitson. 2021. Large-scale empirical validation of Bayesian Network
+structure learning algorithms with noisy data. International Journal of Approxi-
+mate Reasoning 131 (2021), 151–188.
+[22] Diane J Cook and Lawrence B Holder. 1993. Substructure discovery using
+minimum description length and background knowledge. Journal of Artificial
+Intelligence Research 1 (1993), 231–255.
+[23] Nilesh Dalvi and Dan Suciu. 2007. Efficient query evaluation on probabilistic
+databases. The VLDB Journal 16 (2007), 523–544.
+[24] Cody Dunne and Ben Shneiderman. 2013. Motif simplification: improving
+network visualization readability with fan, connector, and clique glyphs. In
+Proceedings of the SIGCHI Conference on Human Factors in Computing Systems .
+3247–3256.
+[25] Wenfei Fan, Jianzhong Li, Xin Wang, and Yinghui Wu. 2012. Query preserving
+graph compression. In Proceedings of the 2012 ACM SIGMOD international
+conference on management of data . 157–168.
+[26] Sainyam Galhotra, Amir Gilad, Sudeepa Roy, and Babak Salimi. 2022. Hyper:
+Hypothetical reasoning with what-if and how-to queries using a probabilistic
+causal approach. In Proceedings of the 2022 International Conference on Manage-
+ment of Data . 1598–1611.
+[27] Sainyam Galhotra, Yue Gong, and Raul Castro Fernandez. 2023. Metam: Goal-
+oriented data discovery. In 2023 IEEE 39th International Conference on Data
+Engineering (ICDE) . IEEE, 2780–2793.
+[28] Sainyam Galhotra, Romila Pradhan, and Babak Salimi. 2021. Explaining black-
+box algorithms using probabilistic contrastive counterfactuals. In Proceedings
+of the 2021 International Conference on Management of Data . 577–590.[29] Yu Gan, Mingyu Liang, Sundar Dev, David Lo, and Christina Delimitrou. 2021.
+Sage: Practical and Scalable ML-Driven Performance Debugging in Microser-
+vices. In Proceedings of the 26th ACM International Conference on Architectural
+Support for Programming Languages and Operating Systems . 135–151.
+[30] Markus Gangl. 2010. Causal inference in sociological research. Annual review
+of sociology 36 (2010), 21–47.
+[31] M. R. Garey, David S. Johnson, and Larry J. Stockmeyer. 1976. Some Simplified
+NP-Complete Graph Problems. Theor. Comput. Sci. 1, 3 (1976), 237–267.
+[32] Dan Geiger and Judea Pearl. 1988. On the logic of causal models. In UAI
+’88: Proceedings of the Fourth Annual Conference on Uncertainty in Artificial
+Intelligence, Minneapolis, MN, USA, July 10-12, 1988 . 3–14.
+[33] Dan Geiger, Thomas Verma, and Judea Pearl. 1990. Identifying independence
+in bayesian networks. Networks 20, 5 (1990), 507–534.
+[34] Robert Geisberger, Peter Sanders, Dominik Schultes, and Christian Vetter. 2012.
+Exact Routing in Large Road Networks Using Contraction Hierarchies. Trans-
+portation Science 46, 3 (2012), 388–404.
+[35] Clark Glymour, Kun Zhang, and Peter Spirtes. 2019. Review of causal discovery
+methods based on graphical models. Frontiers in genetics 10 (2019), 524.
+[36] Helga Gudmundsdottir, Babak Salimi, Magdalena Balazinska, Dan RK Ports, and
+Dan Suciu. 2017. A demonstration of interactive analysis of performance mea-
+surements with viska. In Proceedings of the 2017 ACM International Conference
+on Management of Data . 1707–1710.
+[37] Sébastien Harispe, Sylvie Ranwez, Stefan Janaqi, and Jacky Montmain. 2015.
+Semantic Similarity from Natural Language and Ontology Analysis. ArXiv
+abs/1704.05295 (2015).
+[38] Juris Hartmanis. 1982. Computers and intractability: a guide to the theory of
+np-completeness (michael r. garey and david s. johnson). Siam Review 24, 1
+(1982), 90.
+[39] Weidong Huang, Peter Eades, and Seok-Hee Hong. 2009. Measuring effec-
+tiveness of graph visualizations: A cognitive load perspective. Information
+Visualization 8, 3 (2009), 139–152.
+[40] Johannes Huegle, Christopher Hagedorn, Lukas Boehme, Mats Poerschke, Jonas
+Umland, and Rainer Schlosser. 2021. MANM-CS: Data generation for bench-
+marking causal structure learning from mixed discrete-continuous and nonlin-
+ear data. WHY-21 at NeurIPS 2021 (2021).
+[41] Lisa Jin and Danai Koutra. 2017. Ecoviz: Comparative vizualization of time-
+evolving network summaries. In ACM SIGKDD 2017 Workshop on Interactive
+Data Exploration and Analytics .
+[42] Arijit Khan, Sourav S. Bhowmick, and Francesco Bonchi. 2017. Summarizing
+Static and Dynamic Big Graphs. Proc. VLDB Endow. 10, 12 (2017), 1981–1984.
+[43] Samantha Kleinberg and George Hripcsak. 2011. A review of causal inference
+for biomedical informatics. Journal of biomedical informatics 44, 6 (2011), 1102–
+1112.
+[44] Danai Koutra, U Kang, Jilles Vreeken, and Christos Faloutsos. 2014. Vog: Sum-
+marizing and understanding large graphs. In Proceedings of the 2014 SIAM
+international conference on data mining . SIAM, 91–99.
+[45] Oliver Kramer and Oliver Kramer. 2013. K-nearest neighbors. Dimensionality
+reduction with unsupervised nearest neighbors (2013), 13–23.
+[46] Steffen L Lauritzen and Thomas S Richardson. 2002. Chain graph models and
+their causal interpretations. Journal of the Royal Statistical Society Series B:
+Statistical Methodology 64, 3 (2002), 321–348.
+[47] Kyuhan Lee, Hyeonsoo Jo, Jihoon Ko, Sungsu Lim, and Kijung Shin. 2020.
+Ssumm: Sparse summarization of massive graphs. In Proceedings of the 26th
+ACM SIGKDD International Conference on Knowledge Discovery & Data Mining .
+144–154.
+[48] Chenhui Li, George Baciu, and Yunzhe Wang. 2015. Modulgraph: modularity-
+based visualization of massive graphs. In SIGGRAPH Asia 2015 Visualization in
+High Performance Computing . 1–4.
+[49] Aristidis Likas, Nikos Vlassis, and Jakob J Verbeek. 2003. The global k-means
+clustering algorithm. Pattern recognition 36, 2 (2003), 451–461.
+[50] Xingjie Liu, Yuanyuan Tian, Qi He, Wang-Chien Lee, and John McPherson. 2014.
+Distributed graph summarization. In Proceedings of the 23rd ACM International
+Conference on Conference on Information and Knowledge Management . 799–808.
+[51] Yike Liu, Tara Safavi, Abhilash Dighe, and Danai Koutra. 2018. Graph summa-
+rization methods and applications: A survey. ACM computing surveys (CSUR)
+51, 3 (2018), 1–34.
+[52] Antonio Maccioni and Daniel J Abadi. 2016. Scalable pattern matching over
+compressed graphs via dedensification. In Proceedings of the 22nd ACM SIGKDD
+International Conference on Knowledge Discovery and Data Mining . 1755–1764.
+[53] Sara Magliacane, Thijs Van Ommen, Tom Claassen, Stephan Bongers, Philip
+Versteeg, and Joris M Mooij. 2018. Domain adaptation by using causal inference
+to predict invariant conditional distributions. Advances in neural information
+processing systems 31 (2018).
+[54] Sebastian Maneth and Fabian Peternek. 2016. Compressing graphs by grammars.
+In2016 IEEE 32nd International Conference on Data Engineering (ICDE) . IEEE,
+109–120.
+[55] Markos Markakis, An Bo Chen, Brit Youngmann, Trinity Gao, Ziyu Zhang,
+Rana Shahout, Peter Baile Chen, Chunwei Liu, Ibrahim Sabek, and Michael
+Anna Zeng, Michael Cafarella, Batya Kenig, Markos Markakis, Brit Youngmann, and Babak Salimi
+Cafarella. 2024. Sawmill: From Logs to Causal Diagnosis of Large Systems. In
+SIGMOD . 444–447.
+[56] Markos Markakis, Brit Youngmann, Trinity Gao, Ziyu Zhang, Rana Shahout,
+Peter Baile Chen, Chunwei Liu, Ibrahim Sabek, and Michael Cafarella. 2024.
+From Logs to Causal Inference: Diagnosing Large Systems. Proceedings of the
+VLDB Endowment 18, 2 (2024), 158–172.
+[57] Markos Markakis, Ziyu Zhang, Rana Shahout, Trinity Gao, Chunwei Liu,
+Ibrahim Sabek, and Michael Cafarella. 2024. Press ECCS to Doubt (Your
+Causal Graph). In Proceedings of the Conference on Governance, Understand-
+ing and Integration of Data for Effective and Responsible AI (Santiago, AA, Chile)
+(GUIDE-AI ’24) . Association for Computing Machinery, New York, NY, USA,
+6–15. https://doi.org/10.1145/3665601.3669842
+[58] Yasir Mehmood, Nicola Barbieri, Francesco Bonchi, and Antti Ukkonen. 2013.
+Csi: Community-level social influence analysis. In Machine Learning and Knowl-
+edge Discovery in Databases: European Conference, ECML PKDD 2013, Prague,
+Czech Republic, September 23-27, 2013, Proceedings, Part II 13 . Springer, 48–63.
+[59] Alexandra Meliou, Wolfgang Gatterbauer, Joseph Y Halpern, Christoph Koch,
+Katherine F Moore, and Dan Suciu. 2010. Causality in databases. IEEE Data
+Engineering Bulletin 33, 3 (2010), 59–67.
+[60] Alexandra Meliou, Wolfgang Gatterbauer, Katherine F Moore, and Dan Suciu.
+2009. Why so? or why no? functional causality for explaining query answers.
+arXiv preprint arXiv:0912.5340 (2009).
+[61] Alexandra Meliou, Sudeepa Roy, and Dan Suciu. 2014. Causality and explana-
+tions in databases. Proceedings of the VLDB Endowment 7, 13 (2014), 1715–1716.
+[62] Arpit Merchant, Michael Mathioudakis, and Yanhao Wang. 2023. Graph Summa-
+rization via Node Grouping: A Spectral Algorithm. In Proceedings of the Sixteenth
+ACM International Conference on Web Search and Data Mining . 742–750.
+[63] Tomas Mikolov, Kai Chen, Greg Corrado, and Jeffrey Dean. 2013. Efficient esti-
+mation of word representations in vector space. arXiv preprint arXiv:1301.3781
+(2013).
+[64] Tim Miller. 2019. Explanation in artificial intelligence: Insights from the social
+sciences. Artificial intelligence 267 (2019), 1–38.
+[65] Karthika Mohan, Judea Pearl, and Jin Tian. 2013. Graphical models for inference
+with missing data. Advances in neural information processing systems 26 (2013).
+[66] Sobhan Moosavi, Mohammad Hossein Samavatian, Srinivasan Parthasarathy,
+Radu Teodorescu, and Rajiv Ramnath. 2019. Accident risk prediction based on
+heterogeneous sparse data: New dataset and insights. In Proceedings of the 27th
+ACM SIGSPATIAL international conference on advances in geographic information
+systems . 33–42.
+[67] Saket Navlakha, Rajeev Rastogi, and Nisheeth Shrivastava. 2008. Graph sum-
+marization with bounded error. In Proceedings of the 2008 ACM SIGMOD inter-
+national conference on Management of data . 419–432.
+[68] Xueyan Niu, Xiaoyun Li, and Ping Li. 2022. Learning Cluster Causal Diagrams:
+An Information-Theoretic Approach. (2022).
+[69] Chris J Oates, Jessica Kasza, Julie A Simpson, and Andrew B Forbes. 2017. Repair
+of partly misspecified causal diagrams. Epidemiology 28, 4 (2017), 548–552.
+[70] OpenAI. 2023. GPT-4 Technical Report. arXiv:2303.08774 [cs.CL]
+[71] RT O’donnell, Ann E Nicholson, B Han, Kevin B Korb, MJ Alam, and LR Hope.
+2006. Incorporating expert elicited structural information in the CaMML causal
+discovery program. In Proceedings of the 19th Australian Joint Conference on
+Artificial Intelligence: Advances in Artificial Intelligence . 1–16.
+[72] Pekka Parviainen and Samuel Kaski. 2016. Bayesian networks for variable
+groups. In Conference on Probabilistic Graphical Models . PMLR, 380–391.
+[73] Sepideh Pashami, Anders Holst, Juhee Bae, and Sławomir Nowaczyk. 2018.
+Causal discovery using clusters from observational data. In FAIM’18 Workshop
+on CausalML, Stockholm, Sweden, July 15, 2018 .
+[74] Judea Pearl. 2000. Causality : models, reasoning, and inference . Cambridge
+University Press.
+[75] J. Pearl and D. Mackenzie. 2018. The book of why: the new science of cause and
+effect . Basic books.
+[76] Sriram Pemmaraju, Steven Skiena, et al .2003. Computational discrete mathemat-
+ics: Combinatorics and graph theory with mathematica ®. Cambridge university
+press.
+[77] Jose M Peña. 2016. Learning acyclic directed mixed graphs from observations
+and interventions. In Conference on Probabilistic Graphical Models . PMLR, 392–
+402.
+[78] Emilija Perkovic. 2020. Identifying causal effects in maximally oriented partially
+directed acyclic graphs. In Conference on Uncertainty in Artificial Intelligence .
+PMLR, 530–539.
+[79] Alireza Pirhadi, Mohammad Hossein Moslemi, Alexander Cloninger, Mostafa
+Milani, and Babak Salimi. 2024. Otclean: Data cleaning for conditional in-
+dependence violations using optimal transport. Proceedings of the ACM on
+Management of Data 2, 3 (2024), 1–26.
+[80] Meikel Poess, Bryan Smith, Lubor Kollar, and Paul Larson. 2002. TPC-DS,
+Taking Decision Support Benchmarking to the Next Level. In Proceedings of the
+2002 ACM SIGMOD international conference on Management of data . 582–587.
+[81] Cristina Puente, José Angel Olivas, E Garrido, and R Seisdedos. 2013. Compress-
+ing the representation of a causal graph. In 2013 Joint IFSA World Congress andNAFIPS Annual Meeting (IFSA/NAFIPS) . IEEE, 122–127.
+[82] Sriram Raghavan and Hector Garcia-Molina. 2003. Representing web graphs.
+InProceedings 19th International Conference on Data Engineering (Cat. No.
+03CH37405) . IEEE, 405–416.
+[83] Ryan A Rossi and Rong Zhou. 2018. Graphzip: a clique-based sparse graph
+compression method. Journal of Big Data 5, 1 (2018), 1–14.
+[84] Sudeepa Roy. 2022. Toward interpretable and actionable data analysis with
+explanations and causality. Proc. VLDB Endow. 15, 12 (2022), 3812–3820.
+[85] Sudeepa Roy and Dan Suciu. 2014. A formal approach to finding explanations
+for database queries. In Proceedings of the 2014 ACM SIGMOD international
+conference on Management of data . 1579–1590.
+[86] Paul K Rubenstein, Sebastian Weichwald, Stephan Bongers, Joris M Mooij, Do-
+minik Janzing, Moritz Grosse-Wentrup, and Bernhard Schölkopf. 2017. Causal
+consistency of structural equation models. arXiv preprint arXiv:1707.00819
+(2017).
+[87] Donald B Rubin. 2005. Causal inference using potential outcomes: Design,
+modeling, decisions. J. Amer. Statist. Assoc. 100, 469 (2005), 322–331.
+[88] Babak Salimi, Johannes Gehrke, and Dan Suciu. 2018. Bias in olap queries:
+Detection, explanation, and removal. In SIGMOD . 1021–1035.
+[89] Babak Salimi, Harsh Parikh, Moe Kayali, Lise Getoor, Sudeepa Roy, and Dan
+Suciu. 2020. Causal relational learning. In Proceedings of the 2020 ACM SIGMOD
+international conference on management of data . 241–256.
+[90] Babak Salimi, Luke Rodriguez, Bill Howe, and Dan Suciu. 2019. Interventional
+fairness: Causal database repair for algorithmic fairness. In Proceedings of the
+2019 International Conference on Management of Data . 793–810.
+[91] Bernhard Schölkopf, Francesco Locatello, Stefan Bauer, Nan Rosemary Ke,
+Nal Kalchbrenner, Anirudh Goyal, and Yoshua Bengio. 2021. Toward causal
+representation learning. Proc. IEEE 109, 5 (2021), 612–634.
+[92] Neil Shah, Danai Koutra, Lisa Jin, Tianmin Zou, Brian Gallagher, and Christos
+Faloutsos. 2017. On Summarizing Large-Scale Dynamic Graphs. IEEE Data Eng.
+Bull. 40, 3 (2017), 75–88.
+[93] Amit Sharma and Emre Kiciman. 2020. DoWhy: An End-to-End Library for
+Causal Inference. arXiv preprint arXiv:2011.04216 (2020).
+[94] Zeqian Shen, Kwan-Liu Ma, and Tina Eliassi-Rad. 2006. Visual analysis of large
+heterogeneous social networks by semantic and structural abstraction. IEEE
+transactions on visualization and computer graphics 12, 6 (2006), 1427–1439.
+[95] Shohei Shimizu, Patrik O Hoyer, Aapo Hyvärinen, Antti Kerminen, and Michael
+Jordan. 2006. A linear non-Gaussian acyclic model for causal discovery. Journal
+of Machine Learning Research 7, 10 (2006).
+[96] Kijung Shin, Amol Ghoting, Myunghwan Kim, and Hema Raghavan. 2019. Sweg:
+Lossless and lossy summarization of web-scale graphs. In The World Wide Web
+Conference . 1679–1690.
+[97] Maryam Shoaran, Alex Thomo, and Jens H Weber-Jahnke. 2013. Zero-
+knowledge private graph summarization. In 2013 IEEE International Conference
+on Big Data . IEEE, 597–605.
+[98] Karamjit Singh, Garima Gupta, Vartika Tewari, and Gautam Shroff. 2018. Com-
+parative benchmarking of causal discovery algorithms. In Proceedings of the
+ACM India Joint International Conference on Data Science and Management of
+Data . Association for Computing Machinery, 46–56.
+[99] Qi Song, Yinghui Wu, Peng Lin, Luna Xin Dong, and Hui Sun. 2018. Mining
+summaries for knowledge graph search. IEEE Transactions on Knowledge and
+Data Engineering 30, 10 (2018), 1887–1900.
+[100] Daniel A Spielman and Nikhil Srivastava. 2008. Graph sparsification by effective
+resistances. In Proceedings of the fortieth annual ACM symposium on Theory of
+computing . 563–568.
+[101] P. Spirtes et al. 2000. Causation, prediction, and search . MIT press.
+[102] Xinwei Sun, Botong Wu, Xiangyu Zheng, Chang Liu, Wei Chen, Tao Qin,
+and Tie-Yan Liu. 2021. Recovering latent causal factor for generalization to
+distributional shifts. Advances in Neural Information Processing Systems 34
+(2021), 16846–16859.
+[103] Yuanyuan Tian, Richard A Hankins, and Jignesh M Patel. 2008. Efficient ag-
+gregation for graph summarization. In Proceedings of the 2008 ACM SIGMOD
+international conference on Management of data . 567–580.
+[104] Santtu Tikka, Jouni Helske, and Juha Karvanen. 2021. Clustering and Structural
+Robustness in Causal Diagrams. arXiv preprint arXiv:2111.04513 (2021).
+[105] Hal R Varian. 2016. Causal inference in economics and marketing. Proceedings
+of the National Academy of Sciences 113, 27 (2016), 7310–7315.
+[106] Aniket Vashishtha, Abbavaram Gowtham Reddy, Abhinav Kumar, Saketh Bachu,
+Vineeth N Balasubramanian, and Amit Sharma. 2023. Causal inference using
+llm-guided discovery. arXiv preprint arXiv:2310.15117 (2023).
+[107] Thomas Verma and Judea Pearl. 1988. Causal networks: semantics and expres-
+siveness. In UAI ’88: Proceedings of the Fourth Annual Conference on Uncertainty
+in Artificial Intelligence, Minneapolis, MN, USA, July 10-12, 1988 , Ross D. Shachter,
+Tod S. Levitt, Laveen N. Kanal, and John F. Lemmer (Eds.). North-Holland, 69–
+78.
+[108] Marco A Wiering et al .2002. Evolving causal neural networks. In Benelearn’02:
+Proceedings of the Twelfth Belgian-Dutch Conference on Machine Learning . 103–
+108.
+Causal DAG Summarization (Full Version)
+[109] Raymond W. Yeung. 2008. Information Theory and Network Coding (1 ed.).
+Springer Publishing Company, Incorporated.
+[110] Quinton Yong, Mahdi Hajiabadi, Venkatesh Srinivasan, and Alex Thomo. 2021.
+Efficient graph summarization using weighted lsh at billion-scale. In Proceedings
+of the 2021 International Conference on Management of Data . 2357–2365.
+[111] Brit Youngmann, Michael Cafarella, Amir Gilad, and Sudeepa Roy. 2024. Sum-
+marized Causal Explanations For Aggregate Views. Proceedings of the ACM on
+Management of Data 2, 1 (2024), 1–27.
+[112] Brit Youngmann, Michael Cafarella, Yuval Moskovitch, and Babak Salimi. 2023.
+On Explaining Confounding Bias. In 2023 IEEE 39th International Conference on
+Data Engineering (ICDE) . IEEE, 1846–1859.
+[113] Brit Youngmann, Michael Cafarella, Babak Salimi, and Zeng Anna. 2023. Causal
+Data Integration. Proceedings of the VLDB Endowment 16, 1- (2023), 2665–2659.
+[114] Jiji Zhang. 2008. On the completeness of orientation rules for causal discovery
+in the presence of latent confounders and selection bias. Artificial Intelligence
+172, 16-17 (2008), 1873–1896.
+[115] Boxiang Zhao, Shuliang Wang, Lianhua Chi, Qi Li, Xiaojia Liu, and Jing Geng.
+2023. Causal Discovery via Causal Star Graphs. ACM Transactions on Knowledge
+Discovery from Data 17, 7 (2023), 1–24.
+[116] Yang Zhou, Hong Cheng, and Jeffrey Xu Yu. 2009. Graph clustering based on
+structural/attribute similarities. Proceedings of the VLDB Endowment 2, 1 (2009),
+718–729.
+[117] Jiongli Zhu, Sainyam Galhotra, Nazanin Sabri, and Babak Salimi. 2023. Con-
+sistent Range Approximation for Fair Predictive Modeling. Proceedings of the
+VLDB Endowment 16, 11 (2023), 2925–2938.
+[118] Jiongli Zhu and Babak Salimi. 2024. Overcoming Data Biases: Towards Enhanced
+Accuracy and Reliability in Machine Learning. IEEE Data Eng. Bull. 47, 1 (2024),
+18–35.
+[119] Shengyu Zhu, Ignavier Ng, and Zhitang Chen. 2020. Causal Discovery with
+Reinforcement Learning. In 8th International Conference on Learning Represen-
+tations, ICLR 2020, Addis Ababa, Ethiopia, April 26-30, 2020 . OpenReview.net.
+A SEMIGRAPHOID-AXIOMS
+The semi-graphoid axioms are the following:
+(1) Triviality: 𝐼(𝐴;∅|𝐶)=0.
+(2) Symmetry: 𝐼(𝐴;𝐵|𝐶)=0=⇒𝐼(𝐴;𝐶|𝐵)=0.
+(3) Decomposition: 𝐼(𝐴;𝐵𝐷|𝐶)=0=⇒𝐼(𝐴;𝐵|𝐷)=0.
+(4)Contraction: 𝐼(𝐴;𝐵|𝐶)=0,𝐼(𝐴;𝐷|𝐵𝐶)=0=⇒𝐼(𝐴;𝐵𝐷|𝐶)=0.
+(5)Weak Union: 𝐼(𝐴;𝐵𝐷|𝐶)=0=⇒𝐼(𝐴;𝐵|𝐶𝐷)=0,𝐼(𝐴;𝐷|𝐵𝐶)=0.
+The semi-graphoid axioms can be summarized using the following
+identity, which follows from the chain-rule for mutual informa-
+tion [109].
+𝐼(𝐴;𝐵𝐷|𝐶)=0if and only if 𝐼(𝐴;𝐵|𝐶)=0and𝐼(𝐴;𝐷|𝐵𝐶)=0(5)
+B PROOFS
+Next, we provide the missing proofs.
+We begin with some basic definitions used in the proofs.
+LetGbe a causal DAG. and let 𝑈,𝑉∈V(G)be two nodes. We say
+that𝑈is aparent of𝑉, and𝑉achild of𝑈if(𝑈→𝑉)∈E(G). A
+directed path 𝑡=(𝑉1,...,𝑉𝑛)is a sequence of nodes such that there
+is an edge(𝑉𝑖→𝑉𝑖+1)∈E(G)for every𝑖∈{1,...,𝑛−1}. We say that
+𝑉is adescendant of𝑈, and𝑈anancestor of𝑉if there is a directed
+path from𝑈to𝑉. We denote the child-nodes of 𝑉inGaschG(𝑉)
+; the descendants of 𝑉(we assume that 𝑉∈DscG(𝑉)) asDscG(𝑉),
+and the nodes ofGthat are not descendants of 𝑉asNDscG(𝑉). For
+a set of nodes S⊆V(G), we let DscG(S)def=Ð
+𝑈∈SDscG(𝑈), and by
+NDscG(S)def=Ñ
+𝑈∈SNDscG(𝑈).
+Atrail𝑡=(𝑉1,...,𝑉𝑛)is a sequence of nodes such that there
+is an edge between 𝑉𝑖and𝑉𝑖+1for every𝑖∈{1,...,𝑛−1}. That is,
+(𝑉𝑖→𝑉𝑖+1)∈E(G)or(𝑉𝑖←𝑉𝑖+1)∈E(G)for every𝑖∈{1,...,𝑛−1}. A
+node𝑉𝑖is said to be head-to-head with respect to 𝑡if(𝑉𝑖−1→𝑉𝑖)∈E(G)
+and(𝑉𝑖←𝑉𝑖+1)∈E(G). A trail𝑡=(𝑉1,...,𝑉𝑛)isactive given Z⊆V
+if (1) every𝑉𝑖that is a head-to-head node with respect to 𝑡eitherbelongs to Zor has a descendant in Z, and (2) every 𝑉𝑖that is not
+a head-to-head node w.r.t. 𝑡does not belong to Z. If a trail𝑡is not
+active given Z, then it is blocked given Z.
+B.1 Proofs for Section 3
+Proof of Lemma 3.1. Let𝑃be a directed path from 𝐴to𝐵, such
+that|𝑃|≥2. Let𝑋be𝐴’s successor in 𝑃, and𝑌be𝐵’s predecessor
+in𝑃. By our assumption that |𝑃|≥2,𝑋∉{𝐴,𝐵}, but𝑌may be the
+same as𝑋. Now, consider the graph 𝐻. By definition, 𝐻contains a
+node𝐴𝐵, with an incoming edge from 𝑌, and an outgoing edge to 𝑋.
+If𝑋=𝑌, we immediately get the cycle 𝐴𝐵→𝑋→𝐴𝐵. Otherwise,
+we consider the subpath 𝑃′(of𝑃) from𝑋to𝑌(𝑋⇝
+𝑃′𝑌) in𝐺. This
+results in the following cycle in 𝐻:𝑌→𝐴𝐵→𝑋⇝
+𝑃′𝑌.
+Now, suppose that 𝐻contains the cycle 𝐶.𝐶must contain the
+node𝐴𝐵. Otherwise, the cycle is included in 𝐺, which leads to a
+contradiction that 𝐺is a DAG. Let 𝑌and𝑋be the incoming and
+outgoing vertices, respectively, to 𝐴𝐵in𝐶. Then, there is a directed
+path𝑃from𝑋to𝑌in𝐻that avoids𝐴𝐵. That is, every vertex and
+edge on the path 𝑃belongs to𝐺as well. Hence, 𝑃is a directed path
+from𝑋to𝑌in𝐺. Since𝑌is incoming to 𝐴𝐵, then𝑌is incoming to
+either𝐴or𝐵in𝐺. Assume, wlog, that 𝑌→𝐴∈𝐸. Since𝑋is an
+outgoing vertex from 𝐴𝐵, then it is outgoing from from either 𝐴
+or𝐵(or both). If 𝑋is outgoing from 𝐴, then we get the following
+cycle in𝐺:𝑌→𝐴→𝑋⇝
+𝑃𝑌. Since𝐺is a DAG, this brings us to
+a contradiction. Therefore, 𝑋must be outgoing from 𝐵and not𝐴.
+But this gives us the following directed path from 𝐵to𝐴:
+𝐴←𝑌f
+𝑃𝑋←𝐵.
+This completes the proof. □
+Next, we show that the causal DAG summarization problem is
+𝑁𝑃-hard via a reduction from the 𝑘-Max-Cut problem [ 31]. Let𝐺
+be an undirected graph with weighted edges (i.e., 𝑤:V(𝐺)→R≥0).
+The𝑘-Max-Cut problem consists of partitioning V(𝐺)into𝑘disjoint
+clusters so as to maximize the sum of weights of the edges joining
+vertices in different clusters. It is well-known that 𝑘-Max-Cut is
+NP-hard even if 𝑘=2[31], and the weight of every edge is 1. In
+other words, deciding whether there exists a 𝑘-clustering of V(𝐺)
+to clusters{𝑉1,...,𝑉𝑘}, where the sum of weights of edges between
+vertices in distinct clusters is at least a given threshold 𝛾is NP-hard.
+LetSdef={𝑉1,...,𝑉𝑘}be a𝑘-clustering of 𝐺. We define 𝑀𝐺(S)
+to be the number of edges of between vertices in a common cluster:
+𝑀𝐺(S)def=𝑘∑︁
+𝑖=1∑︁
+𝑢,𝑣∈𝑉𝑖1[(𝑢,𝑣)∈E(𝐺)]. (6)
+We define𝑀𝐺(S)to be the number of non-edges between vertices
+in a common cluster:
+𝑀𝐺(S)def=𝑘∑︁
+𝑖=1∑︁
+𝑢,𝑣∈𝑉𝑖1[(𝑢,𝑣)∉E(𝐺)]. (7)
+Similarly, we define 𝐵𝐺(S)to be the number of edges of between
+vertices in distinct clusters:
+𝐵𝐺(S)def=∑︁
+1≤𝑖<𝑗≤𝑘∑︁
+𝑢∈𝑉𝑖,
+𝑣∈𝑉𝑗1[(𝑢,𝑣)∈E(𝐺)]. (8)
+Anna Zeng, Michael Cafarella, Batya Kenig, Markos Markakis, Brit Youngmann, and Babak Salimi
+Since every edge(𝑢,𝑣)∈E(𝐺)is either between vertices in the
+same cluster or vertices in distinct clusters, then:
+𝑀𝐺(S)+𝐵𝐺(S)=|E(𝐺)|.
+In particular, 𝑀𝐺(S)≤𝜏if and only if 𝐵𝐺(S)≥| E(𝐺)|−𝜏, for
+every𝜏∈[0,|E(𝐺)|].
+Lemma B.1. Let𝐺be an undirected graph, 𝑘≥2, and𝜏∈
+[0,|E(𝐺)|]. Deciding whether there exists a 𝑘-clusteringSof𝐺such
+that𝑀𝐺(S)≤𝜏is NP-Complete.
+Proof. The problem is clearly in NP because given a 𝑘-clustering
+S, computing 𝑀𝐺(S)(see (6)) can be done in polynomial time.
+We prove hardness by reduction from 𝑘-Max-Cut. Suppose there
+exists a𝑃-Time algorithm that given an undirected graph 𝐺, and a
+threshold value 𝜏∈[0,|E(𝐺)|], returns a𝑘-clusteringSsuch that
+𝑀𝐺(S)≤𝜏if one exists, and null otherwise. We show that such an
+algorithm can be applied to solve 𝑘-Max-Cut in polynomial time.
+Let𝐺,𝑘, and𝛾be an instance of the 𝑘-max-Cut problem where 𝐺
+is an undirected graph, 𝑘≤|V(𝐺)|, and𝛾∈[0,|E(𝐺)|]. We define
+𝜏def=|E(𝐺)|−𝛾, and execute the algorithm for finding a 𝑘-clustering
+Ssuch that𝑀𝐺(S)≤𝜏. Since𝑀𝐺(S)+𝐵𝐺(S)=|E(𝐺)|, then:
+𝐵𝐺(S)=|E(𝐺)|−𝑀𝐺(S) ⇒ 𝑀𝐺(S)≤𝜏
+≥|E(𝐺)|−𝜏 ⇒𝜏def=|E(𝐺)|−𝛾
+=|E(𝐺)|−(| E(𝐺)|−𝛾)
+=𝛾
+Hence, we can decide in 𝑃-Time whether 𝐺has a𝑘-cut whose
+cardinality is at least 𝛾. □
+Lemma B.2. Let𝐺be an undirected graph, 𝑘≥2, and𝜏∈
+[0,|E(𝐺)|]. Deciding whether there exists a 𝑘-clusteringSof𝐺such
+that𝑀𝐺(S)≤𝜏is NP-Complete.
+Proof. The problem is clearly in NP because given a 𝑘-clustering
+S, computing 𝑀𝐺(S), and verifying 𝑀𝐺(S)≤𝜏can be done in
+polynomial time (see (7)).
+So, suppose that there exists a 𝑃-Time algorithm that given an
+undirected graph 𝐺, and a threshold value 𝜏∈[0,|E(𝐺)|], returns
+a𝑘-clusteringSsuch that𝑀𝐺(S)≤𝜏if one exists, and null oth-
+erwise. We show that such an algorithm can be applied to decide
+whether there exists a 𝑘-clustering of 𝐺where𝑀𝐺(S)≤𝛼. By
+Lemma B.1, this problem is NP-Hard, and hence this will prove that
+minimizing 𝑀𝐺(S)is NP-hard as well.
+So let𝐺,𝑘, and𝛼be the input to the problem for deciding whether
+there exists a 𝑘-clusteringSsuch that𝑀𝐺(S)≤𝛼. Let𝐺denote
+the complement graph of 𝐺. That is V(𝐺)=V(𝐺)and(𝑢,𝑣)∈E(𝐺)
+if and only if(𝑢,𝑣)∉E(𝐺). In particular, 𝑀𝐺(S)=𝛼if and only
+if𝑀𝐺(S)=𝛼. Therefore, if we can, in 𝑃-Time find a clustering
+that minimizes 𝑀𝐺(S), then we have also found a clustering that
+minimizes𝑀𝐺(S). This completes the proof. □
+We now show that the causal DAG summarization problem is
+𝑁𝑃-hard. Specifically, we show that finding a summary DAG (H,𝑓)
+whose canonical DAG Gminimizes|E(GH)|−| E(𝐺)|; that is, the
+canonical DAGGHresults in the smallest number of added edges,
+is NP-Hard.Theorem B.3. The causal DAG summarization problem which
+minimizes the number of added edges to the canonical DAG is NP-
+Hard.
+Proof. Given a DAG 𝐷and a𝑘-clusteringSof𝐷, it is straight-
+forward to verify that 𝑀𝐷(S)≤𝜏, and hence this problem is in
+NP.
+Let𝐺be an undirected graph, 𝑘>0, and𝛾>0a threshold. Let
+V(𝐺)={𝑣1,...,𝑣𝑛}denote a complete order of V(𝐺). Define𝐷to
+be the directed graph where V(𝐷)=V(𝐺)and(𝑣𝑖→𝑣𝑗)∈E(𝐷)if
+and only if(𝑣𝑢,𝑣𝑗)∈E(𝐺)and𝑖<𝑗. LetS={𝑉1,...,𝑉𝑘}be a𝑘-
+clustering of V(𝐷)=V(𝐺)such that𝑀𝐷(S)≤𝛾. By the definition
+ofE(𝐷), we immediately get that 𝑀𝐺(S)≤𝛾. By Lemma B.2, the
+causal DAG summarization problem is 𝑁𝑃-hard. □
+B.2 Proofs for Section 4
+Next, we prove some simple lemmas that will be useful later on.
+We denote byH𝑈𝑉the summary DAG where nodes 𝑈and𝑉are
+contracted.
+Lemma B.4. The following holds:
+𝜋H𝑈𝑉(XUV)=𝜋G𝑈𝑉(𝑈)𝜋G𝑈𝑉(𝑉)=𝜋G𝑈𝑉(𝑈)∪{𝑈}(9)
+chH𝑈𝑉(XUV)=chG𝑈𝑉(𝑉) chG𝑈𝑉(𝑈)=chG𝑈𝑉(𝑉)∪{𝑉}
+(10)
+NDscH𝑈𝑉(XUV)=NDscG𝑈𝑉(𝑈)NDscG𝑈𝑉(𝑉)=NDscG𝑈𝑉(𝑈)∪{𝑈}
+(11)
+Lemma B.5. Let𝑇∈V such that𝑇∉{𝑈,𝑉}∪chG(𝑈)∪chG(𝑉).
+Then it holds that:
+𝜋G𝑈𝑉(𝑇)=𝜋H𝑈𝑉(𝑇)and (12)
+NDscG𝑈𝑉(𝑇)\{𝑈𝑉}=NDscH(𝑇)\{XUV}and (13)
+{𝑈,𝑉}⊆NDscG𝑈𝑉(𝑇)if and only if XUV∈NDscH(𝑇) (14)
+Now, let𝑇∈V such that𝑇∉{𝑈,𝑉}∪𝜋G(𝑈)∪𝜋G(𝑉). Then:
+chG𝑈𝑉(𝑇)=chH𝑈𝑉(𝑇)and (15)
+DscG𝑈𝑉(𝑇)\{𝑈,𝑉}=DscH𝑈𝑉(𝑇)\{XUV} (16)
+{𝑈,𝑉}⊆DscG𝑈𝑉(𝑇)if and only if XUV∈DscH𝑈𝑉(𝑇) (17)
+proof of Lemma B.4. By the definition of 𝐺′, it holds that 𝜋𝐺′(𝑢)=
+𝜋𝐺(𝑢)∪𝜋𝐺(𝑣). Since(𝑢,𝑣)∈E(𝐺′), then𝜋𝐺′(𝑣)=𝜋𝐺′(𝑢)∪{𝑢}.
+Similarly, ch𝐺′(𝑣)=ch𝐺(𝑢)∪ch𝐺(𝑣), and since(𝑢,𝑣)∈E(𝐺′),
+then ch𝐺′(𝑢)=ch𝐺′(𝑣)∪{𝑣}. By definition of edge contraction,
+it holds that 𝜋𝐻(𝑋𝑢𝑣)=𝜋𝐺(𝑢)∪𝜋𝐺(𝑣)=𝜋𝐺′(𝑢), proving (9).
+Also, by definition of edge contraction, it holds that ch𝐻(𝑋𝑢𝑣)=
+ch𝐺(𝑢)∪ch𝐺(𝑣)=ch𝐺′(𝑣), proving (10).
+We now prove (11). Let𝑡∈NDsc𝐻(𝑋𝑢𝑣). If𝑡∉NDsc𝐺′(𝑢), then
+𝑡∈Dsc𝐺′(𝑢)\{𝑣}. This means that there is a directed path 𝑃from
+𝑢to𝑡in𝐺′. Let𝑠be the first vertex on this path (after 𝑢). Since
+𝑠∈ch𝐺′(𝑢)\{𝑣}, then by the definition of 𝐺′,𝑠∈ch𝐺(𝑢)∪ch𝐺(𝑣).
+By the definition of edge contraction, 𝑠∈ch𝐻(𝑋𝑢𝑣). Since𝑠∉
+𝑢𝑣∪𝜋𝐺(𝑢)∪𝜋𝐺(𝑣), then every directed path starting at 𝑠in𝐺
+remains a directed path in 𝐻. But this means that there is a directed
+path from𝑋𝑢𝑣to𝑡(via𝑠); contradicting the assumption that 𝑡∈
+NDsc𝐻(𝑋𝑢𝑣). Now, let𝑡∈NDsc𝐺′(𝑢). If𝑡∉NDsc𝐻(𝑋𝑢𝑣), then𝑡∈
+Dsc𝐻(𝑋𝑢𝑣)\{𝑋𝑢𝑣}. This means that there is a directed path 𝑃from
+𝑋𝑢𝑣to𝑡in𝐻. Let𝑠be the first vertex on this path (after 𝑋𝑢𝑣). Since
+Causal DAG Summarization (Full Version)
+𝑠∈ch𝐻(𝑋𝑢𝑣), then by the definition of 𝐻,𝑠∈ch𝐺(𝑢)∪ch𝐺(𝑣).
+But then, by the definition of 𝐺′, it holds that 𝑠∈ch𝐺′(𝑢). Since
+no edges are removed by the transition from 𝐺to𝐺′, there is a
+directed path from 𝑢to (via𝑠) in𝐺′; contradicting the assumption
+that𝑡∈NDsc𝐺′(𝑢). □
+Proof of Lemma B.5. By the definition of contraction, the only
+vertices in𝐺whose parent-set can potentially change following the
+contraction of 𝑢and𝑣belong to the set 𝑢𝑣∪ch𝐺(𝑢)∪ch𝐺(𝑣). By
+the definition of E(𝐺′), the only vertices in 𝐺whose parent-set can
+potentially change belong to the set 𝑢𝑣∪ch𝐺(𝑢)∪ch𝐺(𝑣). Therefore,
+if𝑡∉𝑢𝑣∪ch𝐺(𝑢)∪ch𝐺(𝑣), then𝜋𝐺′(𝑡)=𝜋𝐻(𝑡)=𝜋𝐺(𝑡). This
+proves (12).
+By the definition of contraction, the only vertices in 𝐺whose
+child-set can potentially change following the contraction of 𝑢and
+𝑣belong to the set 𝑢𝑣∪𝜋𝐺(𝑢)∪𝜋𝐺(𝑣). By the definition of E(𝐺′),
+the only vertices in 𝐺whose child-set can potentially change belong
+to the set𝑢𝑣∪𝜋𝐺(𝑢)∪𝜋𝐺(𝑣). Therefore, if 𝑡∉𝑢𝑣∪𝜋𝐺(𝑢)∪𝜋𝐺(𝑣),
+then ch𝐺′(𝑡)=ch𝐻(𝑡)=ch𝐺(𝑡). This proves (15).
+We now prove (13); Let𝑠∈NDsc𝐻(𝑡)\{𝑋𝑢𝑣}. If𝑠∉NDsc𝐺′(𝑡),
+then𝑠∈Dsc𝐺′(𝑡). That is, there is a directed path 𝑃from𝑡to𝑠in𝐺′.
+Let us assume wlog that 𝑃is the shortest directed path from 𝑡to𝑠in
+𝐺′. By this assumption, exactly one of the following holds: (1) 𝑢,𝑣∉
+V(𝑃)(2)𝑢∈V(𝑃),𝑣∉𝑛𝑜𝑑𝑒𝑠(𝑃)(3)𝑣∈V(𝑃),𝑢∉𝑛𝑜𝑑𝑒𝑠(𝑃), or (4)
+(𝑢,𝑣)∈E(𝑃). In the first case, every edge of 𝑃is also an edge of E(𝐺),
+that does not enter or exit {𝑢,𝑣}. Therefore, 𝑃is a directed path in
+𝐻, a contradiction. In case (2), since 𝜋𝐺′(𝑢)=𝜋𝐻(𝑋𝑢𝑣)(see (9)),
+andch𝐺′(𝑢)=ch𝐻(𝑋𝑢𝑣)\{𝑣}(see(10)), then the path with nodes
+𝑋𝑢𝑣∪(V(𝑃)\{𝑢}), is a directed path in 𝐻from𝑠to𝑡; a contradiction.
+In case (3), since ch𝐺′(𝑣)=ch𝐻(𝑋𝑢𝑣)(see (10)), and𝜋𝐺′(𝑣)=
+𝜋𝐻(𝑋𝑢𝑣)\{𝑢}(see(9)), then the path with nodes 𝑋𝑢𝑣∪(V(𝑃)\{𝑣}),
+is a directed path in 𝐻from𝑠to𝑡; a contradiction. Finally, if (𝑢,𝑣)∈
+E(𝑃), then since𝜋𝐺′(𝑢)=𝜋𝐻(𝑋𝑢𝑣)andch𝐺′(𝑣)=ch𝐻(𝑋𝑢𝑣), then
+the path with nodes 𝑋𝑢𝑣∪(V(𝑃)\𝑢𝑣), is a directed path from 𝑠to𝑡
+in𝐻; a contradiction. For the other direction, let 𝑠∈NDsc𝐺′(𝑡)\𝑢𝑣.
+If𝑠∉NDsc𝐻(𝑡), then there is a directed path 𝑃from𝑡to𝑠in
+𝐻. If𝑋𝑢𝑣∉V(𝑃), then E(𝑃) ⊆ E(𝐺) ⊆ E(𝐺′), and hence 𝑃is a
+directed path from 𝑡to𝑠in𝐺′. Otherwise, if 𝑋𝑢𝑣∈V(𝑃), then since
+𝜋𝐻(𝑋𝑢𝑣)=𝜋𝐺′(𝑢),ch𝐻(𝑋𝑢𝑣)=ch𝐺′(𝑣), and(𝑢,𝑣)∈E(𝐺′), then
+replacing𝑋𝑢𝑣, with the edge(𝑢,𝑣)results in a directed 𝑡,𝑠-path in
+𝐺′; a contradiction. □
+Proof of Theorem 4.1. We first prove that ΣRB(𝐺′)=⇒ΣRB(𝐻).
+We divide to cases. Let (𝑋𝑖;𝐵𝑖|𝜋𝐻(𝑋𝑖))∈ΣRB(𝐻), where𝑋𝑢𝑣∉
+𝐵𝑖∪𝜋𝐻(𝑋𝑖)∪{𝑋𝑖}. In particular, 𝑋𝑖∈V(𝐺), and𝑋𝑖∉{𝑢,𝑣}∪
+ch𝐻(𝑋𝑢𝑣)={𝑢,𝑣}∪ch𝐺(𝑢)∪ch𝐺(𝑣). By (13), we have that
+𝜋𝐺′(𝑋𝑖)=𝜋𝐻(𝑋𝑖), and that NDsc𝐺′(𝑋𝑖)\𝑢𝑣=NDsc𝐻(𝑋𝑖)\𝑋𝑢𝑣.
+Therefore, we have that (𝑋𝑖;NDsc𝐻(𝑋𝑖)\{𝑋𝑢𝑣}|𝜋𝐺′(𝑋𝑖))𝐺′. Since
+𝐵𝑖⊆NDsc𝐻(𝑋𝑖)\{𝑋𝑢𝑣}, then, by decomposition, we have that
+ΣRB(𝐺′)=⇒ (𝑋𝑖;𝐵𝑖|𝜋𝐻(𝑋𝑖)).
+Now, let(𝑋𝑖;𝑋𝑢𝑣𝐵𝑖|𝜋𝐻(𝑋𝑖)) ∈ ΣRB(𝐻). In this case as well
+𝑋𝑖∈V(𝐺), and𝑋𝑖∉{𝑢,𝑣}∪ch𝐻(𝑋𝑢𝑣)={𝑢,𝑣}∪ch𝐺(𝑢)∪ch𝐺(𝑣).
+By(13), we have that 𝜋𝐺′(𝑋𝑖)=𝜋𝐻(𝑋𝑖), and that NDsc𝐺′(𝑋𝑖)\𝑢𝑣=
+NDsc𝐻(𝑋𝑖)\𝑋𝑢𝑣. By , we have that 𝑋𝑢𝑣∈NDsc𝐻(𝑋𝑖)iff𝑢𝑣⊆
+NDsc𝐺′(𝑋𝑖). Therefore,𝐵𝑖𝑋𝑢𝑣⊆NDsc𝐻(𝑋𝑖)iff𝐵𝑖𝑢𝑣⊆NDsc𝐺′(𝑋𝑖).This means that ΣRB(𝐺′)=⇒ (𝑋𝑖;NDsc𝐺′(𝑋𝑖)|𝜋𝐺′(𝑋𝑖)). By de-
+composition, we have that ΣRB(𝐺′)=⇒ (𝑋𝑖;𝐵𝑖𝑢𝑣|𝜋𝐻(𝑋𝑖))as
+required.
+Now, suppose that 𝑋𝑢𝑣∈𝜋𝐻(𝑋𝑖), or that𝑋𝑖∈ch𝐻(𝑋𝑢𝑣). Since
+𝑋𝑖∈V(𝐺)\{𝑢,𝑣}, then by (10), we have that 𝑋𝑖∈ch𝐺′(𝑣)\{𝑣}.
+Therefore,𝜋𝐺′(𝑋𝑖)=𝜋𝐻(𝑋𝑖)\{𝑋𝑢𝑣}∪{𝑢,𝑣}. By(13), we have that:
+NDsc𝐺′(𝑋𝑖)\𝜋𝐺′(𝑋𝑖)=NDsc𝐺′(𝑋𝑖)\(𝜋𝐻(𝑋𝑖)\{𝑋𝑢𝑣}∪𝑢𝑣)
+=(NDsc𝐺′(𝑋𝑖)\𝑢𝑣)\(𝜋𝐻(𝑋𝑖)\{𝑋𝑢𝑣})
+=|{z}
+(13)(NDsc𝐻(𝑋𝑖)\{𝑋𝑢𝑣})\(𝜋𝐻(𝑋𝑖)\{𝑋𝑢𝑣})
+=NDsc𝐻(𝑋𝑖)\𝜋𝐻(𝑋𝑖)
+Therefore, ΣRB(𝐺′)=⇒ (𝑋𝑖;NDsc𝐻(𝑋𝑖)\𝜋𝐻(𝑋𝑖)|𝜋𝐻(𝑋𝑖)\{𝑋𝑢𝑣}∪
+{𝑢,𝑣}). Finally, we consider the case where 𝑋𝑖=𝑋𝑢𝑣. By construc-
+tion of𝐺′, and by (11), it holds that:
+ΣRB(𝐺′)=⇒ (𝑢;NDsc𝐺′(𝑢)\𝜋𝐺′(𝑢)|𝜋𝐺′(𝑢)) (18)
+ΣRB(𝐺′)=⇒ (𝑣;NDsc𝐺′(𝑢)\𝜋𝐺′(𝑢)|𝜋𝐺′(𝑢)∪{𝑢}) (19)
+By applying the contraction axiom on (18) and (19), we get that
+ΣRB(𝐺′)=⇒ (𝑢𝑣;NDsc𝐺′(𝑢)\𝜋𝐺′(𝑢)|𝜋𝐺′(𝑢)).
+Using the fact that hat 𝜋𝐻(𝑋𝑢𝑣)=𝜋𝐺′(𝑢)(see(9)), and that NDsc𝐻(𝑋𝑢𝑣)=
+NDsc𝐺′(𝑢)(see (11)), we get that
+ΣRB(𝐺′)=⇒ (𝑢𝑣;NDsc𝐻(𝑋𝑢𝑣)\𝜋𝐻(𝑋𝑢𝑣)|𝜋𝐻(𝑋𝑢𝑣)).
+Since𝐵𝑖⊆NDsc𝐻(𝑋𝑢𝑣)\(𝜋𝐻(𝑋𝑢𝑣)∪{𝑋𝑢𝑣}), this proves the claim.
+Now, for the other direction. Let (𝑋𝑖;𝐵𝑖|𝜋𝐺′(𝑋𝑖))∈ΣRB(𝐺′).
+If𝑢,𝑣∉𝑋𝑖∪𝐵𝑖∪𝜋𝐺′(𝑋𝑖)), then𝑋𝑖∉{𝑢,𝑣}∪ch𝐺(𝑢)∪ch𝐺(𝑣).
+By(13), it holds that 𝜋𝐻(𝑋𝑖)=𝜋𝐺′(𝑋𝑖), and that NDsc𝐺′(𝑋𝑖)\𝑢𝑣=
+NDsc𝐻(𝑋𝑖)\𝑋𝑢𝑣. Since𝐵𝑖⊆NDsc𝐺′(𝑋𝑖)\𝑢𝑣=NDsc𝐻(𝑋𝑖)\𝑋𝑢𝑣,
+thenΣRB(𝐻)=⇒ (𝑋𝑖;𝐵𝑖|𝜋𝐺′(𝑋𝑖)).
+If𝑢𝑣⊆𝐵𝑖, then𝑢,𝑣∉𝜋𝐺′(𝑋𝑖), then𝑋𝑖∉𝑢𝑣∪ch𝐺(𝑢)∪ch𝐺(𝑣).
+By(13), we have that 𝜋𝐻(𝑋𝑖)=𝜋𝐺′(𝑋𝑖), and that NDsc𝐻(𝑋𝑖)\𝑋𝑢𝑣=
+NDsc𝐺′(𝑋𝑖)\𝑢𝑣. Therefore,𝐵𝑖\𝑢𝑣⊆NDsc𝐻(𝑋𝑖), and by (14), if𝑢𝑣⊆
+𝐵𝑖⊆NDsc𝐺′(𝑋𝑖), then𝑋𝑢𝑣∈NDsc𝐻(𝑋𝑖). Therefore, ΣRB(𝐻)=⇒
+(𝑋𝑖;𝐵𝑖\𝑢𝑣∪𝑋𝑢𝑣|𝜋𝐺′(𝑋𝑖)), and since𝑋𝑢𝑣=𝑢𝑣, then ΣRB(𝐻)=⇒
+(𝑋𝑖;𝐵𝑖|𝜋𝐺′(𝑋𝑖)).
+Since(𝑢,𝑣)∈E(𝐺′), we are left with two other cases. First, that
+(𝑢;𝐵𝑢|𝜋𝐺′(𝑢)), and second(𝑣;𝐵𝑣|𝜋𝐺′(𝑣)). By𝑑-separation in 𝐻,
+the following holds:
+ΣRB(𝐻)=⇒ (𝑋𝑢𝑣;NDsc𝐻(𝑋𝑢𝑣)\𝜋𝐻(𝑋𝑢𝑣)|𝜋𝐻(𝑋𝑢𝑣))
+=⇒|{z}
+(9),(11)(𝑋𝑢𝑣;NDsc𝐺′(𝑢)\𝜋𝐺′(𝑢)|𝜋𝐺′(𝑢))
+=⇒ (𝑢𝑣;NDsc𝐺′(𝑢)\𝜋𝐺′(𝑢)|𝜋𝐺′(𝑢)) (20)
+By(9), it holds that 𝜋𝐺′(𝑣)=𝜋𝐺′(𝑢)∪{𝑢}. By(11), it holds that
+𝐵𝑣⊆NDsc𝐺′(𝑣)\𝜋𝐺′(𝑣)=(NDsc𝐺′(𝑢)∪{𝑢})\(𝜋𝐺′(𝑢)∪{𝑢})
+=NDsc𝐺′(𝑢)\𝜋𝐺′(𝑢)
+Therefore,𝐵𝑣∪𝐵𝑢⊆NDsc𝐺′(𝑢)\𝜋𝐺′(𝑢). In other words, by (20),
+we have that;
+ΣRB(𝐻)=⇒ (𝑢𝑣;𝐵𝑢∪𝐵𝑣|𝜋𝐺′(𝑢))if and only if
+ΣRB(𝐻)=⇒ (𝑢;𝐵𝑢∪𝐵𝑣|𝜋𝐺′(𝑢)),(𝑣;𝐵𝑢∪𝐵𝑣|𝜋𝐺′(𝑢)∪{𝑢})
+Anna Zeng, Michael Cafarella, Batya Kenig, Markos Markakis, Brit Youngmann, and Babak Salimi
+Since𝜋𝐺′(𝑣)=𝜋𝐺′(𝑢)∪{𝑢}, then overall, we have that ΣRB(𝐻)=⇒
+(𝑢;𝐵𝑢|𝜋𝐺′(𝑢)), and ΣRB(𝐻)=⇒ (𝑣;𝐵𝑣|𝜋𝐺′(𝑣)). This com-
+pletes the proof. □
+To prove Theorem 4.2, we first show the following lemma that es-
+tablishes the connection between 𝑑-separation on the canonical causal DAG
+and the original causal DAG.
+Lemma B.6. LetGandG′be causal DAGs defined over the same
+set of nodes, i.e., V(G)=V(G′), whereG′is a supergraph of G
+(E(G′)⊇E(G)). Then, for any three disjoint subsets X,Y,Z⊆V(G),
+it holds that:(X⊥⊥𝑑Y|Z)G′=⇒ (X⊥⊥𝑑Y|Z)G
+Proof of Lemma B.6. Suppose that 𝑋and𝑌are𝑑-separated by
+𝑍in𝐺′(i.e.,(𝑋;𝑌|𝑍)𝐺′). If𝑋and𝑌are𝑑-connected by 𝑍in𝐺,
+then let𝑃denote the unblocked path between 𝑋and𝑌, relative
+to𝑍. Since E(𝐺′)⊇ E(𝐺), then clearly 𝑃is a path in 𝐺′as well.
+Consider any triple (𝑥,𝑤,𝑦)on this path. If this triple has one of
+the forms
+{𝑥→𝑤→𝑦,𝑥←𝑤←𝑦,𝑥↔𝑤→𝑦,𝑥←𝑤↔𝑦},
+then since𝑃is unblocked in 𝐺, relative to 𝑍, then𝑤∉𝑍. Since
+𝑤∉𝑍, then the subpath (𝑥,𝑤,𝑦)is also unblocked in 𝐺′. If the
+triple has one of the forms:
+{𝑥↔𝑤←𝑦,𝑥→𝑤↔𝑦,𝑥→𝑤←𝑦},
+then since𝑃is unblocked in 𝐺, relative to 𝑍, then Dsc𝐺(𝑤)∩𝑍≠
+∅. Since E(𝐺′) ⊇ E(𝐺), then Dsc𝐺(𝑤) ⊆ Dsc𝐺′(𝑤). Therefore,
+Dsc𝐺′(𝑤)∩𝑍≠∅. Consequently, we have, again, that the sub-
+path(𝑥,𝑤,𝑦)is unblocked in 𝐺′. Overall, we get that every triple
+(𝑥,𝑤,𝑦)on the path 𝑃is unblocked in 𝐺′, relative to𝑍, and hence
+𝑋and𝑌are𝑑-connected in 𝐺′, a contradiction.
+By definition, 𝐺′is compatible with 𝐺′. Therefore, if 𝑋and𝑌are
+𝑑-connected by 𝑍in𝐺′, then by the completeness of 𝑑-separation,
+there exists a probability distribution that factorizes according to 𝐺′
+in which the CI(𝑋;𝑌|𝑍)does not hold. This proves completeness.
+□
+Proof of Theorem 4.2. LetGHdenote the canonical causal DAG
+corresponding toH. By Theorem 4.1, ΣRB(H)≡ ΣRB(GH). There-
+fore,(X⊥⊥𝑑Y|Z)H⇐⇒(𝑓−1(X)⊥⊥𝑑𝑓−1(Y)|𝑓−1(Z))GHSince
+E(G)⊆ E(GH), the claim immediately follows from Lemma B.6.
+□
+B.3 Proofs for Section 6
+We next show a smile lemma that will be useful for proving the
+soundness and completeness of do-calculus in summary graphs.
+Lemma B.7. Let𝐺be ADMG, and let 𝐺′be an ADMG where
+V(𝐺′)=V(𝐺), and E(𝐺′)⊇E(𝐺). Let𝐴,𝐵,𝐶⊆V(𝐺)be disjoint sets
+of variables, and let 𝑋,𝑍⊆V(𝐺). Then:
+(𝐴;𝐵|𝐶)𝐺′
+𝑋𝑍=⇒ (𝐴;𝐵|𝐶)𝐺𝑋𝑍(21)
+Corollary B.7.1. Let𝐺be ADMG, and let(𝐻,𝑓)be a summary-
+DAG for𝐺. Let𝐴,𝐵,𝐶⊆V(𝐻)be disjoint sets of nodes, and let
+𝑋,𝑍⊆V(𝐻). Then:
+(𝐴;𝐵|𝐶)𝐻𝑋𝑍=⇒ (A;B|C)𝐺𝑿𝒁(22)
+where for𝑈⊆V(𝐻), we denote Udef=𝑓(𝑈).Theorem B.8 (Soundness of Do-Calculus in supergraphs).
+LetGbe a causal DAG encoding an interventional distribution 𝑃(·|
+𝑑𝑜(·)). LetG′be a causal DAG where V(G)=V(G′)andE(G)⊆
+E(G′). For any disjoint subsets X,Y,Z,W⊆V(G), the following three
+rules hold:
+R1:(Y⊥⊥Z|X,W)G′
+X=⇒𝑃(Y|𝑑𝑜(X),Z,W)=𝑃(Y|𝑑𝑜(X),W)
+R2:(Y⊥⊥Z|X,W)G′
+XZ=⇒𝑃(Y|𝑑𝑜(X),𝑑𝑜(Z),W)=𝑃(Y|𝑑𝑜(X),Z,W)
+R3:(Y⊥⊥Z|X,W)G′
+XZ(W)=⇒𝑃(Y|𝑑𝑜(X),𝑑𝑜(Z),W)=𝑃(Y|𝑑𝑜(X),W)
+where Z(W)is the set of nodes in Zthat are not ancestors of any
+node in W. That is, Z(W)=Z\AncsG′(W)where AncsG′(W)def=Ð
+𝑊∈WAncsG′(𝑊).
+Theorem B.9 (Soundness of Do-Calculus in supergraphs).
+Let𝐺be a causal BN (CBN) encoding an interventional distributions
+𝑃(· |𝑑𝑜(·)). Let𝐺′be an ADMG where E(𝐺) ⊆ E(𝐺′). For any
+disjoint subsets 𝑋,𝑌,𝑍,𝑊⊆V(𝐺), the following three rules hold:
+R1:(𝑌;𝑍|𝑋,𝑊)𝐺′
+𝑋=⇒𝑃(𝑌|𝑑𝑜(𝑋),𝑍,𝑊)=𝑃(𝑌|𝑑𝑜(𝑋),𝑊)
+R2:(𝑌;𝑍|𝑋,𝑊)𝐺′
+𝑋𝑍=⇒𝑃(𝑌|𝑑𝑜(𝑋),𝑑𝑜(𝑍),𝑊)=𝑃(𝑌|𝑑𝑜(𝑋),𝑍,𝑊)
+R3:(𝑌;𝑍|𝑋,𝑊)𝐺′
+𝑋𝑍(𝑊)=⇒𝑃(𝑌|𝑑𝑜(𝑋),𝑑𝑜(𝑍),𝑊)=𝑃(𝑌|𝑑𝑜(𝑋),𝑊)
+where𝑍(𝑊)is the set of vertices in 𝑍that are not ancestors of any
+vertex in𝑊. That is,𝑍(𝑊)=𝑍\Ancs𝐺′(𝑊)where Ancs𝐺′(𝑊)def=Ð
+𝑤∈𝑊Ancs𝐺′(𝑤).
+Proof of Lemman B.7. We show that E(𝐺𝑋𝑍)⊆E(𝐺′
+𝑋𝑍), and
+the claim then follows from Theorem ??. Let(𝑢,𝑣)∈E(𝐺𝑋𝑍)⊆
+E(𝐺)⊆E(𝐺′). By definition, 𝑢∉𝑍and𝑣∉𝑋. But this means that
+(𝑢,𝑣)∈E(𝐺′
+𝑋𝑍), which completes the proof. □
+Proof of Corollary B.7.1. Let𝐺𝐻𝑋𝑍denote the grounded DAG
+corresponding to 𝐻𝑋𝑍. By Theorem 4.1, ΣRB(𝐻𝑋𝑍)≡ΣRB(𝐺𝐻𝑿𝒁),
+and hence(𝐴;𝐵|𝐶)𝐻𝑋𝑍if and only if(A;B|C)𝐺𝐻XZ. Since E(𝐺𝐻)⊇
+E(𝐺), then by Lemma B.7, it holds that if (A;B|C)𝐺𝐻XZ, then(A;B|C)𝐺XZ.
+Overall, we have that:
+(𝐴;𝐵|𝐶)𝐻𝑋𝑍⇔(A;B|C)𝐺𝐻𝑿𝒁=⇒ (A;B|C)𝐺𝑿𝒁(23)
+which proves the claim. □
+Proof of Theorem B.9. If(𝑌;𝑍|𝑋,𝑊)𝐺′
+𝑋, then by Lemma B.7,
+it holds that(𝑌;𝑍|𝑋,𝑊)𝐺𝑋. By the soundness of do-calculus for
+causal BNs, we get that 𝑃(𝒀|𝑑𝑜(𝑿),𝒁,𝑾)=𝑃(𝒀|𝑑𝑜(𝑿),𝑾). If
+(𝑌;𝑍|𝑋,𝑊)𝐺′
+𝑋𝑍, then by Lemma B.7, it holds that (𝑌;𝑍|𝑋,𝑊)𝐺𝑋𝑍.
+By the soundness of do-calculus for causal BNs, we get that 𝑃(𝑌|
+𝑑𝑜(𝑋),𝑑𝑜(𝑍),𝑊)=𝑃(𝑌|𝑑𝑜(𝑋),𝑍,𝑊). Finally, if(𝑌;𝑍|𝑋,𝑊)𝐺′
+𝑋𝑍(𝑊),
+then by Lemma B.7, it holds that (𝑌;𝑍|𝑋,𝑊)𝐺𝑋𝑍(𝑊). By the sound-
+ness of do-calculus for causal BNs, we get that 𝑃(𝑌|𝑑𝑜(𝑋),𝑑𝑜(𝑍),𝑊)=
+𝑃(𝑌|𝑑𝑜(𝑋),𝑊). □
+Proof of Theorem 6.1. If(𝑌;𝑍|𝑋,𝑊)𝐻𝑋, then by Corollary B.7.1,
+it holds that(𝒀;𝒁|𝑿,𝑾)𝐺𝑋. By the soundness of do-calculus for
+causal BNs, we get that 𝑃(𝒀|𝑑𝑜(𝑿),𝒁,𝑾)=𝑃(𝒀|𝑑𝑜(𝑿),𝑾). If
+(𝑌;𝑍|𝑋,𝑊)𝐻𝑋𝑍, then by Corollary B.7.1, it holds that (𝒀;𝒁|𝑿,𝑾)𝐺𝑋𝑍.
+Causal DAG Summarization (Full Version)
+By the soundness of do-calculus for causal BNs, we get that 𝑃(𝒀|
+𝑑𝑜(𝑿),𝑑𝑜(𝒁),𝑤)=𝑃(𝒀|𝑑𝑜(𝑿),𝒁,𝑾). Finally, if(𝑌;𝑍|𝑋,𝑊)𝐻𝑋𝑍(𝑊),
+then by Corollary B.7.1, it holds that (𝒀;𝒁|𝑿,𝑾)𝐺𝑋𝑍(𝑊). By the
+soundness of do-calculus for causal BNs, we get that 𝑃(𝒀|𝑑𝑜(𝑿),𝑑𝑜(𝒁),𝑾)=
+𝑃(𝒀|𝑑𝑜(𝑿),𝑾). □
+Proof of Theorem 6.2. Consider𝐺𝐻, the grounded-DAG of
+(𝐻,𝑓), that is, by definition, compatible with 𝐻. If𝑌is𝑑-connected
+to𝑍in𝐻𝑋with respect to 𝑋∪𝑊, then by Definition 5, it holds
+that𝑦is𝑑-connected to 𝑧in𝐺𝐻𝑓(𝑋)with respect to 𝑓(𝑋∪𝑊), for
+every𝑦∈𝑓(𝑌)and𝑧∈𝑓(𝑍). Therefore, 𝑓(𝑌)is𝑑-connected to
+𝑓(𝑍)in𝐺𝐻𝑓(𝑋)with respect to 𝑓(𝑋∪𝑊). □
+C HANDLING MIXED GRAPHS
+While one dominant form of graph input for causal inference is a
+causal DAG, other graph representations are also used when a full
+causal DAG is not retrievable, say, by a causal discovery algorithm
+(e.g., [ 77]). Many of these graph representations are referred to asmixed graphs due to their inclusion of undirected, bidirected, and
+other types of edges [20, 78].
+One commonly used of mix graph is an acyclic-directed mixed
+graph (ADMG), which consists of a DAG with bidirected edges. As
+mentioned in the introduction, all of our results apply to scenarios
+where the input graph is an ADMG. Subsequently, we present an
+extension to the CaGreS algorithm to accommodate an ADMG.
+In this scenario, we modify the cost function (Algorithm 2) as
+follows: When we remove a bidirected edge between nodes 𝑈and
+𝑉(i.e.,𝑈↔𝑉) by merging 𝑈and𝑉into a single node, the cost
+incurred is doubled compared to removing a "standard" directed
+edge. For instance, in line 4 of Algorithm 2, if UandVwere linked
+by a bidirected edge, the line would be updated to:
+𝑐𝑜𝑠𝑡←𝑐𝑜𝑠𝑡+2·𝑠𝑖𝑧𝑒(U)·𝑠𝑖𝑧𝑒(V)
+This adjustment is necessary because losing a bidirected edge
+should carry a higher cost than losing a regular directed edge,
+given that more information is lost.
