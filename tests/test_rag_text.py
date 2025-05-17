@@ -21,7 +21,7 @@ class TestRAGManager(unittest.TestCase):
     def setUpClass(cls):
         """Set up test environment once for all tests."""
         cls.test_dir = tempfile.mkdtemp()
-        cls.api_key = os.getenv("CLAUDE_API_KEY")
+        cls.api_key = os.environ.get("CLAUDE_API_KEY")
         if not cls.api_key:
             raise EnvironmentError("CLAUDE_API_KEY not loaded from .env file")
         
