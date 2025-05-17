@@ -142,7 +142,7 @@ class RAGManager:
                     continue
                 subdir_count += 1
 
-            conn = sqlit3.connect(self.retriever.db_path)
+            conn = sqlite3.connect(self.retriever.db_path)
             cur = conn.cursor()
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name != 'sqlite_sequence'")
             tables = {row[0] for row in cur.fetchall()}
@@ -371,7 +371,7 @@ class RAGManager:
             context_chunks = [chunks[i][0] for i in range(len(chunks))] 
             context = "\n\n".join(context_chunks) if chunks else ""       
             # Load appropriate grounding prompt
-            prompt_file = self.hard_grounding_prompt is self.grounding == 'hard' else self.soft_grounding_prompt
+            prompt_file = self.hard_grounding_prompt if self.grounding == 'hard' else self.soft_grounding_prompt
             try:
                 with open(prompt_file, 'r') as f:
                     prompt_template = f.read().strip()
