@@ -8,6 +8,10 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import sqlite3
 import warnings
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,11 +27,13 @@ class TestImageRAG(unittest.TestCase):
     def setUpClass(cls):
         """Set up test environment once for all tests."""
         cls.test_dir = tempfile.mkdtemp()
-        cls.api_key = '../.claude_key'
+        cls.api_key = os.getenv("CLAUDE_API_KEY")
+        if not cls.api_key:
+            raise EnvironmentError("CLAUDE_API_KEY not loaded from .env file")
         
         # Copy digits directory to test directory
         cls.digits_dir = os.path.join(cls.test_dir, 'digits_dataset')
-        shutil.copytree('digits_dataset', cls.digits_dir)
+        shutil.copytree(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'digits_dataset'), cls.digits_dir)
         
         cls.db_path = os.path.join(cls.test_dir, 'test_embeddings.db.sqlite')
         
@@ -41,10 +47,30 @@ class TestImageRAG(unittest.TestCase):
             db_params={'dbname': cls.db_path}
         )
         
+        # Initialize RAG manager with explicit cache settings
+        cls.rag = RAGManager(
+            api_key=cls.api_key,
+            dir_to_idx=cls.digits_dir,
+            grounding='soft',
+            enable_cache=True,  # Enable cache writing
+            use_cache=True,     # Enable cache reading
+            cache_thresh=0.9,   # Set similarity threshold
+            logging_enabled=True,  # Enable logging to debug cache issues
+            force_reindex=True,
+            cache_db=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompt_cache.db'),  # Explicitly set cache database
+            template_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web_rag_template.txt'),  # Pass template path
+            hard_grounding_prompt=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompts', 'hard_grounding_prompt.txt'),  # Pass hard grounding prompt path
+            soft_grounding_prompt=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompts', 'soft_grounding_prompt.txt')  # Pass soft grounding prompt path
+        )
+        
     @classmethod
     def tearDownClass(cls):
         """Clean up test environment after all tests."""
         shutil.rmtree(cls.test_dir)
+        # Removed deletion of prompt_cache.db to avoid deleting the Claude API key
+        # cache_db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompt_cache.db')
+        # if os.path.exists(cache_db_path):
+        #     os.remove(cache_db_path)
             
     def test_indexing(self):
         """Test image indexing functionality."""
@@ -131,7 +157,7 @@ class TestImageRAG(unittest.TestCase):
         
         # Add warning if nearest centroid isn't from digit_9
         if best_table != 'digit_9':
-            warnings.warn(f"Warning: Nearest centroid is from table '{best_table}' instead of 'digit_9'")
+            warnings.warn(f"Warning: Nearest centroid is from table {best_table} instead of digit_9")
         
         # Get top-k images from the nearest table
         cur.execute(f"""
@@ -184,3 +210,4 @@ class TestImageRAG(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main() 
+

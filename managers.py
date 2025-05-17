@@ -45,7 +45,10 @@ class RAGManager:
         force_reindex = False,
         logging_enabled = True,
         query_engine = None,
-        show_similarity = False):
+        show_similarity = False,
+        template_path = None,
+        hard_grounding_prompt = None,
+        soft_grounding_prompt = None):
         
         # Initialize basic attributes
         self.grounding = grounding
@@ -58,6 +61,8 @@ class RAGManager:
         self.force_reindex = force_reindex
         self.logging_enabled = logging_enabled
         self.show_similarity = show_similarity
+        self.hard_grounding_prompt = hard_grounding_prompt
+        self.soft_grounding_prompt = soft_grounding_prompt
         
         # Load API key first
         if api_key:
@@ -76,7 +81,8 @@ class RAGManager:
         # Initialize components
         assert modality in ['image','text','audio']
         self.scorer = scorer or DefaultScorer(self.provider,
-                                              self.api_key)
+                                              self.api_key,
+                                              template_path)
         self.embedder = embedder or TextEmbedder(device = device)
         self.indexer = indexer or TextIndexer(embedder = self.embedder)
         self.retriever = retriever or TextRetriever(dir_to_idx = dir_to_idx,
@@ -129,7 +135,7 @@ class RAGManager:
                     continue
                 subdir_count += 1
 
-            conn = sqlit3.connect(self.retriever.db_path)
+            conn = sqlite3.connect(self.retriever.db_path)
             cur = conn.cursor()
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name != 'sqlite_sequence'")
             tables = {row[0] for row in cur.fetchall()}
@@ -358,7 +364,7 @@ class RAGManager:
             context_chunks = [chunks[i][0] for i in range(len(chunks))] 
             context = "\n\n".join(context_chunks) if chunks else ""       
             # Load appropriate grounding prompt
-            prompt_file = 'prompts/hard_grounding_prompt.txt' if self.grounding == 'hard' else 'prompts/soft_grounding_prompt.txt'
+            prompt_file = self.hard_grounding_prompt if self.grounding == 'hard' else self.soft_grounding_prompt
             try:
                 with open(prompt_file, 'r') as f:
                     prompt_template = f.read().strip()
@@ -430,3 +436,4 @@ class RAGManager:
             if self.logging_enabled:
                 self.logger.error(f"Error creating hierarchy: {str(e)}")
             raise 
+

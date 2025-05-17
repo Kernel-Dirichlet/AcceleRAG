@@ -3,18 +3,21 @@ from openai import OpenAI
 import re
 import logging
 from base_classes import Scorer
+import os
 
 class DefaultScorer(Scorer):
     """Default scorer using LLM-based response quality assessment."""
-    def __init__(self, provider, api_key):
+    def __init__(self, provider, api_key, template_path=None):
         super().__init__(provider, api_key)
         if provider == 'anthropic':
             self.client = Anthropic(api_key=api_key)
         else:
             self.client = OpenAI(api_key=api_key)
             
-        # Load the scoring template
-        with open('web_rag_template.txt', 'r') as f:
+        # Load the scoring template using the provided path or default
+        if template_path is None:
+            template_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web_rag_template.txt')
+        with open(template_path, 'r') as f:
             self.template = f.read().strip()
             
     def score(self, response, query):
@@ -79,3 +82,4 @@ class DefaultScorer(Scorer):
         except Exception as e:
             logging.error(f"Error extracting score: {e}")
             return score_text, 0.0 
+

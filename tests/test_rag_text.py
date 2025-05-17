@@ -5,6 +5,10 @@ import shutil
 import sys
 import json
 import sqlite3
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -20,13 +24,13 @@ class TestRAGManager(unittest.TestCase):
     def setUpClass(cls):
         """Set up test environment once for all tests."""
         cls.test_dir = tempfile.mkdtemp()
-        cls.api_key = os.environ.get("CLAUDE_API_KEY")
+        cls.api_key = os.getenv("CLAUDE_API_KEY")
         if not cls.api_key:
-            raise EnvironmentError("CLAUDE_API_KEY not loaded") 
+            raise EnvironmentError("CLAUDE_API_KEY not loaded from .env file")
         
         # Copy arxiv_mini to test directory to avoid reindexing prompt
         cls.arxiv_dir = os.path.join(cls.test_dir, 'arxiv_mini')
-        shutil.copytree('arxiv_mini', cls.arxiv_dir)
+        shutil.copytree(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'arxiv_mini'), cls.arxiv_dir)
         
         cls.db_path = os.path.join(cls.test_dir, 'test_embeddings.db.sqlite')
         
@@ -34,12 +38,13 @@ class TestRAGManager(unittest.TestCase):
         cls.tag_hierarchy = create_tag_hierarchy(cls.arxiv_dir)
         
         # Remove existing cache database if it exists
-        if os.path.exists('prompt_cache.db'):
-            os.remove('prompt_cache.db')
+        cache_db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompt_cache.db')
+        if os.path.exists(cache_db_path):
+            os.remove(cache_db_path)
             
         # Initialize cache using DefaultCache
         cache = DefaultCache()
-        cache.init_cache('prompt_cache.db')
+        cache.init_cache(cache_db_path)
         
         # Initialize RAG manager with explicit cache settings
         cls.rag = RAGManager(
@@ -51,7 +56,10 @@ class TestRAGManager(unittest.TestCase):
             cache_thresh=0.9,   # Set similarity threshold
             logging_enabled=True,  # Enable logging to debug cache issues
             force_reindex=True,
-            cache_db='prompt_cache.db'  # Explicitly set cache database
+            cache_db=cache_db_path,  # Explicitly set cache database
+            template_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web_rag_template.txt'),  # Pass template path
+            hard_grounding_prompt=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompts', 'hard_grounding_prompt.txt'),  # Pass hard grounding prompt path
+            soft_grounding_prompt=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompts', 'soft_grounding_prompt.txt')  # Pass soft grounding prompt path
         )
         
         # Set database path
@@ -64,8 +72,10 @@ class TestRAGManager(unittest.TestCase):
     def tearDownClass(cls):
         """Clean up test environment after all tests."""
         shutil.rmtree(cls.test_dir)
-        if os.path.exists('prompt_cache.db'):
-            os.remove('prompt_cache.db')
+        # Removed deletion of prompt_cache.db to avoid deleting the Claude API key
+        # cache_db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompt_cache.db')
+        # if os.path.exists(cache_db_path):
+        #     os.remove(cache_db_path)
             
     def test_indexing(self):
         """Test document indexing functionality."""
@@ -134,7 +144,8 @@ class TestRAGManager(unittest.TestCase):
         print(first_response)
         
         # Verify cache entry was created
-        conn = sqlite3.connect('prompt_cache.db')
+        cache_db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompt_cache.db')
+        conn = sqlite3.connect(cache_db_path)
         cur = conn.cursor()
         
         # Check cache entry
@@ -164,3 +175,4 @@ class TestRAGManager(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main() 
+
