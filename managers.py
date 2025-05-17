@@ -45,10 +45,7 @@ class RAGManager:
         force_reindex = False,
         logging_enabled = True,
         query_engine = None,
-        show_similarity = False,
-        template_path = None,
-        hard_grounding_prompt = None,
-        soft_grounding_prompt = None):
+        show_similarity = False):
         
         # Initialize basic attributes
         self.grounding = grounding
@@ -61,28 +58,34 @@ class RAGManager:
         self.force_reindex = force_reindex
         self.logging_enabled = logging_enabled
         self.show_similarity = show_similarity
-        self.hard_grounding_prompt = hard_grounding_prompt
-        self.soft_grounding_prompt = soft_grounding_prompt
         
-        # Load API key first
-        if api_key:
-            try:
-                with open(api_key, 'r') as f:
-                    self.api_key = f.read().strip()
-                # Determine provider based on API key format
-                if self.api_key.startswith('sk-ant-'):
-                    self.provider = 'anthropic'
+        # Load API key and determine provider first
+        try:
+            # First try to get API key from environment
+            if not api_key:
+                self.api_key = os.environ.get("CLAUDE_API_KEY")
+                if not self.api_key:
+                    raise ValueError("CLAUDE_API_KEY not found in environment variables")
+            else:
+                # Check if api_key is a file path or direct key
+                if os.path.isfile(api_key):
+                    with open(api_key, 'r') as f:
+                        self.api_key = f.read().strip()
                 else:
-                    self.provider = 'openai'
-            except Exception as e:
-                raise ValueError(f"Error loading API key: {e}")
-        
+                    self.api_key = api_key
+                    
+            # Determine provider based on API key format
+            if self.api_key.startswith('sk-ant-'):
+                self.provider = 'anthropic'
+            else:
+                self.provider = 'openai'
+                
+        except Exception as e:
+            raise ValueError(f"Error loading API key: {e}")
         
         # Initialize components
         assert modality in ['image','text','audio']
-        self.scorer = scorer or DefaultScorer(self.provider,
-                                              self.api_key,
-                                              template_path)
+        self.scorer = scorer or DefaultScorer(self.provider, self.api_key)
         self.embedder = embedder or TextEmbedder(device = device)
         self.indexer = indexer or TextIndexer(embedder = self.embedder)
         self.retriever = retriever or TextRetriever(dir_to_idx = dir_to_idx,
@@ -135,7 +138,7 @@ class RAGManager:
                     continue
                 subdir_count += 1
 
-            conn = sqlite3.connect(self.retriever.db_path)
+            conn = sqlit3.connect(self.retriever.db_path)
             cur = conn.cursor()
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name != 'sqlite_sequence'")
             tables = {row[0] for row in cur.fetchall()}
@@ -364,7 +367,7 @@ class RAGManager:
             context_chunks = [chunks[i][0] for i in range(len(chunks))] 
             context = "\n\n".join(context_chunks) if chunks else ""       
             # Load appropriate grounding prompt
-            prompt_file = self.hard_grounding_prompt if self.grounding == 'hard' else self.soft_grounding_prompt
+            prompt_file = 'prompts/hard_grounding_prompt.txt' if self.grounding == 'hard' else 'prompts/soft_grounding_prompt.txt'
             try:
                 with open(prompt_file, 'r') as f:
                     prompt_template = f.read().strip()
