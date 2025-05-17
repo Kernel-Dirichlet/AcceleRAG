@@ -8,9 +8,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      # Expose the secret to the test suite
-      CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -28,4 +25,7 @@ jobs:
       - name: Run unit tests
         run: |
           python -m unittest discover -s tests -p "test_*.py"
+        env:
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }} 
+
 
