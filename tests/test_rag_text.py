@@ -28,21 +28,18 @@ class TestRAGManager(unittest.TestCase):
         
         # Copy test data to temp directory
         cls.data_dir = os.path.join(cls.test_dir, 'test_data')
-        shutil.copytree('test_data', cls.data_dir)
+        test_data_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'arxiv_mini')  # Changed to arxiv_mini
+        shutil.copytree(test_data_path, cls.data_dir)
         
         cls.db_path = os.path.join(cls.test_dir, 'test_embeddings.db.sqlite')
         
         # Create tag hierarchy from directory structure
         cls.tag_hierarchy = create_tag_hierarchy(cls.data_dir)
         
-        # Remove existing cache database if it exists
-        cache_db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompt_cache.db')
-        if os.path.exists(cache_db_path):
-            os.remove(cache_db_path)
-            
-        # Initialize cache using DefaultCache
+        # Initialize cache in test directory
+        cache_db_path = os.path.join(cls.test_dir, 'prompt_cache.db')
         cache = DefaultCache()
-        cache.init_cache(cache_db_path)
+        cache.init_cache(cache_db_path)  # Initialize new cache database
         
         # Initialize RAG manager
         cls.rag = RAGManager(
@@ -54,7 +51,7 @@ class TestRAGManager(unittest.TestCase):
             cache_thresh=0.9,
             logging_enabled=True,
             force_reindex=True,
-            cache_db=os.path.join(cls.test_dir, 'prompt_cache.db'),
+            cache_db=cache_db_path,  # Use the new cache database
             hard_grounding_prompt='prompts/hard_grounding_prompt.txt',
             soft_grounding_prompt='prompts/soft_grounding_prompt.txt',
             template_path='web_rag_template.txt'

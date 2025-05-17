@@ -23,13 +23,16 @@ class TestImageRAG(unittest.TestCase):
     def setUpClass(cls):
         """Set up test environment once for all tests."""
         cls.test_dir = tempfile.mkdtemp()
+        
+        # Get API key from environment
         cls.api_key = os.environ.get("CLAUDE_API_KEY")
         if not cls.api_key:
-            raise EnvironmentError("CLAUDE_API_KEY not loaded from .env file")
+            raise EnvironmentError("CLAUDE_API_KEY not found in environment variables")
         
         # Copy digits directory to test directory
         cls.digits_dir = os.path.join(cls.test_dir, 'digits_dataset')
-        shutil.copytree(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'digits_dataset'), cls.digits_dir)
+        digits_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'digits_dataset')
+        shutil.copytree(digits_path, cls.digits_dir)
         
         cls.db_path = os.path.join(cls.test_dir, 'test_embeddings.db.sqlite')
         
@@ -43,20 +46,18 @@ class TestImageRAG(unittest.TestCase):
             db_params={'dbname': cls.db_path}
         )
         
-        # Initialize RAG manager with explicit cache settings
+        # Initialize RAG manager (without caching)
         cls.rag = RAGManager(
             api_key=cls.api_key,
             dir_to_idx=cls.digits_dir,
             grounding='soft',
-            enable_cache=True,  # Enable cache writing
-            use_cache=True,     # Enable cache reading
-            cache_thresh=0.9,   # Set similarity threshold
-            logging_enabled=True,  # Enable logging to debug cache issues
+            enable_cache=False,  # Disable caching
+            use_cache=False,     # Disable caching
+            logging_enabled=True,
             force_reindex=True,
-            cache_db=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompt_cache.db'),  # Explicitly set cache database
-            template_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web_rag_template.txt'),  # Pass template path
-            hard_grounding_prompt=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompts', 'hard_grounding_prompt.txt'),  # Pass hard grounding prompt path
-            soft_grounding_prompt=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompts', 'soft_grounding_prompt.txt')  # Pass soft grounding prompt path
+            hard_grounding_prompt='prompts/hard_grounding_prompt.txt',
+            soft_grounding_prompt='prompts/soft_grounding_prompt.txt',
+            template_path='web_rag_template.txt'
         )
         
     @classmethod
@@ -153,7 +154,7 @@ class TestImageRAG(unittest.TestCase):
         
         # Add warning if nearest centroid isn't from digit_9
         if best_table != 'digit_9':
-            warnings.warn(f"Warning: Nearest centroid is from table {best_table} instead of digit_9")
+            warnings.warn(f"Warning: Nearest centroid is from table '{best_table}' instead of 'digit_9'")
         
         # Get top-k images from the nearest table
         cur.execute(f"""
