@@ -45,7 +45,9 @@ class RAGManager:
         force_reindex = False,
         logging_enabled = True,
         query_engine = None,
-        show_similarity = False):
+        show_similarity = False,
+        hard_grounding_prompt = None,
+        soft_grounding_prompt = None):
         
         # Initialize basic attributes
         self.grounding = grounding
@@ -59,6 +61,8 @@ class RAGManager:
         self.logging_enabled = logging_enabled
         self.show_similarity = show_similarity
         
+        self.hard_grounding_prompt = hard_grounding_prompt or 'prompts/hard_grounding_prompt.txt'
+        self.soft_grounding_prompt = soft_grounding_prompt or 'prompts/soft_grounding_prompt.txt'
         # Load API key and determine provider first
         try:
             # First try to get API key from environment
@@ -367,7 +371,7 @@ class RAGManager:
             context_chunks = [chunks[i][0] for i in range(len(chunks))] 
             context = "\n\n".join(context_chunks) if chunks else ""       
             # Load appropriate grounding prompt
-            prompt_file = 'prompts/hard_grounding_prompt.txt' if self.grounding == 'hard' else 'prompts/soft_grounding_prompt.txt'
+            prompt_file = self.hard_grounding_prompt is self.grounding == 'hard' else self.soft_grounding_prompt
             try:
                 with open(prompt_file, 'r') as f:
                     prompt_template = f.read().strip()
