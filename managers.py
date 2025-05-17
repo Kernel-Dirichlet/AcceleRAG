@@ -47,7 +47,8 @@ class RAGManager:
         query_engine = None,
         show_similarity = False,
         hard_grounding_prompt = None,
-        soft_grounding_prompt = None):
+        soft_grounding_prompt = None,
+        template_path = None):
         
         # Initialize basic attributes
         self.grounding = grounding
@@ -61,8 +62,11 @@ class RAGManager:
         self.logging_enabled = logging_enabled
         self.show_similarity = show_similarity
         
+        # Set default prompt paths if not provided
         self.hard_grounding_prompt = hard_grounding_prompt or 'prompts/hard_grounding_prompt.txt'
         self.soft_grounding_prompt = soft_grounding_prompt or 'prompts/soft_grounding_prompt.txt'
+        self.template_path = template_path or 'web_rag_template.txt'
+        
         # Load API key and determine provider first
         try:
             # First try to get API key from environment
@@ -370,6 +374,7 @@ class RAGManager:
             chunks = self.retrieve(query, **kwargs)
             context_chunks = [chunks[i][0] for i in range(len(chunks))] 
             context = "\n\n".join(context_chunks) if chunks else ""       
+            
             # Load appropriate grounding prompt
             prompt_file = self.hard_grounding_prompt if self.grounding == 'hard' else self.soft_grounding_prompt
             try:
@@ -380,8 +385,17 @@ class RAGManager:
                     self.logger.error(f"Prompt file {prompt_file} not found")
                 raise ValueError(f"Prompt file {prompt_file} not found")
 
+            # Load web RAG template
+            try:
+                with open(self.template_path, 'r') as f:
+                    web_template = f.read().strip()
+            except FileNotFoundError:
+                if self.logging_enabled:
+                    self.logger.error(f"Web template file {self.template_path} not found")
+                raise ValueError(f"Web template file {self.template_path} not found")
+
             # Format and generate response
-            prompt = prompt_template.format(context=context, query=query)
+            prompt = web_template.format(context=context, query=query)
             answer = self.query_engine.generate_response(prompt, grounding=self.grounding)
 
             # Score response

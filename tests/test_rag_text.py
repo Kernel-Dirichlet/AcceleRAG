@@ -5,7 +5,6 @@ import shutil
 import sys
 import json
 import sqlite3
-from dotenv import load_dotenv
 
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -21,15 +20,20 @@ class TestRAGManager(unittest.TestCase):
     def setUpClass(cls):
         """Set up test environment once for all tests."""
         cls.test_dir = tempfile.mkdtemp()
+        
+        # Get API key from environment
         cls.api_key = os.environ.get("CLAUDE_API_KEY")
-        # Copy arxiv_mini to test directory to avoid reindexing prompt
-        cls.arxiv_dir = os.path.join(cls.test_dir, 'arxiv_mini')
-        shutil.copytree(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'arxiv_mini'), cls.arxiv_dir)
+        if not cls.api_key:
+            raise EnvironmentError("CLAUDE_API_KEY not found in environment variables")
+        
+        # Copy test data to temp directory
+        cls.data_dir = os.path.join(cls.test_dir, 'test_data')
+        shutil.copytree('test_data', cls.data_dir)
         
         cls.db_path = os.path.join(cls.test_dir, 'test_embeddings.db.sqlite')
         
         # Create tag hierarchy from directory structure
-        cls.tag_hierarchy = create_tag_hierarchy(cls.arxiv_dir)
+        cls.tag_hierarchy = create_tag_hierarchy(cls.data_dir)
         
         # Remove existing cache database if it exists
         cache_db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompt_cache.db')
@@ -40,20 +44,20 @@ class TestRAGManager(unittest.TestCase):
         cache = DefaultCache()
         cache.init_cache(cache_db_path)
         
-        # Initialize RAG manager with explicit cache settings
+        # Initialize RAG manager
         cls.rag = RAGManager(
             api_key=cls.api_key,
-            dir_to_idx=cls.arxiv_dir,
+            dir_to_idx=cls.data_dir,
             grounding='soft',
-            enable_cache=True,  # Enable cache writing
-            use_cache=True,     # Enable cache reading
-            cache_thresh=0.9,   # Set similarity threshold
-            logging_enabled=True,  # Enable logging to debug cache issues
+            enable_cache=True,
+            use_cache=True,
+            cache_thresh=0.9,
+            logging_enabled=True,
             force_reindex=True,
-            cache_db=cache_db_path,  # Explicitly set cache database
-            template_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web_rag_template.txt'),  # Pass template path
-            hard_grounding_prompt=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompts', 'hard_grounding_prompt.txt'),  # Pass hard grounding prompt path
-            soft_grounding_prompt=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompts', 'soft_grounding_prompt.txt')  # Pass soft grounding prompt path
+            cache_db=os.path.join(cls.test_dir, 'prompt_cache.db'),
+            hard_grounding_prompt='prompts/hard_grounding_prompt.txt',
+            soft_grounding_prompt='prompts/soft_grounding_prompt.txt',
+            template_path='web_rag_template.txt'
         )
         
         # Set database path
