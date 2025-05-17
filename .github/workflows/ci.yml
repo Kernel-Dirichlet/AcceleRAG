@@ -8,6 +8,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -23,9 +24,9 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run unit tests
+        # Scope the secret only to this step so it's inherited by the test runner
+        env:
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
         run: |
           python -m unittest discover -s tests -p "test_*.py"
-        env:
-          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }} 
-
 
