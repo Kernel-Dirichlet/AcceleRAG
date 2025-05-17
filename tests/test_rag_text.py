@@ -22,9 +22,6 @@ class TestRAGManager(unittest.TestCase):
         """Set up test environment once for all tests."""
         cls.test_dir = tempfile.mkdtemp()
         cls.api_key = os.environ.get("CLAUDE_API_KEY")
-        if not cls.api_key:
-            raise EnvironmentError("CLAUDE_API_KEY not loaded from .env file")
-        
         # Copy arxiv_mini to test directory to avoid reindexing prompt
         cls.arxiv_dir = os.path.join(cls.test_dir, 'arxiv_mini')
         shutil.copytree(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'arxiv_mini'), cls.arxiv_dir)
