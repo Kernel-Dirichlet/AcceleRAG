@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import sqlite3
 import warnings
+from sklearn.datasets import load_digits
 
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,6 +16,32 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from managers import RAGManager
 from indexers.image_indexers import ImageIndexer
 from embedders.image_embedders import ImageEmbedder
+
+def generate_digits_dataset(output_dir):
+    """Generate MNIST digits dataset for testing.
+    
+    Args:
+        output_dir: Directory to save the generated images
+    """
+    # Load digits dataset
+    digits = load_digits()
+    images = digits.images
+    labels = digits.target
+    
+    # Create directories for each digit
+    for digit in range(10):
+        digit_dir = os.path.join(output_dir, f'digit_{digit}')
+        os.makedirs(digit_dir, exist_ok=True)
+    
+    # Save images
+    for i, (image, label) in enumerate(zip(images, labels)):
+        # Convert to PIL Image
+        img = Image.fromarray((image * 16).astype(np.uint8))
+        
+        # Save to appropriate directory
+        digit_dir = os.path.join(output_dir, f'digit_{label}')
+        img_path = os.path.join(digit_dir, f'digit_{i}.png')
+        img.save(img_path)
 
 class TestImageRAG(unittest.TestCase):
     """Test cases for image RAG functionality."""
@@ -29,10 +56,10 @@ class TestImageRAG(unittest.TestCase):
         if not cls.api_key:
             raise EnvironmentError("CLAUDE_API_KEY not found in environment variables")
         
-        # Copy digits directory to test directory
+        # Generate digits dataset
         cls.digits_dir = os.path.join(cls.test_dir, 'digits_dataset')
-        digits_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'digits_dataset')
-        shutil.copytree(digits_path, cls.digits_dir)
+        os.makedirs(cls.digits_dir, exist_ok=True)
+        generate_digits_dataset(cls.digits_dir)
         
         cls.db_path = os.path.join(cls.test_dir, 'test_embeddings.db.sqlite')
         

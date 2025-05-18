@@ -133,31 +133,40 @@ class TestRAGManager(unittest.TestCase):
         print(f"\nFirst Query: {query}")
         first_response = self.rag.generate_response(query)
         print("\nFirst Response:")
-        print("-" * 50)
-        print(first_response)
+        print("-" * 60)
+        print("{}...".format(first_response[:50]))
+        print("-" * 60)
         
-        # Same query - should get cache hit
-        print("\nSecond Query (Exact Match):")
-        second_response = self.rag.generate_response(query)
-        print(second_response)
+        # Get cache hit for exact match
+        exact_cache_result = self.rag._get_cached_response(query, self.rag.cache_thresh)
+        self.assertIsNotNone(exact_cache_result, "No cache hit for exact query")
+        exact_cached_response, exact_similarity = exact_cache_result
+        print(f"\nExact Match Cache Hit Similarity: {exact_similarity:.4f}")
+        print("\nCached response (exact query):")
+        print("-" * 60)
+        print("{}...".format(exact_cached_response[:50]))
+
         
         # Verify exact match cache hit
-        self.assertEqual(first_response, second_response, "Cached response does not match original response")
+        self.assertEqual(first_response, exact_cached_response, "Cached response does not match original response")
         
         # Similar query - should get cache hit if within threshold
         similar_query = "what can we learn about database design from this context"
         print(f"\nThird Query (Similar): {similar_query}")
-        similar_response = self.rag.generate_response(similar_query)
-        print(similar_response)
         
-        # Verify similar query cache hit
-        cached_result = self.rag._get_cached_response(similar_query, self.rag.cache_thresh)
-        self.assertIsNotNone(cached_result, "No cache hit for similar query")
-        cached_response, similarity = cached_result
-        print(f"\nCache Hit Similarity: {similarity:.4f}")
+        # Get cache hit for similar query
+        similar_cache_result = self.rag._get_cached_response(similar_query, self.rag.cache_thresh)
+        self.assertIsNotNone(similar_cache_result, "No cache hit for similar query")
+        similar_cached_response, similar_similarity = similar_cache_result
+        print(f"\nSimilar Query Cache Hit Similarity: {similar_similarity:.4f}")
         
         # Verify similarity is above threshold
-        self.assertGreaterEqual(similarity, self.rag.cache_thresh, "Similar query similarity below threshold")
+        self.assertGreaterEqual(similar_similarity, self.rag.cache_thresh, "Similar query similarity below threshold")
+        
+        # Generate response for similar query to verify caching
+        similar_response = self.rag.generate_response(similar_query)
+        print("\nCached response (similar query):")
+        print("{}...".format(similar_response))
 
 if __name__ == '__main__':
     unittest.main() 
