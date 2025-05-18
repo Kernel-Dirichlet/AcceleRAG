@@ -17,10 +17,95 @@ A high-performance, production-ready RAG (Retrieval-Augmented Generation) framew
 - Optimized for mobile deployment
 
 ### Hallucination Control
-- Hard Grounding: Zero hallucination guarantee
-- Soft Grounding: Natural responses with knowledge integration
-- Quality scoring for response verification
-- Built-in disclaimer for low-confidence responses
+
+AcceleRAG provides robust hallucination control through its scoring system and grounding modes:
+
+#### Quality Scoring
+- **JSON-based Evaluation**: Structured scoring of response quality
+- **REST API Integration**: Easy integration with existing systems
+- **Configurable Thresholds**: Adjust quality requirements per use case
+- **Detailed Metrics**: Comprehensive evaluation of response quality
+
+#### Scoring API Usage
+```python
+from managers import RAGManager
+
+# Initialize with scoring
+rag = RAGManager(
+    api_key='your_key',
+    dir_to_idx='docs',
+    quality_thresh=8,  # Minimum quality score threshold
+    logging_enabled=True  # Enable detailed scoring logs
+)
+
+# Generate response with scoring
+response = rag.generate_response(
+    query="Explain the key differences between RAG and traditional retrieval systems",
+    grounding='hard'  # Use hard grounding for strict control
+)
+
+# The response includes quality scoring in JSON format:
+{
+    "score": 8,  # Overall quality score
+    "response": "{llm_response}",  # Original response from LLM or more generally a QueryEngine
+    "context": [  # List of context chunks with scores
+        {
+            "text": "{chunk}", # retrieved
+            "similarity_score": 0.95
+        }
+    ],
+    "hallucination_risk": 8,  # Risk score from evaluation
+    "quality_score": 8,  # Quality score from LLM evaluation
+    "evaluation": "{full_evaluation}"  # Detailed evaluation text
+}
+
+
+```
+
+#### Scoring Implementation
+The scoring system uses a weighted approach:
+- **Quality Score**: Evaluated by LLM based on:
+  - Response relevance
+  - Completeness
+  - Coherence
+  - Context utilization
+- **Hallucination Risk**: Calculated as (10 - hallucination_score)
+- **Overall Score**: Weighted average of quality and hallucination risk
+
+#### Grounding Modes
+
+##### Hard Grounding
+```python
+# Hard grounding for strict hallucination control
+rag = RAGManager(
+    grounding='hard',  # Strongly deters hallucinations
+    quality_thresh=8.0  # Quality threshold
+)
+```
+- Strict adherence to provided context
+- Higher quality thresholds
+- Detailed source attribution
+- Lower hallucination probability
+
+##### Soft Grounding
+```python
+# Soft grounding for natural responses
+rag = RAGManager(
+    grounding='soft',  # Natural responses with knowledge integration
+    quality_thresh=6.0  # Lower threshold for more natural responses
+)
+```
+- More natural language generation
+- Balanced knowledge integration
+- Moderate quality requirements
+- Controlled creativity
+
+The scoring system helps ensure:
+- Response quality meets requirements
+- Hallucinations are minimized, eventually eliminated through formal guarantees 
+- Context is properly utilized
+- Source attribution is maintained
+- Quality metrics are tracked
 
 ### Image Modality Support
 
@@ -80,7 +165,7 @@ similar_images = rag.retrieve(
 )
 ```
 
-Coming soon: **AgenticImageRetrievers** that will automatically:
+Coming soon: **AgenticImageRetrievers**:
 
 ## Framework Comparisons
 
@@ -255,9 +340,9 @@ response2 = rag.generate_response("Can you explain RAG?")  # Cache hit!
 
 #### 5. Hallucination Control
 ```python
-# Hard grounding for zero hallucination
+# Hard grounding for strict hallucination control
 rag = RAGManager(
-    grounding='hard',  # Zero hallucination guarantee
+    grounding='hard',  # Strongly deters hallucinations
     quality_thresh=8.0  # Quality threshold
 )
 
