@@ -6,7 +6,7 @@ from openai import OpenAI
 
 class AnthropicEngine(QueryEngine):
     """Default query engine using Anthropic's Claude models."""
-    def __init__(self, api_key=None, model_name="claude-3-sonnet-20240229"):
+    def __init__(self, api_key=None, model_name="claude-3-7-sonnet-20250219"):
         super().__init__(api_key)
         self.model_name = model_name
         self.client = Anthropic()

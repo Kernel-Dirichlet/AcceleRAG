@@ -56,18 +56,13 @@ class TestImageRAG(unittest.TestCase):
             logging_enabled=True,
             force_reindex=True,
             hard_grounding_prompt='prompts/hard_grounding_prompt.txt',
-            soft_grounding_prompt='prompts/soft_grounding_prompt.txt',
-            template_path='web_rag_template.txt'
+            soft_grounding_prompt='prompts/soft_grounding_prompt.txt'
         )
         
     @classmethod
     def tearDownClass(cls):
         """Clean up test environment after all tests."""
         shutil.rmtree(cls.test_dir)
-        # Removed deletion of prompt_cache.db to avoid deleting the Claude API key
-        # cache_db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompt_cache.db')
-        # if os.path.exists(cache_db_path):
-        #     os.remove(cache_db_path)
             
     def test_indexing(self):
         """Test image indexing functionality."""
@@ -92,17 +87,23 @@ class TestImageRAG(unittest.TestCase):
         
         # Verify each table has content and correct schema
         for table in tables:
-            if not table.endswith('_centroid'):  # Skip centroid tables
-                cur.execute(f"SELECT COUNT(*) FROM {table}")
-                count = cur.fetchone()[0]
-                self.assertGreater(count, 0, f"Table {table} is empty")
-                print(f"Table {table}: {count} records")
-                
-                # Verify schema
-                cur.execute(f"PRAGMA table_info({table})")
-                columns = {row[1] for row in cur.fetchall()}
+            cur.execute(f"SELECT COUNT(*) FROM {table}")
+            count = cur.fetchone()[0]
+            self.assertGreater(count, 0, f"Table {table} is empty")
+            print(f"Table {table}: {count} records")
+            
+            # Verify schema based on table type
+            cur.execute(f"PRAGMA table_info({table})")
+            columns = {row[1] for row in cur.fetchall()}
+            
+            if table.endswith('_centroid'):
+                # Centroid tables should have id and centroid columns
+                expected_columns = {'id', 'centroid'}
+            else:
+                # Regular tables should have all columns
                 expected_columns = {'id', 'embedding', 'label', 'metadata', 'filepath'}
-                self.assertEqual(columns, expected_columns, f"Table {table} has incorrect schema")
+                
+            self.assertEqual(columns, expected_columns, f"Table {table} has incorrect schema")
                 
         conn.close()
         

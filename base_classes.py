@@ -66,7 +66,11 @@ class Scorer(ABC):
     def score(self, response: str, query: str) -> Tuple[str, float]:
         """Score a response for a given query."""
         pass
-        
+    
+    @abstractmethod
+    def score_json(self,response,query,context_chunks):
+        pass
+
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(provider='{self.provider}')"
         

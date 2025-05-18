@@ -54,7 +54,7 @@ class RAGManager:
         self.grounding = grounding
         self.quality_thresh = quality_thresh
         self.dir_to_idx = dir_to_idx
-        self.cache_db = cache_db
+        self.cache_db = cache_db 
         self.enable_cache = enable_cache
         self.use_cache = use_cache
         self.cache_thresh = cache_thresh
@@ -65,9 +65,9 @@ class RAGManager:
         # Set default prompt paths if not provided
         self.hard_grounding_prompt = hard_grounding_prompt or 'prompts/hard_grounding_prompt.txt'
         self.soft_grounding_prompt = soft_grounding_prompt or 'prompts/soft_grounding_prompt.txt'
-        self.template_path = template_path or 'web_rag_template.txt'
+        self.template_path = template_path or 'web_rag_template.txt' #used to answer query with retrieved chunks
         
-        # Load API key and determine provider first
+        # Load API key and determine p
         try:
             # First try to get API key from environment
             if not api_key:
@@ -105,7 +105,6 @@ class RAGManager:
         if self.enable_cache:
             self._init_cache()
             
-        # Set up logging if enabled
         if logging_enabled:
             logging.basicConfig(
                 filename='rag_manager.log',
@@ -114,7 +113,7 @@ class RAGManager:
             )
             self.logger = logging.getLogger('RAGManager')
         else:
-            # Create a null logger
+            # null logger
             self.logger = logging.getLogger('RAGManager')
             self.logger.addHandler(logging.NullHandler())
         
@@ -163,16 +162,22 @@ class RAGManager:
             if self.logging_enabled:
                 self.logger.info("Starting indexing process")
             
-            # Check if directory exists and has files
+            if self.force_reindex:
+                self.indexer.index(
+                    corpus_dir=self.dir_to_idx,
+                    tag_hierarchy=None,
+                    **kwargs
+                )
+                if self.logging_enabled:
+                    self.logger.info("Indexing completed successfully")
+                return
+                
             if os.path.exists(self.dir_to_idx) and os.listdir(self.dir_to_idx):
-                if not self.force_reindex:
-                    response = input("Documents exist in the directory. Do you want to reindex? (y/n): ")
-                    if response.lower() != 'y':
-                        if self.logging_enabled:
-                            self.logger.info("User chose not to reindex")
-                        return
-            
-            # Call indexer's index method
+                response = input("Documents exist in the directory. Do you want to reindex? (y/n): ")
+                if response.lower() != 'y':
+                    if self.logging_enabled:
+                        self.logger.info("User chose not to reindex")
+                    return
             
             self.indexer.index(
                 corpus_dir=self.dir_to_idx,
@@ -228,7 +233,7 @@ class RAGManager:
             target_db = self.cache_db if self.cache_db else 'prompt_cache.db'
             
             # Verify schema if using external cache
-            if self.cache_db and not verify_cache_schema(self.cache_db):
+            if self.cache_db and not self.cache.verify_cache_schema(self.cache_db):
                 raise ValueError("External cache database has incorrect schema")
                 
             # Compute query embedding using the embedder
@@ -240,7 +245,7 @@ class RAGManager:
             
             # Get all cached responses
             cur.execute("""
-                SELECT query, response, embedding, score_text
+                SELECT query, response, query_embedding, quality_score
                 FROM response_cache
             """)
             results = cur.fetchall()
@@ -253,10 +258,10 @@ class RAGManager:
             best_response = None
             best_score_text = None
             
-            for cached_query, response, cached_embedding, score_text in results:
+            for cached_query, response, cached_embedding, quality_score in results:
                 try:
                     # Convert string embedding to numpy array
-                    cached_embedding = np.array(eval(cached_embedding))
+                    cached_embedding = np.frombuffer(cached_embedding, dtype=np.float32)
                     
                     # Compute similarity based on metric
                     if metric == 'cosine':
@@ -273,7 +278,7 @@ class RAGManager:
                     if similarity > best_similarity and similarity >= threshold:
                         best_similarity = similarity
                         best_response = response
-                        best_score_text = score_text
+                        best_score_text = quality_score
                         
                 except Exception as e:
                     if self.logging_enabled:
@@ -298,11 +303,12 @@ class RAGManager:
     def generate_response(
         self,
         query,
-        use_cache=None,
-        enable_cache=None,
-        cache_thresh=None,
-        grounding=None,
-        show_similarity=None,
+        use_cache = None,
+        enable_cache = None,
+        cache_thresh = None,
+        grounding = None,
+        show_similarity = None,
+        return_json = False,
         **kwargs
     ):
         """Generate response for a query using RAG.
@@ -318,23 +324,6 @@ class RAGManager:
             
         Returns:
             Generated response
-            
-        Usage:
-            # Basic response generation
-            response = rag.generate_response("What is the capital of France?")
-            
-            # Force hard grounding for this response
-            response = rag.generate_response(
-                "What is the capital of France?",
-                grounding='hard'
-            )
-            
-            # Override cache settings for this response
-            response = rag.generate_response(
-                "What is the capital of France?",
-                use_cache=True,
-                cache_thresh=0.95
-            )
         """
         try:
             # Update settings if provided
@@ -398,8 +387,10 @@ class RAGManager:
             prompt = web_template.format(context=context, query=query)
             answer = self.query_engine.generate_response(prompt, grounding=self.grounding)
 
-            # Score response
-            score_text, quality_score = self.scorer.score(answer, query)
+            # Score response using the new scoring API with context
+            score_result = self.scorer.score_json(answer, query, chunks)
+            quality_score = score_result["quality_score"]
+            score_text = score_result["evaluation"]
             
             if self.logging_enabled:
                 self.logger.info(f"Response quality score: {quality_score:.4f}")
@@ -415,14 +406,24 @@ class RAGManager:
                     query,
                     answer,
                     score_text,
-                    self.quality_thresh,
+                    quality_score,
                     cache_db=cache_db
                 )
                 
                 if self.logging_enabled:
                     self.logger.info(f"Response cached in {cache_db}")
-
-            return answer
+            
+            if return_json:
+                return {'answer': answer,
+                        'grounding': self.grounding,
+                        'response_analysis': score_result,
+                        'indexer': type(self.indexer).__name__,
+                        'embedder': type(self.embedder).__name__,
+                        'retriever': type(self.retriever).__name__,
+                        'scorer': type(self.scorer).__name__,
+                        'query_engine': type(self.query_engine).__name__} 
+            else:
+                return answer
 
         except Exception as e:
             if self.logging_enabled:
@@ -457,4 +458,3 @@ class RAGManager:
             if self.logging_enabled:
                 self.logger.error(f"Error creating hierarchy: {str(e)}")
             raise 
-
