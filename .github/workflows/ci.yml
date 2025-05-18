@@ -22,11 +22,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Run unit tests
         env:
           CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Run RAG integration test
         run: python -m unittest discover -s tests -p "test_*.py"
 
 
