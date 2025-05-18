@@ -14,7 +14,7 @@ from base_classes import (
         PromptCache,
         QueryEngine)
 
-from cachers import *
+#from cachers import *
 from indexers import *
 from embedders import *
 from retrievers import *
