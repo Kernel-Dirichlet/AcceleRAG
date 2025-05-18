@@ -495,7 +495,7 @@ Coming soon: **AgenticRetrievers** that will automatically:
 - Dynamically adjust search parameters for best performance
 - Implement hybrid search strategies when beneficial
 - Optimize retrieval based on query patterns
-- Self-improve through feedback loops
+- Self-improve through metacognitive feedback loops
 
 The framework handles all the coordination between components, so you can focus on implementing your custom retrieval logic.
 
