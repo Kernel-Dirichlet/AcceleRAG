@@ -27,10 +27,20 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run RAG integration test
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
         run: |
-          export OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-          export CLAUDE_API_KEY=${{ secrets.CLAUDE_API_KEY }}
+          # Create temporary files for API keys
+          echo "$OPENAI_API_KEY" > /tmp/openai_key
+          echo "$CLAUDE_API_KEY" > /tmp/claude_key
+          # Set environment variables to point to the files
+          export OPENAI_API_KEY=/tmp/openai_key
+          export CLAUDE_API_KEY=/tmp/claude_key
+          # Run tests
           python -m unittest discover -s tests -p "test_*.py"
+          # Clean up
+          rm /tmp/openai_key /tmp/claude_key
 
 
 
