@@ -4,10 +4,15 @@ on:
   push:
     branches:
       - '*'
+  pull_request:
+    branches:
+      - '*'
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    
+    # Add environment variable validation
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
@@ -26,6 +31,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+
       - name: Run RAG integration test
         run: python -m unittest discover -s tests -p "test_*.py"
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+
+
 
