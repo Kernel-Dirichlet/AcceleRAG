@@ -3,14 +3,11 @@ name: CI
 on:
   push:
     branches:
-      - '**'
+      - '*'
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
     steps:
       - name: Check out code
@@ -27,5 +24,9 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run unit tests
+        env:
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: python -m unittest discover -s tests -p "test_*.py"
+
 
