@@ -30,7 +30,7 @@ class RAGManager:
         self,
         api_key,
         grounding = 'soft',
-        quality_thresh = 80.0,
+        quality_thresh = 8,
         device = 'cpu',
         modality = 'text',
         dir_to_idx = None,
@@ -38,7 +38,6 @@ class RAGManager:
         scorer = None,
         indexer = None,
         retriever = None,
-        cache_db = None,
         enable_cache = True,
         use_cache = True,     
         cache_thresh = 0.9,
@@ -54,7 +53,6 @@ class RAGManager:
         self.grounding = grounding
         self.quality_thresh = quality_thresh
         self.dir_to_idx = dir_to_idx
-        self.cache_db = cache_db 
         self.enable_cache = enable_cache
         self.use_cache = use_cache
         self.cache_thresh = cache_thresh
@@ -62,12 +60,15 @@ class RAGManager:
         self.logging_enabled = logging_enabled
         self.show_similarity = show_similarity
         
+        # Initialize in-memory cache
+        self.cache = {}  # Maps query -> {'response': str, 'embedding': np.array, 'quality': float}
+        
         # Set default prompt paths if not provided
         self.hard_grounding_prompt = hard_grounding_prompt or 'prompts/hard_grounding_prompt.txt'
         self.soft_grounding_prompt = soft_grounding_prompt or 'prompts/soft_grounding_prompt.txt'
-        self.template_path = template_path or 'web_rag_template.txt' #used to answer query with retrieved chunks
+        self.template_path = template_path or 'web_rag_template.txt'
         
-        # Load API key and determine p
+        # Load API key and determine provider first
         try:
             # First try to get API key from environment
             if not api_key:
@@ -100,11 +101,8 @@ class RAGManager:
                                                        embedder = self.embedder)
        
         self.query_engine = query_engine or AnthropicEngine(api_key = self.api_key)
-        # Initialize cache
-        self.cache = DefaultCache()
-        if self.enable_cache:
-            self._init_cache()
-            
+        
+        # Set up logging if enabled
         if logging_enabled:
             logging.basicConfig(
                 filename='rag_manager.log',
@@ -113,28 +111,11 @@ class RAGManager:
             )
             self.logger = logging.getLogger('RAGManager')
         else:
-            # null logger
+            # Create a null logger
             self.logger = logging.getLogger('RAGManager')
             self.logger.addHandler(logging.NullHandler())
         
-    def _init_cache(self):
-        """Initialize the cache table in the appropriate database."""
-        try:
-            if self.cache_db:
-                # Verify external cache database schema
-                if not self.cache.verify_cache_schema(self.cache_db):
-                    raise ValueError(f"External cache database {self.cache_db} has incorrect schema")
-                logging.info(f"Using external cache database: {self.cache_db}")
-            else:
-                # Initialize cache in prompt_cache.db
-                self.cache.init_cache(None)  # None will use prompt_cache.db by default
-                logging.info("Cache table initialized in prompt_cache.db")
-        except Exception as e:
-            logging.error(f"Error initializing cache: {e}")
-            raise
-            
     def _is_indexed(self):
-
         try:
             if not os.path.exists(self.retriever.db_path):
                 return False
@@ -162,6 +143,7 @@ class RAGManager:
             if self.logging_enabled:
                 self.logger.info("Starting indexing process")
             
+            # If force_reindex is True, proceed directly to indexing
             if self.force_reindex:
                 self.indexer.index(
                     corpus_dir=self.dir_to_idx,
@@ -172,6 +154,7 @@ class RAGManager:
                     self.logger.info("Indexing completed successfully")
                 return
                 
+            # Only check for existing documents if not force reindexing
             if os.path.exists(self.dir_to_idx) and os.listdir(self.dir_to_idx):
                 response = input("Documents exist in the directory. Do you want to reindex? (y/n): ")
                 if response.lower() != 'y':
@@ -179,6 +162,7 @@ class RAGManager:
                         self.logger.info("User chose not to reindex")
                     return
             
+            # Call indexer's index method
             self.indexer.index(
                 corpus_dir=self.dir_to_idx,
                 tag_hierarchy=None,
@@ -216,8 +200,43 @@ class RAGManager:
                 self.logger.error(f"Error during retrieval: {str(e)}")
             raise
             
-    def _get_cached_response(self, query, threshold, metric='cosine', **kwargs):
-        """Retrieve a cached response if a similar query exists.
+    def cache_write(self, query, response, quality_score):
+        """Write a response to the cache.
+        
+        Args:
+            query: Query string
+            response: Generated response
+            quality_score: Quality score of the response
+        Cache Capacity Estimates:
+        
+        ~125 responses / 1 GB (~2MB per response w/TinyBERT embeddings)
+        
+        - response size ~ 1KB
+        - query size ~ 0.1KB
+        - Embedding size ~ 6KB (TinyBERT) 
+        - quality score ~ 8B
+        - dict overhead ~0.1 KB
+        """
+        try:
+            # Get query embedding
+            query_embedding = self.embedder.embed(query)
+            
+            # Cache in memory with dictionary structure
+            self.cache[query] = {
+                'response': response,
+                'embedding': query_embedding,
+                'quality': quality_score
+            }
+            
+            if self.logging_enabled:
+                self.logger.info(f"Cached response for query: {query[:50]}...")
+                
+        except Exception as e:
+            if self.logging_enabled:
+                self.logger.error(f"Error caching response: {e}")
+
+    def cache_read(self, query, threshold, metric='cosine', **kwargs):
+        """Read a cached response if a similar query exists.
         
         Args:
             query: Query string
@@ -229,64 +248,35 @@ class RAGManager:
             Tuple of (response, similarity) if found, None otherwise
         """
         try:
-            # Use specified cache db or default to prompt_cache.db
-            target_db = self.cache_db if self.cache_db else 'prompt_cache.db'
-            
-            # Verify schema if using external cache
-            if self.cache_db and not self.cache.verify_cache_schema(self.cache_db):
-                raise ValueError("External cache database has incorrect schema")
-                
-            # Compute query embedding using the embedder
+            # Compute query embedding
             query_embedding = self.embedder.embed(query)
             
-            # Connect to cache database
-            conn = sqlite3.connect(target_db)
-            cur = conn.cursor()
-            
-            # Get all cached responses
-            cur.execute("""
-                SELECT query, response, query_embedding, quality_score
-                FROM response_cache
-            """)
-            results = cur.fetchall()
-            
-            if not results:
-                return None
-                
             # Find best matching cached response
             best_similarity = 0.0
             best_response = None
-            best_score_text = None
             
-            for cached_query, response, cached_embedding, quality_score in results:
+            for cached_query, cache_data in self.cache.items():
                 try:
-                    # Convert string embedding to numpy array
-                    cached_embedding = np.frombuffer(cached_embedding, dtype=np.float32)
-                    
                     # Compute similarity based on metric
                     if metric == 'cosine':
-                        similarity = np.dot(query_embedding, cached_embedding) / (
-                            np.linalg.norm(query_embedding) * np.linalg.norm(cached_embedding)
+                        similarity = np.dot(query_embedding, cache_data['embedding']) / (
+                            np.linalg.norm(query_embedding) * np.linalg.norm(cache_data['embedding'])
                         )
                     elif metric == 'euclidean':
-                        distance = np.linalg.norm(query_embedding - cached_embedding)
+                        distance = np.linalg.norm(query_embedding - cache_data['embedding'])
                         similarity = 1.0 / (1.0 + distance)  # Convert distance to similarity
                     else:
                         # Assume metric is a custom function
-                        similarity = metric(query_embedding, cached_embedding, **kwargs)
+                        similarity = metric(query_embedding, cache_data['embedding'], **kwargs)
                     
                     if similarity > best_similarity and similarity >= threshold:
                         best_similarity = similarity
-                        best_response = response
-                        best_score_text = quality_score
+                        best_response = cache_data['response']
                         
                 except Exception as e:
                     if self.logging_enabled:
                         self.logger.error(f"Error computing similarity: {e}")
                     continue
-                    
-            cur.close()
-            conn.close()
             
             if best_response:
                 if self.logging_enabled:
@@ -295,7 +285,7 @@ class RAGManager:
                 
             return None
             
-        except sqlite3.Error as e:
+        except Exception as e:
             if self.logging_enabled:
                 self.logger.error(f"Error retrieving cached response: {e}")
             return None
@@ -303,12 +293,11 @@ class RAGManager:
     def generate_response(
         self,
         query,
-        use_cache = None,
-        enable_cache = None,
-        cache_thresh = None,
-        grounding = None,
-        show_similarity = None,
-        return_json = False,
+        use_cache=None,
+        enable_cache=None,
+        cache_thresh=None,
+        grounding=None,
+        show_similarity=None,
         **kwargs
     ):
         """Generate response for a query using RAG.
@@ -341,16 +330,9 @@ class RAGManager:
             if self.logging_enabled:
                 self.logger.info(f"Generating response with grounding={self.grounding}, use_cache={self.use_cache}, enable_cache={self.enable_cache}")
             
-            # Determine cache database path
-            cache_db = self.cache_db if self.cache_db else 'prompt_cache.db'
-            
-            # Check cache if enabled
+            # Check in-memory cache if enabled
             if self.use_cache:
-                cached_result = self.cache.get_cached_response(
-                    cache_db,
-                    query,
-                    self.cache_thresh
-                )
+                cached_result = self.cache_read(query, self.cache_thresh)
                 if cached_result:
                     answer, similarity = cached_result
                     if self.logging_enabled:
@@ -372,7 +354,7 @@ class RAGManager:
             except FileNotFoundError:
                 if self.logging_enabled:
                     self.logger.error(f"Prompt file {prompt_file} not found")
-                raise ValueError(f"Prompt file {prompt_file} not found")
+                    raise ValueError(f"Prompt file {prompt_file} not found")
 
             # Load web RAG template
             try:
@@ -400,30 +382,10 @@ class RAGManager:
                 if self.logging_enabled:
                     self.logger.info(f"Caching response with quality score {quality_score:.4f}")
                 
-                # Cache the response
-                self.cache.cache_response(
-                    cache_db,
-                    query,
-                    answer,
-                    score_text,
-                    quality_score,
-                    cache_db=cache_db
-                )
-                
-                if self.logging_enabled:
-                    self.logger.info(f"Response cached in {cache_db}")
-            
-            if return_json:
-                return {'answer': answer,
-                        'grounding': self.grounding,
-                        'response_analysis': score_result,
-                        'indexer': type(self.indexer).__name__,
-                        'embedder': type(self.embedder).__name__,
-                        'retriever': type(self.retriever).__name__,
-                        'scorer': type(self.scorer).__name__,
-                        'query_engine': type(self.query_engine).__name__} 
-            else:
-                return answer
+                # Cache in memory
+                self.cache_write(query, answer, quality_score)
+
+            return answer
 
         except Exception as e:
             if self.logging_enabled:

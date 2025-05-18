@@ -11,14 +11,14 @@ RESPONSE:
 
 Please evaluate the response on the following criteria:
 
-1. HALLUCINATION ANALYSIS (0-100):
+1. HALLUCINATION ANALYSIS (1-10):
 - Score 1-2: Response contains major hallucinations or completely fabricated information
 - Score 3-4: Response contains significant hallucinations or unsupported claims
 - Score 5-6: Response has minor hallucinations or partially supported claims
 - Score 7-8: Response is mostly grounded in context with few minor issues
 - Score 9-10: Response is fully grounded in context with no hallucinations
 
-2. OVERALL QUALITY (0-100):
+2. OVERALL QUALITY (1-10):
 - Score 1-2: Response is irrelevant or completely misses the query
 - Score 3-4: Response is partially relevant but lacks key information
 - Score 5-6: Response is relevant but could be more complete

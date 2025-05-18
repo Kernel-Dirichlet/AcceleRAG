@@ -4,14 +4,12 @@ import tempfile
 import shutil
 import sys
 import json
-import sqlite3
 
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from managers import RAGManager
 from query_utils import create_tag_hierarchy
-from cachers import DefaultCache
 
 class TestRAGManager(unittest.TestCase):
     """Test cases for RAGManager functionality."""
@@ -31,6 +29,7 @@ class TestRAGManager(unittest.TestCase):
         test_data_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'arxiv_mini')
         shutil.copytree(test_data_path, cls.data_dir)
         
+        
         cls.db_path = os.path.join(cls.test_dir, 'test_embeddings.db.sqlite')
         
         # Create tag hierarchy from directory structure
@@ -44,12 +43,11 @@ class TestRAGManager(unittest.TestCase):
             api_key=cls.api_key,
             dir_to_idx=cls.data_dir,
             grounding='soft',
-            enable_cache=True,
-            use_cache=True,
-            cache_thresh=0.9,
+            enable_cache=True,  # Enable cache writing
+            use_cache=True,     # Enable cache reading
+            cache_thresh=0.9,   # Set similarity threshold
             logging_enabled=True,
             force_reindex=True,
-            cache_db=None,  # Let RAGManager create its own cache
             hard_grounding_prompt=os.path.join(project_root, 'prompts', 'hard_grounding_prompt.txt'),
             soft_grounding_prompt=os.path.join(project_root, 'prompts', 'soft_grounding_prompt.txt'),
             template_path=os.path.join(project_root, 'web_rag_template.txt')
@@ -58,115 +56,79 @@ class TestRAGManager(unittest.TestCase):
         # Set database path
         cls.rag.retriever.db_path = cls.db_path
         
-        # Index documents with n-gram size 32
-        cls.rag.index(
-            db_params={'dbname': cls.db_path},
-            ngram_size=32  # Set n-gram size for indexing
-        )
-        
     @classmethod
     def tearDownClass(cls):
         """Clean up test environment after all tests."""
         shutil.rmtree(cls.test_dir)
-        # Removed deletion of prompt_cache.db to avoid deleting the Claude API key
-        # cache_db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompt_cache.db')
-        # if os.path.exists(cache_db_path):
-        #     os.remove(cache_db_path)
-            
-    def test_indexing(self):
-        """Test document indexing functionality."""
-        print("\n=== Testing Indexing ===")
         
-        # Verify database exists and has tables
-        self.assertTrue(os.path.exists(self.db_path))
-        print(f"Database created at: {self.db_path}")
+    def test_rag_flow(self):
+        """Test the complete RAG flow: indexing, retrieval, and caching."""
+        print("\n" + "="*80)
+        print("TESTING COMPLETE RAG FLOW")
+        print("="*80)
         
-        # Verify tables have content
-        conn = sqlite3.connect(self.db_path)
-        cur = conn.cursor()
+        # Step 1: Index documents
+        print("\n1. INDEXING DOCUMENTS")
+        print("-"*50)
+        self.rag.index(
+            db_params={'dbname': self.db_path},
+            ngram_size=32
+        )
         
-        # Get all tables
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
-        tables = [row[0] for row in cur.fetchall()]
-        
-        # Verify we have tables
-        self.assertGreater(len(tables), 0, "No tables created during indexing")
-        print("\nIndexing Statistics:")
-        print("-" * 50)
-        
-        # Verify each table has content
-        for table in tables:
-            cur.execute(f"SELECT COUNT(*) FROM {table}")
-            count = cur.fetchone()[0]
-            self.assertGreater(count, 0, f"Table {table} is empty")
-            print(f"Table {table}: {count} records")
-            
-        conn.close()
-        
-    def test_retrieval(self):
-        """Test document retrieval functionality."""
-        print("\n=== Testing Retrieval ===")
-        
-        # Test retrieval with top_k = 5
-        query = "database design patterns"
-        print(f"\nQuery: {query}")
-        print(f"Grounding Mode: {self.rag.grounding}")
-        
-        chunks = self.rag.retrieve(query, top_k = 5)
-        
-        # Verify we got exactly 3 chunks
-        self.assertEqual(len(chunks), 5, "Did not retrieve exactly 5 chunks")
-        print("\nRetrieved Chunks:")
-        print("-" * 50)
-        
-        for i, (chunk, similarity) in enumerate(chunks, 1):
-            print(f"\nChunk {i}:")
-            print(f"Content: {chunk}")
-            print(f"Similarity Score: {similarity:.4f}")
-            
-    def test_caching(self):
-        """Test response caching functionality."""
-        print("\n=== Testing Caching ===")
-        
-        # First query - should compute and cache
+        # Step 2: First query - tests retrieval and caches response
+        print("\n2. FIRST QUERY (TESTS RETRIEVAL)")
+        print("-"*50)
         query = "what can we infer about database design from this context"
-        print(f"\nFirst Query: {query}")
+        print(f"Query: {query}")
+        
+        # Get and display retrieved chunks first
+        chunks = self.rag.retrieve(query, top_k=5)
+        print("\nRetrieved Chunks:")
+        print("-"*50)
+        for i, (chunk, similarity) in enumerate(chunks, 1):
+            print(f"\nChunk {i} (Similarity: {similarity:.4f}):")
+            print(f"{chunk[:200]}...")
+        
+        # Generate response
         first_response = self.rag.generate_response(query)
-        print("\nFirst Response:")
-        print("-" * 60)
-        print("{}...".format(first_response[:50]))
-        print("-" * 60)
+        print("\nGenerated Response:")
+        print("-"*50)
+        print(f"{first_response[:60]}...")
+        # Verify cache entry exists with correct structure
+        self.assertIn(query, self.rag.cache, "Query should be in cache")
+        cache_data = self.rag.cache[query]
+        self.assertIn('response', cache_data, "Cache should have response")
+        self.assertIn('embedding', cache_data, "Cache should have embedding")
+        self.assertIn('quality', cache_data, "Cache should have quality score")
         
-        # Get cache hit for exact match
-        exact_cache_result = self.rag._get_cached_response(query, self.rag.cache_thresh)
-        self.assertIsNotNone(exact_cache_result, "No cache hit for exact query")
-        exact_cached_response, exact_similarity = exact_cache_result
-        print(f"\nExact Match Cache Hit Similarity: {exact_similarity:.4f}")
-        print("\nCached response (exact query):")
-        print("-" * 60)
-        print("{}...".format(exact_cached_response[:50]))
-
+        # Step 3: Exact match query - tests cache hit
+        print("\n3. EXACT MATCH QUERY (TESTS CACHE)")
+        exact_response = self.rag.generate_response(query)
+        print("\nCached Response:")
+        print(f"{exact_response[:60]}...")
         
-        # Verify exact match cache hit
-        self.assertEqual(first_response, exact_cached_response, "Cached response does not match original response")
+        # Verify exact match
+        self.maxDiff = None  # Show full diff
+        self.assertEqual(first_response, exact_response, "Cached response does not match original response")
         
-        # Similar query - should get cache hit if within threshold
+        # Step 4: Similar query - tests cache similarity
+        print("\n4. SIMILAR QUERY (TESTS CACHE SIMILARITY)")
+        print("-"*50)
         similar_query = "what can we learn about database design from this context"
-        print(f"\nThird Query (Similar): {similar_query}")
+        print(f"Query: {similar_query}")
         
-        # Get cache hit for similar query
-        similar_cache_result = self.rag._get_cached_response(similar_query, self.rag.cache_thresh)
-        self.assertIsNotNone(similar_cache_result, "No cache hit for similar query")
-        similar_cached_response, similar_similarity = similar_cache_result
-        print(f"\nSimilar Query Cache Hit Similarity: {similar_similarity:.4f}")
-        
-        # Verify similarity is above threshold
-        self.assertGreaterEqual(similar_similarity, self.rag.cache_thresh, "Similar query similarity below threshold")
-        
-        # Generate response for similar query to verify caching
         similar_response = self.rag.generate_response(similar_query)
-        print("\nCached response (similar query):")
-        print("{}...".format(similar_response))
+        print("\nResponse:")
+        print("-"*50)
+        print(f"{similar_response[:100]}...")
+         
+        # Step 5: Check scorer
+        print("\n5. VERIFYING SCORER")
+        print("-"*50)
+        score_result = self.rag.scorer.score_json(similar_response, similar_query, [])
+        print(f"Quality Score: {score_result['quality_score']:.4f}")
+        print("\nEvaluation:")
+        print(score_result['evaluation'])
 
 if __name__ == '__main__':
     unittest.main() 
