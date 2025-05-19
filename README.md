@@ -2,6 +2,11 @@
 
 A high-performance, production-ready RAG (Retrieval-Augmented Generation) framework focused on speed, accuracy, and modularity. AcceleRAG provides a fully operational text-based RAG pipeline with built-in prompt caching, and image modality support through a completely modular architecture.
 
+<p align="center">
+  <img src="./accelerag_logo.png" alt="AcceleRAG" length = "400" width="400"/>
+</p>
+
+
 ## Key Features
 
 ### Prompt Caching
