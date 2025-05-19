@@ -59,7 +59,7 @@ class RAGManager:
         self.force_reindex = force_reindex
         self.logging_enabled = logging_enabled
         self.show_similarity = show_similarity
-        
+        self.api_key = api_key 
         # Initialize in-memory cache
         self.cache = {}  # Maps query -> {'response': str, 'embedding': np.array, 'quality': float}
         
@@ -68,30 +68,12 @@ class RAGManager:
         self.soft_grounding_prompt = soft_grounding_prompt or 'prompts/soft_grounding_prompt.txt'
         self.template_path = template_path or 'web_rag_template.txt'
         
-        # Load API key and determine provider first
-        try:
-            # First try to get API key from environment
-            if not api_key:
-                self.api_key = os.environ.get("CLAUDE_API_KEY")
-                if not self.api_key:
-                    raise ValueError("CLAUDE_API_KEY not found in environment variables")
-            else:
-                # Check if api_key is a file path or direct key
-                if os.path.isfile(api_key):
-                    with open(api_key, 'r') as f:
-                        self.api_key = f.read().strip()
-                else:
-                    self.api_key = api_key
-                    
-            # Determine provider based on API key format
-            if self.api_key.startswith('sk-ant-'):
-                self.provider = 'anthropic'
-            else:
-                self.provider = 'openai'
-                
-        except Exception as e:
-            raise ValueError(f"Error loading API key: {e}")
-        
+        self.query_engine = query_engine or AnthropicEngine(api_key = self.api_key)
+        if isinstance(self.query_engine, AnthropicEngine):
+            self.provider = 'anthropic'
+        if isinstance(self.query_engine, OpenAIEngine):
+            self.provider = 'openai'
+
         # Initialize components
         assert modality in ['image','text','audio']
         self.scorer = scorer or DefaultScorer(self.provider, self.api_key)
@@ -100,7 +82,7 @@ class RAGManager:
         self.retriever = retriever or TextRetriever(dir_to_idx = dir_to_idx,
                                                        embedder = self.embedder)
        
-        self.query_engine = query_engine or AnthropicEngine(api_key = self.api_key)
+
         
         # Set up logging if enabled
         if logging_enabled:

@@ -146,6 +146,7 @@ class TestOpenAIRAG(BaseRAGTest):
             with open(cls.api_key, 'r') as f:
                 cls.api_key = f.read().strip()
         
+        query_engine = OpenAIEngine(api_key = cls.api_key)
         # Initialize OpenAI RAG manager
         cls.rag = RAGManager(
             api_key=cls.api_key,
