@@ -1,7 +1,6 @@
 from base_classes import QueryEngine
 from anthropic import Anthropic
 import os
-import dotenv 
 from openai import OpenAI 
 
 class AnthropicEngine(QueryEngine):
