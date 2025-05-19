@@ -2,6 +2,11 @@
 
 A high-performance, production-ready RAG (Retrieval-Augmented Generation) framework focused on speed, accuracy, and modularity. AcceleRAG provides a fully operational text-based RAG pipeline with built-in prompt caching, and image modality support through a completely modular architecture.
 
+<p align="center">
+  <img src="./accelerag_logo.png" alt="AcceleRAG" length = "400" width="400"/>
+</p>
+
+
 ## Key Features
 
 ### Prompt Caching
@@ -397,7 +402,7 @@ graph TD
 ### Grounding Modes
 ```mermaid
 graph LR
-    A[Query] --> B[Query + context]
+    A[Query] --> B[Query + context + hard/soft prompt]
     B --> C[Response]
     D[context] --> B
 ```
@@ -412,7 +417,7 @@ rag = RAGManager(
     api_key='path/to/api_key.txt',
     dir_to_idx='path/to/documents',
     grounding='soft',
-    quality_thresh=80.0,
+    quality_thresh=8.0,
     enable_cache=True,
     use_cache=True,
     cache_thresh=0.9,
@@ -437,6 +442,26 @@ chunks = rag.retrieve(
     top_k=5
 )
 ```
+
+
+
+## Custom Caching: Subclassing RAGManager
+
+- To implement custom caching (e.g., Redis, disk, distributed), subclass RAGManager and override `cache_write` and `cache_read`.
+- Example:
+
+```python
+from managers import RAGManager
+class MyCacheRAGManager(RAGManager):
+    def cache_write(self, query, response, quality_score):
+        # Add your custom cache logic here (e.g., write to Redis)
+        pass
+    def cache_read(self, query, threshold, metric='cosine', **kwargs):
+        # Add your custom cache logic here (e.g., read from Redis)
+        return None
+```
+- All cache logic is centralized in these two methods, so you can swap in any backend.
+
 
 ## Custom Component Integration
 
@@ -543,20 +568,40 @@ Each component can be swapped independently, allowing you to:
 
 The framework handles all the component coordination, so you can focus on implementing your custom logic.
 
-## Coming Features
+## Continuous Integration (CI) Note
+
+- OpenAI-based tests may fail due to connection timeouts. Focus on Anthropic and image RAG builds for CI reliability in the current version
+
+## Roadmap
+
+- v0.11.0: PyPi publication
+- v0.12.0: Docker image  
+- v0.13.0: Flask Front-end playground
+- v0.14.0: Cross-modal search
+- v0.15.0: Agentic Indexers & Retrievers
+- v0.16.0: Synthetic Dataset creation 
+- v0.17.0: Benchmarks & Performance Testing
+- ...
+- v1.0.0: DSL for RAG pipelines + updated testing suite 
+
+## Coming Features (subject to change)
 
 ### Agentic Components
 - **Indexers**: 
   - Self-optimizing document chunking
   - Dynamic metadata extraction
   - Automatic tag generation
+  - unstructured text indexing
   - Quality-aware indexing
+  - Evolutionary Algorithms for Indexing
 
 - **Retrievers**:
   - DAG-based query planning
   - Multi-hop retrieval
   - Context-aware routing
+  - Context caching + chunk caching 
   - Adaptive similarity thresholds
+  - Web search + Evolutionary Algorithms for retrieval 
 
 ### Framework Improvements
 - Cross-modal search capabilities
@@ -579,3 +624,4 @@ For the full license text, see the [LICENSE](LICENSE) file.
 ## Legal Disclaimer
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
