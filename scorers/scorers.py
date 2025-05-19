@@ -1,10 +1,11 @@
 import os
 from base_classes import Scorer
-import anthropic 
-from openai import OpenAI 
+import anthropic
+from openai import OpenAI
+import re
+import logging
 
 class DefaultScorer(Scorer):
-
     """Default scorer - LLM evaluation."""
     
     def __init__(self, provider, api_key):
@@ -110,9 +111,6 @@ class DefaultScorer(Scorer):
                     except:
                         pass
                         
-            # Calculate overall score (weighted average)
-            overall_score = (quality_score * 0.7) + ((10 - hallucination_score) * 0.3)
-            
             # Format context chunks
             context_list = [
                 {
@@ -121,13 +119,13 @@ class DefaultScorer(Scorer):
                 }
                 for chunk, score in context_chunks
             ]
-            
+            overall_score = (0.3 * quality_score) + (0.7 * (10 - hallucination_score)) 
             return {
-                "score": overall_score,
+                "score": overall_score,  # Overall score is just the quality score
                 "response": response,
                 "context": context_list,
-                "hallucination_risk": 10 - hallucination_score,  # Convert to risk score
-                "quality_score": quality_score,
+                "hallucination_risk": 10 - hallucination_score,  # Convert to risk score (out of 10)
+                "quality_score": quality_score,  # Quality score (out of 10)
                 "evaluation": evaluation
             }
             
@@ -143,7 +141,8 @@ class DefaultScorer(Scorer):
                     }
                     for chunk, score in context_chunks
                 ],
-                "hallucination_risk": 10.0,  # Maximum risk on error
+                "hallucination_risk": 10.0,  # Maximum risk on error (out of 10)
                 "quality_score": 0.0,
                 "error": str(e)
             } 
+

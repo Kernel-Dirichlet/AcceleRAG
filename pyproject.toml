@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "accelerag"
+version = "0.10.0"
+description = "A RAG accelerator for agentic workflows"
+authors = [
+  { name = "Kernel-Dirichlet", email = "elliottdev93@gmail.com" }
+]
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+dependencies = [
+  "openai",
+  "anthropic",
+  "arxiv",
+  "requests",
+  "torch",
+  "torchvision",
+  "transformers",
+  "scikit-learn",
+  "Pillow",
+  "matplotlib"
+]
+
+[project.urls]
+Homepage = "https://github.com/Kernel-Dirichlet/AcceleRAG"
+Documentation = "https://github.com/Kernel-Dirichlet/AcceleRAG#readme"
+Repository = "https://github.com/Kernel-Dirichlet/AcceleRAG"
+Issues = "https://github.com/Kernel-Dirichlet/AcceleRAG/issues"

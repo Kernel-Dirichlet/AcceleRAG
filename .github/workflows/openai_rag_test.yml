@@ -1,0 +1,40 @@
+name: CI OpenAI Text
+
+on:
+  push:
+    branches:
+      - '*'
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run OpenAI Text test
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          # Create temporary file for API key
+          echo "$OPENAI_API_KEY" > /tmp/openai_key
+          # Set environment variable to point to the file
+          export OPENAI_API_KEY=/tmp/openai_key
+          # Run test
+          python -m unittest tests.test_rag_text.TestOpenAIRAG
+          # Clean up
+          rm /tmp/openai_key 

@@ -1,4 +1,4 @@
-name: CI
+name: CI Anthropic Text
 
 on:
   push:
@@ -26,21 +26,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run RAG integration test
+      - name: Run Anthropic Text test
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
         run: |
-          # Create temporary files for API keys
-          echo "$OPENAI_API_KEY" > /tmp/openai_key
+          # Create temporary file for API key
           echo "$CLAUDE_API_KEY" > /tmp/claude_key
-          # Set environment variables to point to the files
-          export OPENAI_API_KEY=/tmp/openai_key
+          # Set environment variable to point to the file
           export CLAUDE_API_KEY=/tmp/claude_key
-          # Run tests
-          python -m unittest discover -s tests -p "test_*.py"
+          # Run test
+          python -m unittest tests.test_rag_text.TestAnthropicRAG
           # Clean up
-          rm /tmp/openai_key /tmp/claude_key
-
-
-
+          rm /tmp/claude_key 

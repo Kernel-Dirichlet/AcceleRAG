@@ -30,7 +30,7 @@ class RAGManager:
         self,
         api_key,
         grounding = 'soft',
-        quality_thresh = 8,
+        quality_thresh = 5,
         device = 'cpu',
         modality = 'text',
         dir_to_idx = None,
