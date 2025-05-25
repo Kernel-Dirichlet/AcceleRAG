@@ -6,7 +6,7 @@ CoTARAG (Cognitive Thought and Retrieval Augmented Generation) is an advanced AI
 2. **AcceleRAG**: A high-performance RAG framework focused on speed, accuracy, and modularity
 
 <p align="center">
-  <img src="./accelerag_logo.png" alt="CoTARAG" length = "400" width="400"/>
+  <img src="./cotarag.png" alt="CoTARAG" length = "400" width="400"/>
 </p>
 
 ## Why CoTARAG is the Best Agentic AI Framework
@@ -134,7 +134,7 @@ CoTAEngine addresses these limitations by providing a clear "prompt engineering 
 
 ```mermaid
 graph TD
-    subgraph "Prompt Engineering Taxonomy"
+    subgraph "Prompt Taxonomy"
         A[Prompt Engineering] --> B[Generation]
         A --> C[Refinement]
         A --> D[Evaluation]
@@ -190,14 +190,14 @@ This structured approach to prompt engineering makes it easier to:
 
 ```mermaid
 graph TD
-    subgraph "Basic Chain-of-Thought (CoT)"
+    subgraph "CoT"
         A1[Input] --> B1[Thought 1]
         B1 --> C1[Thought 2]
         C1 --> D1[Thought 3]
         D1 --> E1[Final Answer]
     end
 
-    subgraph "Chain-of-Thought-Action (CoTA)"
+    subgraph "CoTA"
         A2[Input] --> B2[Thought 1]
         B2 --> C2[Action 1]
         C2 --> D2[Thought 2]
