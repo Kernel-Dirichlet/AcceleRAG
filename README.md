@@ -1,378 +1,301 @@
-# AcceleRAG v0.10.0
+# CoTARAG v0.10.0 📊💭➡️⚙️🚀
+
+CoTARAG (Cognitive Thought and Retrieval Augmented Generation) is an advanced AI agent framework that combines two powerful engines:
+
+1. **CoTAEngine**: A Chain-of-Thought-Action engine that combines Chain-of-Thought (CoT) with ReAct prompting
+2. **AcceleRAG**: A high-performance RAG framework focused on speed, accuracy, and modularity
+
+<p align="center">
+  <img src="./accelerag_logo.png" alt="CoTARAG" length = "400" width="400"/>
+</p>
+
+## Why CoTARAG is the Best Agentic AI Framework
+
+CoTARAG's unique power comes from the seamless integration of CoTAEngine and AcceleRAG, enabling the creation of arbitrarily complex agents at minimal cost:
+
+### CoTAEngine: Transparent Reasoning
+- **Thought-Action Pairs**: Clear separation of reasoning and execution
+- **Chain-of-Thought**: Step-by-step reasoning with full visibility
+- **ReAct Integration**: Dynamic action selection based on reasoning
+- **Meta-CoT Support**: Self-improving reasoning chains
+
+### AcceleRAG: Efficient Knowledge Access
+- **4-Mode Caching**: Dramatically reduces API costs
+- **Intelligent Routing**: Smart document selection
+- **Hallucination Control**: Built-in quality scoring
+- **Cross-modal Support**: Unified text and image search
+
+### Together: Powerful & Cost-Effective Agents
+- **Cost Optimization**: 
+  - Caching reduces API calls
+  - Smart routing minimizes token usage
+  - Efficient chunking reduces embedding costs
+- **Complex Capabilities**:
+  - Multi-step reasoning with full context
+  - Knowledge-grounded decision making
+  - Self-improving chains
+  - Cross-modal understanding
+- **Developer Benefits**:
+  - Simple Python classes
+  - Clear debugging
+  - Flexible customization
+  - Production-ready deployment
+
+### Example: Research Assistant Agent
+```python
+# Combines CoTAEngine's reasoning with AcceleRAG's knowledge access
+class ResearchAssistantAction(LLMThoughtAction):
+    def thought(self, query):
+        # Use AcceleRAG to find relevant research
+        research = rag.retrieve(query, top_k=10)
+        return f"Research this topic:\n{query}\n\nFound research:\n{research}"
+    
+    def action(self, thought_output):
+        # Generate research summary and recommendations
+        return rag.generate_response(
+            query=f"Summarize findings and provide recommendations:\n{thought_output}",
+            grounding='hard'
+        )
+```
+
+This agent demonstrates how CoTARAG enables:
+1. **Efficient Knowledge Access**: AcceleRAG finds relevant research
+2. **Clear Reasoning**: CoTAEngine analyzes and synthesizes findings
+3. **Cost Control**: Caching and smart routing minimize API usage
+4. **Quality Assurance**: Built-in scoring ensures reliable outputs
+
+## CoTAEngine: Chain-of-Thought-Action
+
+CoTAEngine combines Chain-of-Thought (CoT) reasoning with ReAct prompting to create a transparent, debuggable AI agent framework. It provides clear visibility into each step of the agent's decision-making process, making it easier for developers to understand, debug, and improve their AI agents.
+
+### Advanced Prompting Strategies
+
+CoTAEngine subsumes several advanced prompting strategies through its flexible ThoughtAction interface:
+
+#### Meta-Prompting
+```python
+class MetaPromptAction(LLMThoughtAction):
+    def thought(self, prompt, goal):
+        # Generate improved prompt for specific goal
+        return f"This prompt is fed into OpenAI's o4 model - {prompt} - please improve it so that the o4 model output reaches this {goal}"
+    
+    def action(self, thought_output):
+        # Execute the improved prompt
+        return dotask(function(thought_output))
+```
+
+#### Tree-of-Thoughts (ToT)
+```python
+class TreeOfThoughtsAction(LLMThoughtAction):
+    def thought(self, tot_description):
+        # Generate reasoning tree structure
+        return f"in a mermaid diagram generate a tree of reasoning steps that follow the ToT strategy: {tot_description}"
+    
+    def action(self, thought_output):
+        # Convert LLM output to executable DAG
+        return convert_llm_tot(thought_output)  # Returns series of function calls as DAG
+```
+
+#### Automated Prompt Engineering (APE)
+```python
+class APEAction(LLMThoughtAction):
+    def thought(self, goals):
+        # Generate effective prompts for given goals
+        return f"generate a list of effective prompts that will be fed into OpenAI's o4 model that will help it reach the following goals: {goals}"
+    
+    def action(self, thought_output):
+        # Save and evaluate prompts using PromptRefiner
+        return PromptRefiner(thought_output)  # Automated prompt testing and refinement
+```
+
+#### Meta-CoT
+```python
+class MetaCoTAction(LLMThoughtAction):
+    def thought(self, chain):
+        # Analyze and refine reasoning chain
+        return f"given this reasoning chain: {chain} - provide reasoning refinements for each stage along with an explanation for the change"
+    
+    def action(self, thought_output):
+        # Apply refined reasoning chain
+        return refined_chain(thought_output)  # Uses improved reasoning over original
+```
+
+Each strategy is implemented as a specialized ThoughtAction pair, demonstrating CoTAEngine's flexibility in handling various advanced prompting techniques while maintaining a consistent interface and clear separation between reasoning and action steps.
+
+### Beyond Meta-Prompting: CoTA's Prompt Engineering Taxonomy
+
+While Meta-Prompting is a powerful technique, it has inherent limitations:
+- It relies on the same LLM for both refinement and execution
+- The refinement process is opaque and difficult to debug
+- There's no clear separation between prompt engineering and execution
+- It lacks structured ways to evaluate and improve prompts
+
+CoTAEngine addresses these limitations by providing a clear "prompt engineering taxonomy" through its ThoughtAction interface:
+
+```mermaid
+graph TD
+    subgraph "Prompt Engineering Taxonomy"
+        A[Prompt Engineering] --> B[Generation]
+        A --> C[Refinement]
+        A --> D[Evaluation]
+        
+        B --> B1[APE]
+        B --> B2[ToT]
+        
+        C --> C1[Meta-Prompt]
+        C --> C2[Meta-CoT]
+        
+        D --> D1[Quality Metrics]
+        D --> D2[Performance Testing]
+    end
+```
+
+This taxonomy enables:
+1. **Clear Separation of Concerns**
+   - Generation: Creating new prompts (APE, ToT)
+   - Refinement: Improving existing prompts (Meta-Prompt, Meta-CoT)
+   - Evaluation: Testing and measuring prompt effectiveness
+
+2. **Flexible Implementation**
+   - Each component can use different LLMs or models
+   - Easy to swap out or upgrade individual components
+   - Clear interfaces for extending the taxonomy
+
+3. **Structured Development**
+   - Systematic approach to prompt engineering
+   - Reusable components and patterns
+   - Clear debugging and improvement paths
+
+4. **Quality Control**
+   - Built-in evaluation mechanisms
+   - Performance metrics and testing
+   - Continuous improvement feedback loops
+
+This structured approach to prompt engineering makes it easier to:
+- Debug and improve prompts systematically
+- Reuse successful prompt patterns
+- Measure and compare different strategies
+- Build more complex prompt engineering pipelines
+
+### Key Features
+
+- **Transparent Reasoning**: Each step in the chain is clearly documented and accessible
+- **Debuggable Actions**: Actions are separated from thoughts, making it easy to identify issues
+- **Flexible Chain Building**: Create complex chains of thought and action with simple Python code
+- **Built-in Logging**: Automatic tracking of the reasoning chain for debugging and analysis
+
+
+
+### CoT vs CoTA: Understanding the Difference
+
+```mermaid
+graph TD
+    subgraph "Basic Chain-of-Thought (CoT)"
+        A1[Input] --> B1[Thought 1]
+        B1 --> C1[Thought 2]
+        C1 --> D1[Thought 3]
+        D1 --> E1[Final Answer]
+    end
+
+    subgraph "Chain-of-Thought-Action (CoTA)"
+        A2[Input] --> B2[Thought 1]
+        B2 --> C2[Action 1]
+        C2 --> D2[Thought 2]
+        D2 --> E2[Action 2]
+        E2 --> F2[Final Answer]
+    end
+```
+
+The key difference is that CoTA explicitly separates reasoning (thoughts) from actions, creating a more structured and debuggable chain. Each ThoughtAction pair:
+1. First reasons about what to do (thought)
+2. Then performs a concrete action based on that reasoning
+3. Passes the result to the next ThoughtAction pair
+
+### ThoughtAction Classes
+
+The framework provides two main classes for building CoTA chains:
+
+#### ThoughtAction
+The base class that defines the interface for all thought-action pairs:
+```python
+class ThoughtAction:
+    def thought(self, input_data):
+        # Override this to implement the reasoning step
+        pass
+        
+    def action(self, thought_output):
+        # Override this to implement the action step
+        pass
+```
+
+#### LLMThoughtAction
+A specialized class that uses an LLM for the thought step:
+```python
+class LLMThoughtAction(ThoughtAction):
+    def __init__(self, api_key=None, query_engine=None):
+        # Uses Anthropic API by default
+        self.query_engine = query_engine or AnthropicEngine(api_key=api_key)
+    
+    def thought(self, input_data):
+        # Uses LLM to generate reasoning
+        return self.query_engine.generate_response(input_data)
+        
+    def action(self, thought_output):
+        # Override this to implement the action step
+        pass
+```
+
+This separation allows for:
+- Clear distinction between reasoning and action
+- Easy debugging of each step
+- Flexible implementation of different reasoning engines
+- Consistent interface for all thought-action pairs
+
+### Example Usage
+
+```python
+from cota_engine.cota_engine import CoTAEngine
+from cota_engine.thought_action import LLMThoughtAction
+
+# Define a thought-action for code analysis
+class AnalyzeCodeAction(LLMThoughtAction):
+    def action(self, thought_output):
+        # Write analysis to file
+        with open('code_analysis.txt', 'w') as f:
+            f.write(thought_output)
+        return thought_output
+
+# Define a thought-action for suggesting improvements
+class SuggestImprovementsAction(LLMThoughtAction):
+    def action(self, thought_output):
+        # Write suggestions to file
+        with open('improvements.txt', 'w') as f:
+            f.write(thought_output)
+        return thought_output
+
+# Create the CoTA chain
+cota_engine = CoTAEngine([
+    AnalyzeCodeAction(api_key='your_key'),
+    SuggestImprovementsAction(api_key='your_key')
+])
+
+# Run the chain
+input_text = "print('Hello, World!')"
+cota_engine.run(input_text)
+
+# The reasoning chain is automatically tracked
+for step in cota_engine.reasoning_chain:
+    print(f"Step: {step['query_engine']}")
+    print(f"Thought: {step['thought_output']}")
+    print(f"Action: {step['action_output']}")
+```
+
+## AcceleRAG Framework
 
 A high-performance, production-ready RAG (Retrieval-Augmented Generation) framework focused on speed, accuracy, and modularity. AcceleRAG provides a fully operational text-based RAG pipeline with built-in prompt caching, and image modality support through a completely modular architecture.
 
-<p align="center">
-  <img src="./accelerag_logo.png" alt="AcceleRAG" length = "400" width="400"/>
-</p>
+### Framework Architecture
 
-
-## Key Features
-
-### Prompt Caching
-- Four operational modes: No Cache, Read-Only, Write-Only, Full Cache
-- Cosine similarity for cache hits
-- Configurable similarity and quality thresholds
-- External cache database support
-
-### Local Embeddings
-- TinyBERT (14M parameters) for text embeddings
-- MobileNet for image embeddings
-- Separate vector stores for each modality
-- Optimized for mobile deployment
-
-### Hallucination Control
-
-AcceleRAG provides robust hallucination control through its scoring system and grounding modes:
-
-#### Quality Scoring
-- **JSON-based Evaluation**: Structured scoring of response quality
-- **REST API Integration**: Easy integration with existing systems
-- **Configurable Thresholds**: Adjust quality requirements per use case
-- **Detailed Metrics**: Comprehensive evaluation of response quality
-
-#### Scoring API Usage
-```python
-from managers import RAGManager
-
-# Initialize with scoring
-rag = RAGManager(
-    api_key='your_key',
-    dir_to_idx='docs',
-    quality_thresh=8,  # Minimum quality score threshold
-    logging_enabled=True  # Enable detailed scoring logs
-)
-
-# Generate response with scoring
-response = rag.generate_response(
-    query="Explain the key differences between RAG and traditional retrieval systems",
-    grounding='hard'  # Use hard grounding for strict control
-)
-
-# The response includes quality scoring in JSON format:
-{
-    "score": 8,  # Overall quality score
-    "response": "{llm_response}",  # Original response from LLM or more generally a QueryEngine
-    "context": [  # List of context chunks with scores
-        {
-            "text": "{chunk}", # retrieved
-            "similarity_score": 0.95
-        }
-    ],
-    "hallucination_risk": 8,  # Risk score from evaluation
-    "quality_score": 8,  # Quality score from LLM evaluation
-    "evaluation": "{full_evaluation}"  # Detailed evaluation text
-}
-
-
-```
-
-#### Scoring Implementation
-The scoring system uses a weighted approach:
-- **Quality Score**: Evaluated by LLM based on:
-  - Response relevance
-  - Completeness
-  - Coherence
-  - Context utilization
-- **Hallucination Risk**: Calculated as (10 - hallucination_score)
-- **Overall Score**: Weighted average of quality and hallucination risk
-
-#### Grounding Modes
-
-##### Hard Grounding
-```python
-# Hard grounding for strict hallucination control
-rag = RAGManager(
-    grounding='hard',  # Strongly deters hallucinations
-    quality_thresh=8.0  # Quality threshold
-)
-```
-- Strict adherence to provided context
-- Higher quality thresholds
-- Detailed source attribution
-- Lower hallucination probability
-
-##### Soft Grounding
-```python
-# Soft grounding for natural responses
-rag = RAGManager(
-    grounding='soft',  # Natural responses with knowledge integration
-    quality_thresh=6.0  # Lower threshold for more natural responses
-)
-```
-- More natural language generation
-- Balanced knowledge integration
-- Moderate quality requirements
-- Controlled creativity
-
-The scoring system helps ensure:
-- Response quality meets requirements
-- Hallucinations are minimized, eventually eliminated through formal guarantees 
-- Context is properly utilized
-- Source attribution is maintained
-- Quality metrics are tracked
-
-### Image Modality Support
-
-AcceleRAG provides efficient image similarity search capabilities through its modular architecture. The framework enables finding similar images using visual features. Additional modalities like audio and video might be supported in future updates. 
-
-#### Image Embedding
-- **Default Model**: MobileNet for efficient image embeddings
-- **Batch Processing**: Efficient handling of large image datasets
-- **GPU Acceleration**: Automatic GPU utilization when available
-
-#### Image Similarity Search
-- **Visual Similarity**: Find similar images using visual features
-- **Metadata Integration**: Search using image metadata and visual features
-- **Efficient Indexing**: Optimized for large-scale image collections
-- **Similarity Thresholds**: Configurable similarity matching
-
-#### Use Cases
-
-##### Synthetic Image Generation
-- **Reference Image Search**: Find similar real images to guide synthetic generation
-- **Style Matching**: Identify images with similar visual styles for consistent generation
-- **Quality Control**: Compare generated images with real examples
-- **Dataset Augmentation**: Find similar images to expand training datasets
-
-##### Content Management
-- **Duplicate Detection**: Identify similar or duplicate images
-- **Content Moderation**: Detect inappropriate or similar content
-- **Image Organization**: Group similar images automatically
-- **Visual Search**: Find images based on visual similarity
-
-##### Document Analysis
-- **Image Extraction**: Find similar images within documents
-- **Visual Pattern Recognition**: Identify recurring visual elements
-- **Document Classification**: Use image similarity for document categorization
-
-#### Example Usage
-```python
-from managers import RAGManager
-
-# Initialize with image modality
-rag = RAGManager(
-    api_key='your_key',
-    dir_to_idx='path/to/images',
-    modality='image',  # Set modality to image
-    device='cuda',     # Use GPU if available
-    enable_cache=True, # Enable caching for faster retrieval
-    cache_thresh=0.9   # NOTE - CACHING NOT YET for non-text modality!
-)
-
-# Index your image collection
-rag.index()
-
-# Find similar images
-similar_images = rag.retrieve(
-    query='path/to/reference.jpg',
-    top_k=5  # Get top 5 most similar images
-)
-```
-
-Coming soon: **AgenticImageRetrievers**:
-
-## Framework Comparisons
-
-| Feature | LangChain | LlamaIndex | RAGFlow | AcceleRAG |
-|---------|-----------|------------|---------|-----------|
-| **Architecture** | Complex abstractions, high overhead | Monolithic, limited extensibility | Basic modularity | Fully modular, dependency injection |
-| **Performance** | Slow due to abstraction layers | Moderate, limited optimization | Basic performance | Optimized for speed and efficiency |
-| **Caching** | Basic implementation | Simple caching | No built-in caching | Sophisticated 4-mode caching with similarity thresholds |
-| **Embeddings** | Limited to specific providers | Basic embedding support | No custom embeddings | Default: TinyBERT (14M) for text, MobileNet for images. Fully customizable with any model |
-| **Hallucination Control** | None | None | None | Hard/Soft grounding with quality scoring |
-| **Query Routing** | Basic | None | Simple routing | Intelligent tag hierarchy routing |
-| **Vendor Lock-in** | High (specific LLM providers) | Moderate | Low | None (fully modular) |
-| **Production Ready** | Complex setup required | Requires customization | Basic deployment | Out-of-the-box production features |
-| **Customization** | Limited by abstractions | Basic extensibility | Moderate | Complete component replacement |
-| **Documentation** | Extensive but complex | Basic | Limited | Comprehensive and evolving |
-
-## Framework Issues and Improvements
-
-### LangChain Issues
-
-#### 1. Performance and Resource Management
-```python
-# Memory leaks in conversation chains
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import LLMChain
-
-# No cleanup mechanism, memory grows unbounded
-memory = ConversationBufferMemory()
-chain = LLMChain(llm=llm, memory=memory)
-for _ in range(1000):
-    chain.run("What is RAG?")  # Memory leak
-
-# CUDA/GPU issues
-from langchain.embeddings import HuggingFaceEmbeddings
-# Frequent CUDA errors and device mismatches
-embeddings = HuggingFaceEmbeddings(device="cuda")  # Fails if CUDA not available
-```
-
-#### 2. API Inconsistencies
-```python
-# Breaking changes between versions
-from langchain.retrievers import create_retrieval_chain
-# Fails in new versions
-chain = create_retrieval_chain(llm, retriever)  # AttributeError
-
-# Streamed response issues
-from langchain.chains import LLMChain
-# Incompatible with multiple choices
-chain = LLMChain(llm=llm, prompt=prompt)
-response = chain.run(n=2)  # Fails with streaming
-```
-
-#### 3. Query Analysis Limitations
-```python
-# Basic similarity search without proper filtering
-from langchain.vectorstores import VectorStore
-results = vectorstore.similarity_search(
-    "videos on RAG published in 2023"
-)  # Returns irrelevant results from 2024
-```
-
-### LlamaIndex Issues
-
-#### 1. Limited Caching
-```python
-# No similarity-based caching
-from llama_index import VectorStoreIndex
-index = VectorStoreIndex.from_documents(documents)
-query_engine = index.as_query_engine()
-
-# Each query hits the LLM
-response1 = query_engine.query("What is RAG?")
-response2 = query_engine.query("Can you explain RAG?")  # Hits LLM again
-```
-
-#### 2. Monolithic Architecture
-```python
-# Limited customization options
-from llama_index import ServiceContext
-# Forced to use their components
-service_context = ServiceContext.from_defaults(
-    llm=llm,
-    embed_model=embed_model
-)  # No custom implementations
-```
-
-### RAGFlow Issues
-
-#### 1. Inflexible Pipeline
-```python
-# Rigid pipeline structure
-from ragflow import RAGPipeline
-pipeline = RAGPipeline(
-    documents=docs,
-    embedding_model="default",  # No custom embedding support
-    retriever="default",        # No custom retrieval
-    llm="default"              # No custom LLM
-)
-```
-
-#### 2. Basic Query Routing
-```python
-# No intelligent routing
-results = pipeline.query("What is RAG?")  # No control over retrieval process
-```
-
-### AcceleRAG's Solutions
-
-#### 1. Memory and Resource Management
-```python
-from managers import RAGManager
-
-# Automatic memory cleanup and resource management
-rag = RAGManager(
-    api_key='your_key',
-    dir_to_idx='docs',
-    enable_cache=True,
-    cache_thresh=0.9,
-    logging_enabled=True  # Track resource usage
-)
-
-# Efficient GPU utilization
-rag = RAGManager(
-    device='cuda',  # Graceful fallback to CPU
-    embedder=CustomEmbedder()  # Use your own GPU-optimized model
-)
-```
-
-#### 2. Consistent API Design
-```python
-# Simple, consistent interface
-rag.index()  # Index documents
-rag.retrieve()  # Retrieve chunks
-rag.generate_response()  # Generate responses
-
-# All components follow same interface
-rag = RAGManager(
-    indexer=CustomIndexer(),
-    retriever=CustomRetriever(),
-    query_engine=CustomQueryEngine()
-)
-```
-
-#### 3. Advanced Query Analysis
-```python
-# Intelligent query routing with tag hierarchy
-rag = RAGManager(
-    dir_to_idx='docs',
-    retriever=CustomRetriever()  # Custom routing logic
-)
-
-# Filtered retrieval w/ user defined CustomRetriever class
-chunks = rag.retrieve(
-    query="videos on RAG published in 2023",
-    filters={"year": 2023}  # Proper filtering
-)
-```
-
-#### 4. Sophisticated Caching
-```python
-# Similarity-based caching
-rag = RAGManager(
-    enable_cache=True,
-    cache_thresh=0.9,  # Configurable threshold
-    use_cache=True
-)
-
-# Cache hits for similar queries
-response1 = rag.generate_response("What is RAG?")
-response2 = rag.generate_response("Can you explain RAG?")  # Cache hit!
-```
-
-#### 5. Hallucination Control
-```python
-# Hard grounding for strict hallucination control
-rag = RAGManager(
-    grounding='hard',  # Strongly deters hallucinations
-    quality_thresh=8.0  # Quality threshold
-)
-
-# Soft grounding for natural responses
-rag = RAGManager(
-    grounding='soft',  # Natural responses with knowledge integration
-    quality_thresh=6.0  # Lower threshold for more natural responses
-)
-```
-
-AcceleRAG addresses these issues through:
-- Memory management and resource cleanup
-- Flexible component customization
-- Sophisticated caching with similarity matching
-- No vendor lock-in
-- Production-ready performance
-- Consistent API design
-- Built-in error handling
-- Automatic resource management
-- Advanced query analysis
-- Hallucination control
-
-## Framework Architecture
-
-### Core Components
 ```mermaid
 graph TD
     A[RAGManager] --> B[Abstract Classes]
@@ -381,12 +304,14 @@ graph TD
     B --> E[Indexer]
     B --> F[Embedder]
     B --> G[QueryEngine]
+    B --> H[Scorer]
     
-    C --> H[Default/Custom Cache]
-    D --> I[Default/Custom Retriever]
-    E --> J[Default/Custom Indexer]
-    F --> K[Default/Custom Embedder]
-    G --> L[Default/Custom QueryEngine]
+    C --> I[Default/Custom Cache]
+    D --> J[Default/Custom Retriever]
+    E --> K[Default/Custom Indexer]
+    F --> L[Default/Custom Embedder]
+    G --> M[Default/Custom QueryEngine]
+    H --> N[Default/Custom Scorer]
 ```
 
 ### Query Routing
@@ -407,7 +332,7 @@ graph LR
     D[context] --> B
 ```
 
-## Usage Example
+### Basic Usage
 
 ```python
 from managers import RAGManager
@@ -435,49 +360,50 @@ response = rag.generate_response(
     grounding='hard',
     show_similarity=True
 )
-
-# Retrieve relevant chunks
-chunks = rag.retrieve(
-    query="Explain the key differences between RAG and traditional retrieval systems",
-    top_k=5
-)
 ```
 
+### Custom Component Implementation
 
-
-## Custom Caching: Subclassing RAGManager
-
-- To implement custom caching (e.g., Redis, disk, distributed), subclass RAGManager and override `cache_write` and `cache_read`.
-- Example:
-
-```python
-from managers import RAGManager
-class MyCacheRAGManager(RAGManager):
-    def cache_write(self, query, response, quality_score):
-        # Add your custom cache logic here (e.g., write to Redis)
-        pass
-    def cache_read(self, query, threshold, metric='cosine', **kwargs):
-        # Add your custom cache logic here (e.g., read from Redis)
-        return None
-```
-- All cache logic is centralized in these two methods, so you can swap in any backend.
-
-
-## Custom Component Integration
-
-AcceleRAG's modular design allows you to easily swap in your own components. Here's how to create and integrate custom components:
-
-### Custom Indexer
+#### Custom Indexer
 ```python
 from indexers import Indexer
 
 class CustomIndexer(Indexer):
     def index(self, corpus_dir, tag_hierarchy=None, **kwargs):
-        # Your custom indexing logic here
-        # Example: Custom chunking strategy
+        # Custom chunking strategy
         chunks = self._custom_chunking(corpus_dir)
-        # Store in database
-        self._store_chunks(chunks)
+        
+        # Custom metadata extraction
+        metadata = self._extract_metadata(chunks)
+        
+        # Custom storage logic
+        self._store_chunks(chunks, metadata)
+        
+        return {
+            'num_chunks': len(chunks),
+            'metadata': metadata
+        }
+    
+    def _custom_chunking(self, corpus_dir):
+        # Implement your chunking logic
+        # Example: Semantic chunking based on content
+        chunks = []
+        for file in self._get_files(corpus_dir):
+            content = self._read_file(file)
+            chunks.extend(self._semantic_split(content))
+        return chunks
+    
+    def _extract_metadata(self, chunks):
+        # Implement custom metadata extraction
+        # Example: Extract key topics, entities, etc.
+        return {
+            chunk_id: {
+                'topics': self._extract_topics(chunk),
+                'entities': self._extract_entities(chunk),
+                'summary': self._generate_summary(chunk)
+            }
+            for chunk_id, chunk in enumerate(chunks)
+        }
 
 # Use in RAGManager
 rag = RAGManager(
@@ -487,17 +413,48 @@ rag = RAGManager(
 )
 ```
 
-### Custom Retriever
+#### Custom Retriever
 ```python
 from retrievers import Retriever
 
 class CustomRetriever(Retriever):
     def retrieve(self, query, top_k=5, **kwargs):
-        # Your custom retrieval logic here
-        # Example: Hybrid search combining BM25 and embeddings
+        # Implement hybrid search
         bm25_results = self._bm25_search(query)
         embedding_results = self._embedding_search(query)
-        return self._merge_results(bm25_results, embedding_results)
+        
+        # Custom ranking logic
+        ranked_results = self._rank_results(
+            bm25_results,
+            embedding_results,
+            query
+        )
+        
+        return ranked_results[:top_k]
+    
+    def _bm25_search(self, query):
+        # Implement BM25 search
+        # Example: Using rank_bm25 library
+        return self.bm25.get_top_n(
+            self.tokenizer.tokenize(query),
+            self.documents,
+            n=10
+        )
+    
+    def _embedding_search(self, query):
+        # Implement vector search
+        # Example: Using FAISS
+        query_vector = self.embedder.encode(query)
+        return self.index.search(query_vector, k=10)
+    
+    def _rank_results(self, bm25_results, embedding_results, query):
+        # Implement custom ranking
+        # Example: Weighted combination of scores
+        combined_results = self._merge_results(
+            bm25_results,
+            embedding_results
+        )
+        return self._rerank(combined_results, query)
 
 # Use in RAGManager
 rag = RAGManager(
@@ -507,32 +464,33 @@ rag = RAGManager(
 )
 ```
 
-AcceleRAG's retriever system is designed for maximum flexibility. You can implement any vector similarity search algorithm or strategy by subclassing the `Retriever` class. This includes:
-
-- **Vector Search Algorithms**: Implement HNSW, IVF, LSH, or any other vector similarity search algorithm
-- **Database Integration**: Use PostgreSQL with pgvector, SQLite, FAISS, or any other vector database
-- **Hybrid Search**: Combine multiple retrieval strategies (vector, keyword, semantic)
-- **Custom Filtering**: Add domain-specific filtering and reranking logic
-- **Distance Metrics**: Use any distance metric for similarity calculations
-
-Coming soon: **AgenticRetrievers** that will automatically:
-- Select optimal vector search algorithms based on data characteristics
-- Dynamically adjust search parameters for best performance
-- Implement hybrid search strategies when beneficial
-- Optimize retrieval based on query patterns
-- Self-improve through metacognitive feedback loops
-
-The framework handles all the coordination between components, so you can focus on implementing your custom retrieval logic.
-
-### Custom Embedder
+#### Custom Embedder
 ```python
 from embedders import Embedder
 
 class CustomEmbedder(Embedder):
     def embed(self, text, **kwargs):
-        # Your custom embedding logic here
+        # Implement custom embedding logic
         # Example: Using a different model
-        return self._model.encode(text)
+        return self._model.encode(
+            text,
+            **kwargs
+        )
+    
+    def _model_encode(self, text, **kwargs):
+        # Custom preprocessing
+        processed_text = self._preprocess(text)
+        
+        # Model-specific encoding
+        return self.model(
+            processed_text,
+            **kwargs
+        )
+    
+    def _preprocess(self, text):
+        # Implement custom preprocessing
+        # Example: Specialized text cleaning
+        return self._clean_text(text)
 
 # Use in RAGManager
 rag = RAGManager(
@@ -542,15 +500,33 @@ rag = RAGManager(
 )
 ```
 
-### Custom Query Engine
+#### Custom Query Engine
 ```python
 from query_engines import QueryEngine
 
 class CustomQueryEngine(QueryEngine):
     def generate_response(self, prompt, **kwargs):
-        # Your custom LLM integration here
+        # Implement custom LLM integration
         # Example: Using a different LLM provider
-        return self._llm.generate(prompt)
+        return self._llm.generate(
+            prompt,
+            **kwargs
+        )
+    
+    def _llm_generate(self, prompt, **kwargs):
+        # Custom prompt engineering
+        enhanced_prompt = self._enhance_prompt(prompt)
+        
+        # Model-specific generation
+        return self.llm.generate(
+            enhanced_prompt,
+            **kwargs
+        )
+    
+    def _enhance_prompt(self, prompt):
+        # Implement custom prompt engineering
+        # Example: Adding system messages
+        return self._add_system_message(prompt)
 
 # Use in RAGManager
 rag = RAGManager(
@@ -560,17 +536,123 @@ rag = RAGManager(
 )
 ```
 
+#### Custom Scorer
+```python
+from scorers import Scorer
+
+class CustomScorer(Scorer):
+    def score(self, response, context, query, **kwargs):
+        # Implement custom scoring logic
+        quality_score = self._evaluate_quality(response, context, query)
+        hallucination_risk = self._assess_hallucination_risk(response, context)
+        relevance_score = self._calculate_relevance(response, query)
+        
+        return {
+            'quality_score': quality_score,
+            'hallucination_risk': hallucination_risk,
+            'relevance_score': relevance_score,
+            'overall_score': self._calculate_overall_score(
+                quality_score,
+                hallucination_risk,
+                relevance_score
+            )
+        }
+    
+    def _evaluate_quality(self, response, context, query):
+        # Implement quality evaluation
+        # Example: Using multiple metrics
+        coherence = self._evaluate_coherence(response)
+        completeness = self._evaluate_completeness(response, query)
+        context_usage = self._evaluate_context_usage(response, context)
+        
+        return self._weighted_average({
+            'coherence': coherence,
+            'completeness': completeness,
+            'context_usage': context_usage
+        })
+    
+    def _assess_hallucination_risk(self, response, context):
+        # Implement hallucination detection
+        # Example: Using contradiction detection
+        contradictions = self._detect_contradictions(response, context)
+        unsupported = self._find_unsupported_claims(response, context)
+        
+        return self._calculate_risk_score(contradictions, unsupported)
+    
+    def _calculate_relevance(self, response, query):
+        # Implement relevance scoring
+        # Example: Using semantic similarity
+        return self._semantic_similarity(response, query)
+    
+    def _calculate_overall_score(self, quality, risk, relevance):
+        # Implement overall scoring
+        # Example: Weighted combination
+        weights = {
+            'quality': 0.4,
+            'risk': 0.3,
+            'relevance': 0.3
+        }
+        
+        return (
+            quality * weights['quality'] +
+            (10 - risk) * weights['risk'] +  # Convert risk to positive score
+            relevance * weights['relevance']
+        )
+
+# Use in RAGManager
+rag = RAGManager(
+    api_key='your_key',
+    dir_to_idx='docs',
+    scorer=CustomScorer()  # Drop in your custom scorer
+)
+```
+
 Each component can be swapped independently, allowing you to:
 - Use different embedding models
 - Implement custom retrieval strategies
 - Add specialized indexing logic
 - Integrate different LLM providers
+- Customize scoring and evaluation
 
 The framework handles all the component coordination, so you can focus on implementing your custom logic.
 
-## Continuous Integration (CI) Note
+## Framework Comparisons
 
-- OpenAI-based tests may fail due to connection timeouts. Focus on Anthropic and image RAG builds for CI reliability in the current version
+### AcceleRAG vs Other RAG Frameworks
+
+| Feature | LangChain | LlamaIndex | RAGFlow | AcceleRAG |
+|---------|-----------|------------|---------|-----------|
+| **Architecture** | Complex abstractions | Monolithic | Basic modularity | Fully modular |
+| **Performance** | Slow | Moderate | Basic | Optimized |
+| **Caching** | Basic | Simple | None | Sophisticated 4-mode |
+| **Embeddings** | Limited | Basic | None | Customizable |
+| **Hallucination Control** | None | None | None | Hard/Soft grounding |
+| **Query Routing** | Basic | None | Simple | Intelligent |
+| **Vendor Lock-in** | High | Moderate | Low | None |
+| **Production Ready** | Complex | Custom | Basic | Out-of-box |
+| **Customization** | Limited | Basic | Moderate | Complete |
+
+### CoTAEngine vs LangChain
+
+| Feature | LangChain | CoTAEngine |
+|---------|-----------|------------|
+| **Transparency** | Limited visibility into chain internals | Full visibility of thought-action chain |
+| **Performance** | High overhead from abstractions | Direct execution with minimal overhead |
+| **Ease of Use** | Complex setup, many abstractions | Simple Python classes, clear flow |
+| **Debugging** | Difficult to trace issues | Built-in chain tracking and logging |
+| **Flexibility** | Rigid chain structure | Customizable thought-action pairs |
+| **Documentation** | Complex, scattered | Clear, focused on chain building |
+
+## Installation
+
+```bash
+pip install cotarag==0.10.0
+```
+
+## License
+
+This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+
 
 ## Roadmap
 
@@ -581,47 +663,123 @@ The framework handles all the component coordination, so you can focus on implem
 - v0.15.0: Agentic Indexers & Retrievers
 - v0.16.0: Synthetic Dataset creation 
 - v0.17.0: Benchmarks & Performance Testing
-- ...
 - v1.0.0: DSL for RAG pipelines + updated testing suite 
 
 ## Coming Features (subject to change)
 
-### Agentic Components
-- **Indexers**: 
-  - Self-optimizing document chunking
-  - Dynamic metadata extraction
-  - Automatic tag generation
-  - unstructured text indexing
-  - Quality-aware indexing
-  - Evolutionary Algorithms for Indexing
+### Upcoming Improvements
 
-- **Retrievers**:
-  - DAG-based query planning
-  - Multi-hop retrieval
-  - Context-aware routing
-  - Context caching + chunk caching 
-  - Adaptive similarity thresholds
-  - Web search + Evolutionary Algorithms for retrieval 
+| Component | Feature | Description | Target Version |
+|-----------|---------|-------------|----------------|
+| **AcceleRAG** | Cross-modal Search | Unified search across text, image, and audio modalities | v0.14.0 |
+| | Agentic Indexers | Self-optimizing document processing and metadata extraction | v0.15.0 |
+| | Agentic Retrievers | DAG-based query planning and multi-hop retrieval | v0.15.0 |
+| | Synthetic Dataset Creation | AI-powered dataset generation for training | v0.16.0 |
+| | Benchmarks & Testing | Comprehensive performance evaluation suite | v0.17.0 |
+| **CoTAEngine** | Multi-LLM Support | Seamless integration with multiple LLM providers | v0.11.0 |
+| | Chain Visualization | Interactive visualization of thought-action chains | v0.12.0 |
+| | Chain Optimization | Automatic optimization of chain structure | v0.13.0 |
+| | Chain Templates | Pre-built templates for common use cases | v0.14.0 |
+| | Chain Analytics | Detailed metrics and insights for chain performance | v0.15.0 |
 
-### Framework Improvements
-- Cross-modal search capabilities
-- Distributed caching
-- REST API server
-- WebSocket support for streaming
-- Production deployment tools
-- Monitoring and metrics
-- Authentication and rate limiting
+### Combined Engine Examples
 
-## License
+#### Example 1: Code Analysis Agent
+```python
+from cota_engine.cota_engine import CoTAEngine
+from cota_engine.thought_action import LLMThoughtAction
+from managers import RAGManager
 
-This repository is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0). This is a strong copyleft license that requires:
-- All modifications to be made available under the same license
-- Network usage of the software to be made available under AGPL-3.0
-- Source code to be made available to users
+# Initialize both engines
+rag = RAGManager(
+    api_key='your_key',
+    dir_to_idx='codebase',
+    grounding='hard',
+    quality_thresh=8.0
+)
 
-For the full license text, see the [LICENSE](LICENSE) file.
+# Define thought-action for code analysis
+class CodeAnalysisAction(LLMThoughtAction):
+    def thought(self, code):
+        # Use RAG to find similar code patterns
+        similar_code = rag.retrieve(code, top_k=3)
+        return f"Analyze this code considering similar patterns:\n{code}\n\nSimilar patterns:\n{similar_code}"
+    
+    def action(self, thought_output):
+        # Generate improvement suggestions
+        return rag.generate_response(
+            query=f"Based on this analysis, suggest improvements:\n{thought_output}",
+            grounding='hard'
+        )
 
-## Legal Disclaimer
+# Create and run the chain
+cota_engine = CoTAEngine([
+    CodeAnalysisAction(api_key='your_key')
+])
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+# Analyze code
+result = cota_engine.run("def process_data(data):\n    return data * 2")
+```
+
+#### Example 2: Document Understanding Agent
+```python
+class DocumentUnderstandingAction(LLMThoughtAction):
+    def thought(self, document):
+        # Use RAG to find relevant context
+        context = rag.retrieve(document, top_k=5)
+        return f"Understand this document in context:\n{document}\n\nRelevant context:\n{context}"
+    
+    def action(self, thought_output):
+        # Generate summary and insights
+        return rag.generate_response(
+            query=f"Provide a summary and key insights:\n{thought_output}",
+            grounding='soft'
+        )
+
+# Create and run the chain
+cota_engine = CoTAEngine([
+    DocumentUnderstandingAction(api_key='your_key')
+])
+
+# Process document
+result = cota_engine.run("Your document text here...")
+```
+
+#### Example 3: Research Assistant Agent
+```python
+class ResearchAssistantAction(LLMThoughtAction):
+    def thought(self, query):
+        # Use RAG to find relevant research
+        research = rag.retrieve(query, top_k=10)
+        return f"Research this topic:\n{query}\n\nFound research:\n{research}"
+    
+    def action(self, thought_output):
+        # Generate research summary and recommendations
+        return rag.generate_response(
+            query=f"Summarize findings and provide recommendations:\n{thought_output}",
+            grounding='hard'
+        )
+
+# Create and run the chain
+cota_engine = CoTAEngine([
+    ResearchAssistantAction(api_key='your_key')
+])
+
+# Conduct research
+result = cota_engine.run("What are the latest developments in quantum computing?")
+```
+
+These examples demonstrate how CoTAEngine and AcceleRAG can be combined to create powerful AI agents that:
+- Use RAG for context-aware reasoning
+- Maintain clear separation of concerns
+- Provide transparent decision-making
+- Enable systematic debugging
+- Scale to complex tasks
+
+## Continuous Integration (CI) Note
+
+- OpenAI-based tests may fail due to connection timeouts. Focus on Anthropic and image RAG builds for CI reliability in the current version
+
+
+
 
