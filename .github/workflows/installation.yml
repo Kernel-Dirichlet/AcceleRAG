@@ -1,0 +1,256 @@
+name: Installation Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            distro: ubuntu
+            category: linux
+            package_manager: apt
+          - os: ubuntu-latest
+            distro: debian
+            category: linux
+            package_manager: apt
+          - os: ubuntu-latest
+            distro: fedora
+            category: linux
+            package_manager: dnf
+          - os: ubuntu-latest
+            distro: rhel
+            category: linux
+            package_manager: yum
+          - os: ubuntu-latest
+            distro: arch
+            category: linux
+            package_manager: pacman
+          - os: ubuntu-latest
+            distro: gentoo
+            category: linux
+            package_manager: emerge
+          - os: macos-latest
+            distro: macos
+            category: macos
+            package_manager: brew
+          - os: windows-latest
+            distro: windows
+            category: windows
+            package_manager: pip
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.12"
+    
+    - name: Install system dependencies
+      id: install_deps
+      continue-on-error: true
+      run: |
+        echo "Installing dependencies for ${{ matrix.distro }} using ${{ matrix.package_manager }}"
+        case "${{ matrix.package_manager }}" in
+          "apt")
+            sudo apt-get update
+            sudo apt-get install -y build-essential python3-dev
+            ;;
+          "dnf")
+            sudo dnf update -y
+            sudo dnf install -y gcc gcc-c++ make python3-devel
+            ;;
+          "yum")
+            sudo yum update -y
+            sudo yum groupinstall -y "Development Tools"
+            sudo yum install -y python3-devel
+            ;;
+          "pacman")
+            sudo pacman -Syu --noconfirm
+            sudo pacman -S --noconfirm base-devel python-pip python-setuptools
+            ;;
+          "emerge")
+            sudo emerge --sync
+            sudo emerge --update --deep --with-bdeps=y @world
+            sudo emerge --noreplace dev-lang/python:3.12
+            ;;
+          "brew")
+            brew update
+            brew install python@3.12
+            ;;
+          "pip")
+            python -m pip install --upgrade pip setuptools wheel
+            ;;
+        esac
+        echo "deps_status=${{ job.status }}" >> $GITHUB_OUTPUT
+
+    - name: Test PyPI Installation
+      if: steps.install_deps.outcome == 'success'
+      id: pypi_install
+      continue-on-error: true
+      run: |
+        echo "Testing PyPI installation on ${{ matrix.distro }}"
+        python -m pip install --upgrade pip
+        pip install cotarag
+        echo "pypi_install_status=${{ job.status }}" >> $GITHUB_OUTPUT
+
+    - name: Test Local Build and Install
+      if: steps.install_deps.outcome == 'success'
+      id: local_install
+      continue-on-error: true
+      run: |
+        echo "Testing local build and install on ${{ matrix.distro }}"
+        python -m pip install --upgrade pip build
+        python -m build
+        pip install dist/*.whl
+        echo "local_install_status=${{ job.status }}" >> $GITHUB_OUTPUT
+    
+    - name: Test imports (PyPI)
+      if: steps.pypi_install.outcome == 'success'
+      id: test_imports_pypi
+      continue-on-error: true
+      run: |
+        echo "Testing imports from PyPI installation on ${{ matrix.distro }}"
+        python -c "
+        try:
+            import cotarag
+            print('✓ cotarag')
+            import cotarag.cota_engine
+            print('✓ cotarag.cota_engine')
+            import cotarag.cota_engine.cota_engines
+            print('✓ cotarag.cota_engine.cota_engines')
+            import cotarag.cota_engine.thought_actions
+            print('✓ cotarag.cota_engine.thought_actions')
+            import cotarag.accelerag
+            print('✓ cotarag.accelerag')
+            import cotarag.accelerag.managers
+            print('✓ cotarag.accelerag.managers')
+            from cotarag.accelerag.managers import RAGManager
+            print('✓ RAGManager')
+            import cotarag.accelerag.query_utils
+            print('✓ cotarag.accelerag.query_utils')
+            import cotarag.accelerag.query_engines.query_engines
+            print('✓ cotarag.accelerag.query_engines.query_engines')
+            import cotarag.accelerag.embedders
+            print('✓ cotarag.accelerag.embedders')
+            import cotarag.accelerag.indexers
+            print('✓ cotarag.accelerag.indexers')
+            import cotarag.accelerag.retrievers
+            print('✓ cotarag.accelerag.retrievers')
+            import cotarag.accelerag.scorers
+            print('✓ cotarag.accelerag.scorers')
+            import cotarag.accelerag.cachers
+            print('✓ cotarag.accelerag.cachers')
+            print('\nAll PyPI imports successful!')
+        except ImportError as e:
+            print(f'\nPyPI Import failed: {str(e)}')
+            exit(1)
+        "
+        echo "pypi_imports_status=${{ job.status }}" >> $GITHUB_OUTPUT
+
+    - name: Test imports (Local)
+      if: steps.local_install.outcome == 'success'
+      id: test_imports_local
+      continue-on-error: true
+      run: |
+        echo "Testing imports from local installation on ${{ matrix.distro }}"
+        python -c "
+        try:
+            import cotarag
+            print('✓ cotarag')
+            import cotarag.cota_engine
+            print('✓ cotarag.cota_engine')
+            import cotarag.cota_engine.cota_engines
+            print('✓ cotarag.cota_engine.cota_engines')
+            import cotarag.cota_engine.thought_actions
+            print('✓ cotarag.cota_engine.thought_actions')
+            import cotarag.accelerag
+            print('✓ cotarag.accelerag')
+            import cotarag.accelerag.managers
+            print('✓ cotarag.accelerag.managers')
+            from cotarag.accelerag.managers import RAGManager
+            print('✓ RAGManager')
+            import cotarag.accelerag.query_utils
+            print('✓ cotarag.accelerag.query_utils')
+            import cotarag.accelerag.query_engines.query_engines
+            print('✓ cotarag.accelerag.query_engines.query_engines')
+            import cotarag.accelerag.embedders
+            print('✓ cotarag.accelerag.embedders')
+            import cotarag.accelerag.indexers
+            print('✓ cotarag.accelerag.indexers')
+            import cotarag.accelerag.retrievers
+            print('✓ cotarag.accelerag.retrievers')
+            import cotarag.accelerag.scorers
+            print('✓ cotarag.accelerag.scorers')
+            import cotarag.accelerag.cachers
+            print('✓ cotarag.accelerag.cachers')
+            print('\nAll local imports successful!')
+        except ImportError as e:
+            print(f'\nLocal Import failed: {str(e)}')
+            exit(1)
+        "
+        echo "local_imports_status=${{ job.status }}" >> $GITHUB_OUTPUT
+    
+    - name: Report Results
+      if: always()
+      run: |
+        echo "=== Test Results for ${{ matrix.distro }} ==="
+        echo "Category: ${{ matrix.category }}"
+        echo "Package Manager: ${{ matrix.package_manager }}"
+        echo "Dependencies Installation: ${{ steps.install_deps.outcome }}"
+        echo "PyPI Installation: ${{ steps.pypi_install.outcome }}"
+        echo "PyPI Import Tests: ${{ steps.test_imports_pypi.outcome }}"
+        echo "Local Build/Install: ${{ steps.local_install.outcome }}"
+        echo "Local Import Tests: ${{ steps.test_imports_local.outcome }}"
+        echo "=========================================="
+        
+        # Create detailed report file
+        {
+          echo "Test Results for ${{ matrix.distro }}"
+          echo "----------------------------------------"
+          echo "Category: ${{ matrix.category }}"
+          echo "Package Manager: ${{ matrix.package_manager }}"
+          echo "Dependencies Installation: ${{ steps.install_deps.outcome }}"
+          echo "PyPI Installation: ${{ steps.pypi_install.outcome }}"
+          echo "PyPI Import Tests: ${{ steps.test_imports_pypi.outcome }}"
+          echo "Local Build/Install: ${{ steps.local_install.outcome }}"
+          echo "Local Import Tests: ${{ steps.test_imports_local.outcome }}"
+          echo "----------------------------------------"
+        } >> test_results_${{ matrix.distro }}.txt
+        
+        # Upload results as artifact
+        echo "test_results_${{ matrix.distro }}.txt" >> artifact_paths.txt
+
+  publish:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+      
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+      
+      - name: Build package
+        run: python -m build
+      
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_KEY }}
+        run: |
+          python -m twine upload dist/*
