@@ -9,7 +9,7 @@ CoTARAG (Cognitive Thought and Retrieval Augmented Generation) is an advanced AI
   <img src="./cotarag.png" alt="CoTARAG" length = "400" width="400"/>
 </p>
 
-## Why CoTARAG is the Best Agentic AI Framework
+## Why CoTARAG for Agentic AI? 
 
 CoTARAG's unique power comes from the seamless integration of CoTAEngine and AcceleRAG, enabling the creation of arbitrarily complex agents at minimal cost:
 
