@@ -14,9 +14,12 @@ class TestCoTAEngine(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # Reasoning: Get the API key from environment variables
-        cls.api_key = os.environ.get("CLAUDE_API_KEY")
+        try:
+            cls.api_key = os.environ.get("CLAUDE_API_KEY")
+        except:
+            cls.api_key = os.environ.get("OPENAI_API_KEY")
         if not cls.api_key:
-            raise EnvironmentError("CLAUDE_API_KEY must be set in environment variables")
+            raise EnvironmentError("API_KEY must be set in environment variables")
         
         # Reasoning: Read API key from file if it's a file path
         if os.path.isfile(cls.api_key):
