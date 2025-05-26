@@ -6,7 +6,7 @@ import numpy as np
 import anthropic
 from openai import OpenAI
 import sys
-from base_classes import (
+from ..base_classes import (
         Indexer,
         Retriever,
         Scorer,
@@ -14,12 +14,11 @@ from base_classes import (
         PromptCache,
         QueryEngine)
 
-#from cachers import *
-from indexers import *
-from embedders import *
-from retrievers import *
-from scorers import * 
-from query_engines import * 
+from ..indexers import *
+from ..embedders import *
+from ..retrievers import *
+from ..scorers import * 
+from ..query_engines import * 
 
 
 
@@ -69,9 +68,14 @@ class RAGManager:
         self.template_path = template_path or 'web_rag_template.txt'
         
         self.query_engine = query_engine or AnthropicEngine(api_key = self.api_key)
-        if isinstance(self.query_engine, AnthropicEngine):
+        if isinstance(self.query_engine,
+                      AnthropicEngine):
+
             self.provider = 'anthropic'
-        if isinstance(self.query_engine, OpenAIEngine):
+
+        if isinstance(self.query_engine,
+                      OpenAIEngine):
+
             self.provider = 'openai'
 
         # Initialize components
@@ -81,8 +85,6 @@ class RAGManager:
         self.indexer = indexer or TextIndexer(embedder = self.embedder)
         self.retriever = retriever or TextRetriever(dir_to_idx = dir_to_idx,
                                                        embedder = self.embedder)
-       
-
         
         # Set up logging if enabled
         if logging_enabled:
@@ -128,8 +130,8 @@ class RAGManager:
             # If force_reindex is True, proceed directly to indexing
             if self.force_reindex:
                 self.indexer.index(
-                    corpus_dir=self.dir_to_idx,
-                    tag_hierarchy=None,
+                    corpus_dir = self.dir_to_idx,
+                    tag_hierarchy = None,
                     **kwargs
                 )
                 if self.logging_enabled:
@@ -146,8 +148,8 @@ class RAGManager:
             
             # Call indexer's index method
             self.indexer.index(
-                corpus_dir=self.dir_to_idx,
-                tag_hierarchy=None,
+                corpus_dir = self.dir_to_idx,
+                tag_hierarchy = None,
                 **kwargs
             )
             
@@ -159,7 +161,10 @@ class RAGManager:
                 self.logger.error(f"Error during indexing: {e}")
             raise
             
-    def retrieve(self, query, top_k=5):
+    def retrieve(self,
+                 query,
+                 top_k = 5):
+
         """Retrieve relevant chunks from the database."""
         try:
             if self.logging_enabled:
@@ -182,7 +187,11 @@ class RAGManager:
                 self.logger.error(f"Error during retrieval: {str(e)}")
             raise
             
-    def cache_write(self, query, response, quality_score):
+    def cache_write(self,
+                    query,
+                    response,
+                    quality_score):
+
         """Write a response to the cache.
         
         Args:
@@ -217,7 +226,12 @@ class RAGManager:
             if self.logging_enabled:
                 self.logger.error(f"Error caching response: {e}")
 
-    def cache_read(self, query, threshold, metric='cosine', **kwargs):
+    def cache_read(self,
+                   query,
+                   threshold,
+                   metric = 'cosine',
+                   **kwargs):
+
         """Read a cached response if a similar query exists.
         
         Args:
@@ -275,11 +289,11 @@ class RAGManager:
     def generate_response(
         self,
         query,
-        use_cache=None,
-        enable_cache=None,
-        cache_thresh=None,
-        grounding=None,
-        show_similarity=None,
+        use_cache = None,
+        enable_cache = None,
+        cache_thresh = None,
+        grounding = None,
+        show_similarity = None,
         **kwargs
     ):
         """Generate response for a query using RAG.

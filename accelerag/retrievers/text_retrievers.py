@@ -4,10 +4,10 @@ import logging
 import sqlite3
 import numpy as np
 from typing import Dict, Optional, List, Tuple
-from base_classes import Retriever
-from embedders.text_embedders import TextEmbedder
-from scorers import DefaultScorer
-from query_utils import route_query
+from ..base_classes import Retriever
+from ..embedders.text_embedders import TextEmbedder
+from ..scorers import DefaultScorer
+from ..query_utils import route_query
 
 class TextRetriever(Retriever):
     """Default retriever for semantic search using embeddings."""

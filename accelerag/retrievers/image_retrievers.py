@@ -3,8 +3,8 @@ import logging
 import sqlite3
 import numpy as np
 from typing import List, Tuple, Optional
-from base_classes import Retriever
-from embedders.image_embedders import ImageEmbedder
+from ..base_classes import Retriever
+from ..embedders.image_embedders import ImageEmbedder
 
 class ImageRetriever(Retriever):
     """Retriever for finding similar images using embeddings."""

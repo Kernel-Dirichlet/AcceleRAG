@@ -1,5 +1,5 @@
 from PIL import Image
-from base_classes import Embedder
+from ..base_classes import Embedder
 import torch
 from torchvision import transforms
 

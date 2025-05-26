@@ -1,32 +1,61 @@
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+"""
+CoTARAG (Cognitive Thought and Retrieval Augmented Generation)
+An advanced AI agent framework combining CoTAEngine and AcceleRAG.
+"""
 
-[project]
-name = "accelerag"
-version = "0.10.0"
-description = "A RAG accelerator for agentic workflows"
-authors = [
-  { name = "Kernel-Dirichlet", email = "elliottdev93@gmail.com" }
-]
-readme = "README.md"
-requires-python = ">=3.12"
-license = { file = "LICENSE" }
-dependencies = [
-  "openai",
-  "anthropic",
-  "arxiv",
-  "requests",
-  "torch",
-  "torchvision",
-  "transformers",
-  "scikit-learn",
-  "Pillow",
-  "matplotlib"
+__version__ = "0.10.0"
+__author__ = "Kernel-Dirichlet"
+__email__ = "elliottdev93@gmail.com"
+__license__ = "GNU Affero General Public License v3.0"
+
+# Core components
+from .cota_engine.cota_engines import CoTAEngine
+from .cota_engine.thought_actions import ThoughtAction, LLMThoughtAction
+from .accelerag.managers import RAGManager
+
+# Submodules
+from . import cota_engine
+from . import accelerag
+
+# Common types and utilities
+from typing import List, Dict, Any, Optional, Union, Callable
+
+# Version info
+__all__ = [
+    # Core classes
+    "CoTAEngine",
+    "ThoughtAction",
+    "LLMThoughtAction",
+    "RAGManager",
+    
+    # Submodules
+    "cota_engine",
+    "accelerag",
+    
+    # Version info
+    "__version__",
+    "__author__",
+    "__email__",
+    "__license__"
 ]
 
-[project.urls]
-Homepage = "https://github.com/Kernel-Dirichlet/AcceleRAG"
-Documentation = "https://github.com/Kernel-Dirichlet/AcceleRAG#readme"
-Repository = "https://github.com/Kernel-Dirichlet/AcceleRAG"
-Issues = "https://github.com/Kernel-Dirichlet/AcceleRAG/issues"
+
+# Example usage:
+"""
+from cotarag import create_cota_chain, create_rag_manager, LLMThoughtAction
+
+# Create a RAG manager
+rag = create_rag_manager(
+    api_key="path/to/api_key.txt",
+    dir_to_idx="path/to/documents"
+)
+
+# Create a thought-action for analysis
+class AnalyzeAction(LLMThoughtAction):
+    def action(self, thought_output):
+        return rag.generate_response(thought_output)
+
+# Create and run a CoTA chain
+chain = create_cota_chain([AnalyzeAction()])
+result = chain.run("Your input here")
+""" 

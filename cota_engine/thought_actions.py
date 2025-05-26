@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from query_engines.query_engines import AnthropicEngine
+from accelerag.query_engines.query_engines import AnthropicEngine
+
 
 # Update ThoughtAction to include __str__ and __repr__ methods
 class ThoughtAction(ABC):

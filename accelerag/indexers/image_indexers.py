@@ -7,9 +7,9 @@ import logging
 import sqlite3
 import numpy as np
 from typing import Dict, Optional, List
-from base_classes import Indexer
+from ..base_classes import Indexer
 from tqdm import tqdm
-from embedders.image_embedders import ImageEmbedder
+from ..embedders.image_embedders import ImageEmbedder
 
 
 class ImageIndexer(Indexer):

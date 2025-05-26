@@ -1,4 +1,4 @@
-name: CI Anthropic Text
+name: RAGManager Test (Text) - Anthropic 
 
 on:
   push:

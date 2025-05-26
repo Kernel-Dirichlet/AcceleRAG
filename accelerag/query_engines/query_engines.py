@@ -1,4 +1,4 @@
-from base_classes import QueryEngine
+from ..base_classes import QueryEngine
 from anthropic import Anthropic
 import os
 from openai import OpenAI 

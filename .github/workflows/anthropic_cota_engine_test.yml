@@ -1,4 +1,4 @@
-name: CI CoTA Engine
+name: CoTA Engine - Anthropic
 
 on:
   push:

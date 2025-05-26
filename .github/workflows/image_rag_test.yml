@@ -1,4 +1,4 @@
-name: CI Image RAG
+name: RAGManager Test (Image) 
 
 on:
   push:

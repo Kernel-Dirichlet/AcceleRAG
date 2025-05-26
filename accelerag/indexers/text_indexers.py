@@ -3,8 +3,8 @@ import re
 import logging
 import sqlite3
 import numpy as np
-from embedders import * 
-from base_classes import Indexer
+from ..embedders import * 
+from ..base_classes import Indexer
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModel
 

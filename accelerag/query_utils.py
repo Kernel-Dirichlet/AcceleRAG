@@ -2,7 +2,7 @@ import anthropic
 import json
 import os
 import logging
-from arxiv_category_mapper import get_category_description, get_related_categories, suggest_tables_for_query
+from .arxiv_category_mapper import get_category_description, get_related_categories, suggest_tables_for_query
 
 def create_tag_hierarchy(directory_path, output_file="tag_hierarchy.json"):
     """Create tag hierarchy from directory structure and save to JSON"""

@@ -5,8 +5,8 @@ import logging
 from sklearn.metrics.pairwise import cosine_similarity
 import torch
 import re
-from embedders import TextEmbedder
-from base_classes import PromptCache
+from ..embedders import TextEmbedder
+from ..base_classes import PromptCache
 
 class DefaultCache(PromptCache):
     """Default implementation of prompt caching using SQLite."""

@@ -1,5 +1,5 @@
 import os
-from base_classes import Scorer
+from ..base_classes import Scorer
 import anthropic
 from openai import OpenAI
 import re

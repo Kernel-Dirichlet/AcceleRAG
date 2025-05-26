@@ -8,7 +8,7 @@ import torch
 from transformers import AutoTokenizer, AutoModel
 import numpy as np
 from typing import Optional, Tuple, List, Any, Dict
-from arxiv_category_mapper import get_category_description, get_related_categories, suggest_tables_for_query
+from .arxiv_category_mapper import get_category_description, get_related_categories, suggest_tables_for_query
 
 class Embedder(ABC):
     """Abstract base class for embedding models."""

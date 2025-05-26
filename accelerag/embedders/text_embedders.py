@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from transformers import AutoTokenizer, AutoModel
 from anthropic import Anthropic
-from base_classes import Embedder
+from ..base_classes import Embedder
 
 class TextEmbedder(Embedder):
     """Text Embedder using transformer models like TinyBERT."""

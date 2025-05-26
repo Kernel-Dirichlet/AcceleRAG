@@ -12,10 +12,11 @@ from sklearn.datasets import load_digits
 
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from accelerag.managers import RAGManager
+from accelerag.embedders import ImageEmbedder
+from accelerag.indexers import ImageIndexer
+from accelerag.retrievers import ImageRetriever
 
-from managers import RAGManager
-from indexers.image_indexers import ImageIndexer
-from embedders.image_embedders import ImageEmbedder
 
 def generate_digits_dataset(output_dir):
     """Generate MNIST digits dataset for testing.

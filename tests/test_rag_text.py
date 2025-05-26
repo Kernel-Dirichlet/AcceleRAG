@@ -8,9 +8,9 @@ import json
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from managers import RAGManager
-from query_utils import create_tag_hierarchy
-from query_engines.query_engines import OpenAIEngine, AnthropicEngine
+from accelerag.managers import RAGManager
+from accelerag.query_utils import create_tag_hierarchy
+from accelerag.query_engines.query_engines import OpenAIEngine, AnthropicEngine
 
 class BaseRAGTest(unittest.TestCase):
     """Base class for RAG testing with common setup and test methods."""
@@ -22,7 +22,7 @@ class BaseRAGTest(unittest.TestCase):
         
         # Copy test data to temp directory
         cls.data_dir = os.path.join(cls.test_dir, 'test_data')
-        test_data_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'arxiv_mini')
+        test_data_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'accelerag/arxiv_mini')
         shutil.copytree(test_data_path, cls.data_dir)
         
         cls.db_path = os.path.join(cls.test_dir, 'test_embeddings.db.sqlite')
@@ -32,6 +32,8 @@ class BaseRAGTest(unittest.TestCase):
         
         # Get project root for constructing prompt file paths
         cls.project_root = os.path.dirname(os.path.dirname(__file__))
+        cls.prompts_dir = os.path.join(cls.project_root,'accelerag','prompts')
+
         
     @classmethod
     def tearDownClass(cls):
@@ -63,6 +65,7 @@ class BaseRAGTest(unittest.TestCase):
             print(f"{chunk[:200]}...")
         
         # Generate response
+
         first_response = rag.generate_response(query)
         print("\nGenerated Response:")
         print("-"*50)
@@ -149,18 +152,28 @@ class TestOpenAIRAG(BaseRAGTest):
         query_engine = OpenAIEngine(api_key = cls.api_key)
         # Initialize OpenAI RAG manager
         cls.rag = RAGManager(
-            api_key=cls.api_key,
-            dir_to_idx=cls.data_dir,
-            grounding='soft',
-            enable_cache=True,
-            use_cache=True,
-            cache_thresh=0.9,
-            logging_enabled=True,
-            force_reindex=True,
-            query_engine=OpenAIEngine(api_key=cls.api_key),
-            hard_grounding_prompt=os.path.join(cls.project_root, 'prompts', 'hard_grounding_prompt.txt'),
-            soft_grounding_prompt=os.path.join(cls.project_root, 'prompts', 'soft_grounding_prompt.txt'),
-            template_path=os.path.join(cls.project_root, 'web_rag_template.txt')
+            api_key = cls.api_key,
+            dir_to_idx = cls.data_dir,
+            grounding = 'soft',
+            enable_cache = True,
+            use_cache = True,
+            cache_thresh = 0.9,
+            logging_enabled = True,
+            force_reindex = True,
+            query_engine = OpenAIEngine(api_key = cls.api_key),
+            hard_grounding_prompt = os.path.join(cls.project_root,
+                                                 'accelerag',
+                                                 'prompts', 
+                                                 'hard_grounding_prompt.txt'),
+
+            soft_grounding_prompt=os.path.join(cls.project_root,
+                                               'accelerag',
+                                               'prompts',
+                                               'soft_grounding_prompt.txt'),
+
+            template_path=os.path.join(cls.project_root,
+                                       'accelerag',
+                                       'web_rag_template.txt')
         )
         
         # Set database path
@@ -193,18 +206,28 @@ class TestAnthropicRAG(BaseRAGTest):
         
         # Initialize Anthropic RAG manager
         cls.rag = RAGManager(
-            api_key=cls.api_key,
-            dir_to_idx=cls.data_dir,
-            grounding='soft',
-            enable_cache=True,
-            use_cache=True,
-            cache_thresh=0.9,
-            logging_enabled=True,
-            force_reindex=True,
-            query_engine=AnthropicEngine(api_key=cls.api_key),
-            hard_grounding_prompt=os.path.join(cls.project_root, 'prompts', 'hard_grounding_prompt.txt'),
-            soft_grounding_prompt=os.path.join(cls.project_root, 'prompts', 'soft_grounding_prompt.txt'),
-            template_path=os.path.join(cls.project_root, 'web_rag_template.txt')
+            api_key = cls.api_key,
+            dir_to_idx = cls.data_dir,
+            grounding = 'soft',
+            enable_cache = True,
+            use_cache = True,
+            cache_thresh = 0.9,
+            logging_enabled = True,
+            force_reindex = True,
+            query_engine = AnthropicEngine(api_key=cls.api_key),
+            hard_grounding_prompt = os.path.join(cls.project_root,
+                                                 'accelerag',
+                                                 'prompts',
+                                                 'hard_grounding_prompt.txt'),
+
+            soft_grounding_prompt = os.path.join(cls.project_root,
+                                                 'accelerag',
+                                                 'prompts', 
+                                                 'soft_grounding_prompt.txt'),
+
+            template_path = os.path.join(cls.project_root,
+                                         'accelerag',
+                                         'web_rag_template.txt')
         )
         
         # Set database path

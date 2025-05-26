@@ -5,7 +5,7 @@ import logging
 from sklearn.metrics.pairwise import cosine_similarity
 import torch
 import re
-from embedders import TransformerEmbedder
+from ..embedders import TransformerEmbedder
 
 def verify_cache_schema(db_path: str) -> bool:
     """Verify that the database has the correct response_cache table schema.

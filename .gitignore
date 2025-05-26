@@ -1,5 +1,6 @@
 # Byte-compiled / optimized / DLL files
 **/__pycache__/
+**/cotarag_env/
 *.py[cod]
 *$py.class
 arxiv_papers/
@@ -8,7 +9,7 @@ arxiv_papers/
 **/*.db
 **/*.db.sqlite
 **/*.png
-**/accelerag/ 
+ 
 
 # Distribution / packaging
 .Python

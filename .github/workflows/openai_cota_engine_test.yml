@@ -1,4 +1,4 @@
-name: RAGManager Test (Text) - OpenAI
+name: CoTA Engine - OpenAI
 
 on:
   push:
@@ -26,15 +26,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run OpenAI Text test
+      - name: Run CoTA Engine test
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CLAUDE_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           # Create temporary file for API key
           echo "$OPENAI_API_KEY" > /tmp/openai_key
           # Set environment variable to point to the file
           export OPENAI_API_KEY=/tmp/openai_key
           # Run test
-          python -m unittest tests.test_rag_text.TestOpenAIRAG
+          python -m unittest tests.test_cota_engine.TestCoTAEngine
           # Clean up
           rm /tmp/openai_key 
