@@ -8,9 +8,9 @@ import json
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from accelerag.managers import RAGManager
-from accelerag.query_utils import create_tag_hierarchy
-from accelerag.query_engines.query_engines import OpenAIEngine, AnthropicEngine
+from cotarag.accelerag.managers import RAGManager
+from cotarag.accelerag.query_utils import create_tag_hierarchy
+from cotarag.accelerag.query_engines.query_engines import OpenAIEngine, AnthropicEngine
 
 class BaseRAGTest(unittest.TestCase):
     """Base class for RAG testing with common setup and test methods."""
@@ -22,7 +22,9 @@ class BaseRAGTest(unittest.TestCase):
         
         # Copy test data to temp directory
         cls.data_dir = os.path.join(cls.test_dir, 'test_data')
-        test_data_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'accelerag/arxiv_mini')
+        test_data_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                      'cotarag/accelerag/arxiv_mini')
+
         shutil.copytree(test_data_path, cls.data_dir)
         
         cls.db_path = os.path.join(cls.test_dir, 'test_embeddings.db.sqlite')
@@ -32,7 +34,10 @@ class BaseRAGTest(unittest.TestCase):
         
         # Get project root for constructing prompt file paths
         cls.project_root = os.path.dirname(os.path.dirname(__file__))
-        cls.prompts_dir = os.path.join(cls.project_root,'accelerag','prompts')
+        cls.prompts_dir = os.path.join(cls.project_root,
+                                       'cotarag',
+                                       'accelerag',
+                                       'prompts')
 
         
     @classmethod
@@ -103,7 +108,7 @@ class BaseRAGTest(unittest.TestCase):
         print(f"Query: {similar_query}")
         
         # Get chunks for similar query
-        similar_chunks = rag.retrieve(similar_query, top_k=5)
+        similar_chunks = rag.retrieve(similar_query, top_k = 5)
         similar_response = rag.generate_response(similar_query)
         print("\nResponse:")
         print("-"*50)
@@ -162,16 +167,19 @@ class TestOpenAIRAG(BaseRAGTest):
             force_reindex = True,
             query_engine = OpenAIEngine(api_key = cls.api_key),
             hard_grounding_prompt = os.path.join(cls.project_root,
+                                                 'cotarag',
                                                  'accelerag',
                                                  'prompts', 
                                                  'hard_grounding_prompt.txt'),
 
             soft_grounding_prompt=os.path.join(cls.project_root,
+                                               'cotarag',
                                                'accelerag',
                                                'prompts',
                                                'soft_grounding_prompt.txt'),
 
             template_path=os.path.join(cls.project_root,
+                                       'cotarag',
                                        'accelerag',
                                        'web_rag_template.txt')
         )
@@ -216,16 +224,19 @@ class TestAnthropicRAG(BaseRAGTest):
             force_reindex = True,
             query_engine = AnthropicEngine(api_key=cls.api_key),
             hard_grounding_prompt = os.path.join(cls.project_root,
+                                                 'cotarag',
                                                  'accelerag',
                                                  'prompts',
                                                  'hard_grounding_prompt.txt'),
 
             soft_grounding_prompt = os.path.join(cls.project_root,
+                                                 'cotarag',
                                                  'accelerag',
                                                  'prompts', 
                                                  'soft_grounding_prompt.txt'),
 
             template_path = os.path.join(cls.project_root,
+                                         'cotarag',
                                          'accelerag',
                                          'web_rag_template.txt')
         )

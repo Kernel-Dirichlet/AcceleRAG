@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from accelerag.query_engines.query_engines import AnthropicEngine
+from cotarag.accelerag.query_engines.query_engines import AnthropicEngine
 
 
 # Update ThoughtAction to include __str__ and __repr__ methods

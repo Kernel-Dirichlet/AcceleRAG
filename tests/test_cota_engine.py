@@ -7,8 +7,8 @@ import shutil
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cota_engine.cota_engines import CoTAEngine
-from cota_engine.thought_actions import LLMThoughtAction
+from cotarag.cota_engine.cota_engines import CoTAEngine
+from cotarag.cota_engine.thought_actions import LLMThoughtAction
 
 class TestCoTAEngine(unittest.TestCase):
     @classmethod

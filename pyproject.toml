@@ -52,6 +52,3 @@ Issues = "https://github.com/Kernel-Dirichlet/CoTARAG/issues"
 
 [tool.setuptools]
 packages = ["cotarag", "cotarag.cota_engine", "cotarag.accelerag"]
-
-[tool.setuptools.package-data]
-cotarag = ["py.typed"]

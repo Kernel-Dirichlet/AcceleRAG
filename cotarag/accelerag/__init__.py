@@ -70,7 +70,6 @@ from .preprocessors import *
 
 __all__ = [
         "Embedder",
-        "ClaudeEmbedder",
         "Indexer",
         "Retriever",
         "QueryEngine",

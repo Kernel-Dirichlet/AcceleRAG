@@ -12,10 +12,10 @@ from sklearn.datasets import load_digits
 
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from accelerag.managers import RAGManager
-from accelerag.embedders import ImageEmbedder
-from accelerag.indexers import ImageIndexer
-from accelerag.retrievers import ImageRetriever
+from cotarag.accelerag.managers import RAGManager
+from cotarag.accelerag.embedders import ImageEmbedder
+from cotarag.accelerag.indexers import ImageIndexer
+from cotarag.accelerag.retrievers import ImageRetriever
 
 
 def generate_digits_dataset(output_dir):
@@ -78,13 +78,13 @@ class TestImageRAG(unittest.TestCase):
         cls.rag = RAGManager(
             api_key=cls.api_key,
             dir_to_idx=cls.digits_dir,
-            grounding='soft',
-            enable_cache=False,  # Disable caching
-            use_cache=False,     # Disable caching
-            logging_enabled=True,
-            force_reindex=True,
-            hard_grounding_prompt='prompts/hard_grounding_prompt.txt',
-            soft_grounding_prompt='prompts/soft_grounding_prompt.txt'
+            grounding = 'soft',
+            enable_cache = False,  # Disable caching
+            use_cache = False,     # Disable caching
+            logging_enabled = True,
+            force_reindex = True,
+            hard_grounding_prompt = 'prompts/hard_grounding_prompt.txt',
+            soft_grounding_prompt = 'prompts/soft_grounding_prompt.txt'
         )
         
     @classmethod
