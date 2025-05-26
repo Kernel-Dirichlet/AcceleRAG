@@ -6,7 +6,7 @@ CoTARAG (Cognitive Thought and Retrieval Augmented Generation) is an advanced AI
 2. **AcceleRAG**: A high-performance RAG framework focused on speed, accuracy, and modularity
 
 <p align="center">
-  <img src="./cotarag.png" alt="CoTARAG" length = "400" width="400"/>
+  <img src="./cotarag_logo.png" alt="CoTARAG" length = "400" width="400"/>
 </p>
 
 ## Why CoTARAG for Agentic AI? 
