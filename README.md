@@ -1,4 +1,4 @@
-# CoTARAG v0.10.0 📊💭➡️⚙️🚀
+# CoTARAG v0.10.0 📊💭➡️⚙️
 
 CoTARAG (Cognitive Thought and Retrieval Augmented Generation) is an advanced AI agent framework that combines two powerful engines:
 
