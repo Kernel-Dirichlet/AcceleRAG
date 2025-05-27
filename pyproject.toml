@@ -53,8 +53,6 @@ Issues = "https://github.com/Kernel-Dirichlet/CoTARAG/issues"
 packages = [
     "cotarag",
     "cotarag.cota_engine",
-    "cotarag.cota_engine.cota_engines",
-    "cotarag.cota_engine.thought_actions",
     "cotarag.accelerag",
     "cotarag.accelerag.embedders",
     "cotarag.accelerag.indexers",
@@ -72,5 +70,4 @@ cotarag = [
     "accelerag/*/*.py",
     "accelerag/*/*/*.py",
     "cota_engine/*.py",
-    "cota_engine/*/*.py"
 ]
