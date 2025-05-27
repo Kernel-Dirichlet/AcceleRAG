@@ -663,7 +663,11 @@ This project is licensed under the GNU Affero General Public License v3.0 - see 
 - v0.15.0: Agentic Indexers & Retrievers
 - v0.16.0: Synthetic Dataset creation 
 - v0.17.0: Benchmarks & Performance Testing
-- v1.0.0: DSL for RAG pipelines + updated testing suite 
+- v1.0.0: DSL for RAG pipelines + updated testing suite
+- v1.1.0: Concurrency Framework for Multi-Agent Workflows
+- v1.2.0: Agent Tasking DSL
+- v1.3.0: Meta-Agent Framework
+- v1.4.0: Rust Core Components
 
 ## Coming Features (subject to change)
 
@@ -681,100 +685,124 @@ This project is licensed under the GNU Affero General Public License v3.0 - see 
 | | Chain Optimization | Automatic optimization of chain structure | v0.13.0 |
 | | Chain Templates | Pre-built templates for common use cases | v0.14.0 |
 | | Chain Analytics | Detailed metrics and insights for chain performance | v0.15.0 |
+| **Concurrency Framework** | Multi-Agent Orchestration | Parallel execution of agent workflows | v1.1.0 |
+| | Resource Management | Smart allocation of computational resources | v1.1.0 |
+| | State Management | Distributed state tracking across agents | v1.1.0 |
+| | Error Recovery | Automatic handling of agent failures | v1.1.0 |
+| **Agent Tasking DSL** | Query Translation | Convert natural language to structured tasks | v1.2.0 |
+| | Task Planning | Automated task decomposition and scheduling | v1.2.0 |
+| | Self-Improvement | Dynamic optimization of task execution | v1.2.0 |
+| | Task Templates | Reusable task patterns and workflows | v1.2.0 |
+| **Meta-Agent Framework** | Agent Composition | Create agents from other agents | v1.3.0 |
+| | Agent Specialization | Dynamic role assignment and optimization | v1.3.0 |
+| | Agent Evolution | Self-modifying agent architectures | v1.3.0 |
+| | Agent Communication | Structured inter-agent messaging | v1.3.0 |
+| **Rust Core** | Performance Optimization | High-performance core components | v1.4.0 |
+| | Memory Safety | Guaranteed thread and memory safety | v1.4.0 |
+| | FFI Integration | Seamless Python-Rust interop | v1.4.0 |
+| | SIMD Acceleration | Vectorized operations for embeddings | v1.4.0 |
 
-### Combined Engine Examples
+### New Feature Examples
 
-#### Example 1: Code Analysis Agent
+#### Example 1: Multi-Agent Workflow
 ```python
-from cota_engine.cota_engine import CoTAEngine
-from cota_engine.thought_action import LLMThoughtAction
-from managers import RAGManager
+from cotarag.concurrent import AgentWorkflow
+from cotarag.agents import ResearchAgent, AnalysisAgent, SynthesisAgent
 
-# Initialize both engines
-rag = RAGManager(
-    api_key='your_key',
-    dir_to_idx='codebase',
-    grounding='hard',
-    quality_thresh=8.0
+# Define workflow with concurrent agents
+workflow = AgentWorkflow([
+    ResearchAgent(num_instances=3),  # Parallel research
+    AnalysisAgent(num_instances=2),  # Parallel analysis
+    SynthesisAgent()                 # Final synthesis
+])
+
+# Execute workflow with automatic resource management
+results = workflow.execute(
+    query="Analyze quantum computing trends",
+    max_parallel=4,
+    resource_limit="8GB"
+)
+```
+
+#### Example 2: Agent Tasking DSL
+```python
+from cotarag.dsl import AgentTask, TaskPlanner
+
+# Define task using DSL
+task = AgentTask("""
+    Research quantum computing trends
+    Then analyze impact on cryptography
+    Finally synthesize recommendations
+""")
+
+# Create and execute task plan
+planner = TaskPlanner()
+plan = planner.create_plan(task)
+results = plan.execute()
+```
+
+#### Example 3: Meta-Agent Creation
+```python
+from cotarag.meta import MetaAgent, AgentComposer
+
+# Compose meta-agent from specialized agents
+meta_agent = AgentComposer.create_agent([
+    ResearchAgent(),
+    AnalysisAgent(),
+    SynthesisAgent()
+])
+
+# Configure meta-agent behavior
+meta_agent.configure(
+    specialization_strategy="dynamic",
+    evolution_enabled=True,
+    communication_protocol="structured"
 )
 
-# Define thought-action for code analysis
-class CodeAnalysisAction(LLMThoughtAction):
-    def thought(self, code):
-        # Use RAG to find similar code patterns
-        similar_code = rag.retrieve(code, top_k=3)
-        return f"Analyze this code considering similar patterns:\n{code}\n\nSimilar patterns:\n{similar_code}"
-    
-    def action(self, thought_output):
-        # Generate improvement suggestions
-        return rag.generate_response(
-            query=f"Based on this analysis, suggest improvements:\n{thought_output}",
-            grounding='hard'
-        )
-
-# Create and run the chain
-cota_engine = CoTAEngine([
-    CodeAnalysisAction(api_key='your_key')
-])
-
-# Analyze code
-result = cota_engine.run("def process_data(data):\n    return data * 2")
+# Use meta-agent
+results = meta_agent.execute("Complex research task")
 ```
 
-#### Example 2: Document Understanding Agent
+#### Example 4: Rust-Python Integration
 ```python
-class DocumentUnderstandingAction(LLMThoughtAction):
-    def thought(self, document):
-        # Use RAG to find relevant context
-        context = rag.retrieve(document, top_k=5)
-        return f"Understand this document in context:\n{document}\n\nRelevant context:\n{context}"
-    
-    def action(self, thought_output):
-        # Generate summary and insights
-        return rag.generate_response(
-            query=f"Provide a summary and key insights:\n{thought_output}",
-            grounding='soft'
-        )
+from cotarag.core import RustEmbedder, RustIndexer
 
-# Create and run the chain
-cota_engine = CoTAEngine([
-    DocumentUnderstandingAction(api_key='your_key')
-])
+# Use Rust-accelerated components
+embedder = RustEmbedder(
+    model="all-MiniLM-L6-v2",
+    use_simd=True
+)
 
-# Process document
-result = cota_engine.run("Your document text here...")
+indexer = RustIndexer(
+    algorithm="hnsw",
+    parallel=True
+)
+
+# Components automatically handle Python-Rust interop
+embeddings = embedder.embed_batch(texts)
+index = indexer.build_index(embeddings)
 ```
 
-#### Example 3: Research Assistant Agent
-```python
-class ResearchAssistantAction(LLMThoughtAction):
-    def thought(self, query):
-        # Use RAG to find relevant research
-        research = rag.retrieve(query, top_k=10)
-        return f"Research this topic:\n{query}\n\nFound research:\n{research}"
-    
-    def action(self, thought_output):
-        # Generate research summary and recommendations
-        return rag.generate_response(
-            query=f"Summarize findings and provide recommendations:\n{thought_output}",
-            grounding='hard'
-        )
+These new features will enable:
+1. **Scalable Multi-Agent Systems**
+   - Parallel execution of complex workflows
+   - Efficient resource utilization
+   - Robust error handling
 
-# Create and run the chain
-cota_engine = CoTAEngine([
-    ResearchAssistantAction(api_key='your_key')
-])
+2. **Intelligent Task Management**
+   - Natural language to structured tasks
+   - Automated planning and optimization
+   - Self-improving execution
 
-# Conduct research
-result = cota_engine.run("What are the latest developments in quantum computing?")
-```
+3. **Advanced Agent Architectures**
+   - Composition of specialized agents
+   - Dynamic role optimization
+   - Self-modifying capabilities
 
-These examples demonstrate how CoTAEngine and AcceleRAG can be combined to create powerful AI agents that:
-- Use RAG for context-aware reasoning
-- Maintain clear separation of concerns
-- Provide transparent decision-making
-- Enable systematic debugging
-- Scale to complex tasks
+4. **High-Performance Core**
+   - Memory-safe concurrent operations
+   - SIMD-accelerated computations
+   - Seamless Python integration
 
 ## Continuous Integration (CI) Note
 
