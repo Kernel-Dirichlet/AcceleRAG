@@ -51,4 +51,27 @@ Repository = "https://github.com/Kernel-Dirichlet/CoTARAG"
 Issues = "https://github.com/Kernel-Dirichlet/CoTARAG/issues"
 
 [tool.setuptools]
-packages = ["cotarag", "cotarag.cota_engine", "cotarag.accelerag"]
+packages = [
+    "cotarag",
+    "cotarag.cota_engine",
+    "cotarag.cota_engine.cota_engines",
+    "cotarag.cota_engine.thought_actions",
+    "cotarag.accelerag",
+    "cotarag.accelerag.embedders",
+    "cotarag.accelerag.indexers",
+    "cotarag.accelerag.retrievers",
+    "cotarag.accelerag.query_engines",
+    "cotarag.accelerag.scorers",
+    "cotarag.accelerag.cachers",
+    "cotarag.accelerag.managers"
+]
+
+[tool.setuptools.package-data]
+cotarag = [
+    "py.typed",
+    "accelerag/*.py",
+    "accelerag/*/*.py",
+    "accelerag/*/*/*.py",
+    "cota_engine/*.py",
+    "cota_engine/*/*.py"
+]
