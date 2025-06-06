@@ -3,11 +3,12 @@ import unittest
 import sys
 import tempfile
 import shutil
-
+import json
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cotarag.cota_engine.cota_engines import CoTAEngine
+from cotarag.accelerag.query_engines import AnthropicEngine,OpenAIEngine
 from cotarag.cota_engine.thought_actions import LLMThoughtAction
 
 class TestCoTAEngine(unittest.TestCase):
@@ -57,13 +58,18 @@ class TestCoTAEngine(unittest.TestCase):
         class EvaluateCodebaseAction(LLMThoughtAction):
             def action(self, thought_output):
                 # Write the summary to codebase_summary
-                with open('codebase_summary', 'w') as f:
-                    f.write(thought_output)
-                return thought_output
+                f = open('codebase_summary','w')
+                f.write(thought_output['thought'])
+                f.close()
+                return {'action': 'wrote summary'} 
 
         # Reasoning: Run the first step to get the summary
-        eval_action = EvaluateCodebaseAction(api_key=self.api_key)
-        summary = eval_action.thought(code_prompt['action'])
+        if os.environ['CLAUDE_API_KEY'] is not None:
+            query_engine = AnthropicEngine(api_key = os.environ['CLAUDE_API_KEY'])
+        else:
+            query_engine = OpenAIEngine(api_key = os.environ['OPENAI_API_KEY'])
+        eval_action = EvaluateCodebaseAction(query_engine = query_engine)
+        summary = eval_action.thought(code_prompt)
         eval_action.action(summary)
 
         # Reasoning: Read the summary from the file for the next step
@@ -78,11 +84,11 @@ class TestCoTAEngine(unittest.TestCase):
             def action(self, thought_output):
                 # Write the improvements to codebase_TODOs
                 with open('codebase_TODOs', 'w') as f:
-                    f.write(thought_output)
+                    f.write(thought_output['thought'])
                 return thought_output
 
         # Reasoning: Run the second step to get the improvements
-        analyze_action = AnalyzeCodebaseAction(api_key=self.api_key)
+        analyze_action = AnalyzeCodebaseAction(query_engine = query_engine)
         improvements = analyze_action.thought(improvement_prompt)
         analyze_action.action(improvements)
 
@@ -107,7 +113,7 @@ class TestCoTAEngine(unittest.TestCase):
 
         # Reasoning: Print the ASCII chain of thought-action steps using __str__ methods
         print("ASCII Chain of Thought-Action (CoTA) Steps:")
-        print(f"input -> {EvaluateCodebaseAction().__str__()} -> {AnalyzeCodebaseAction().__str__()}")
+        print(f"input -> {eval_action.__str__()} -> {analyze_action.__str__()}")
 
 if __name__ == '__main__':
     unittest.main() 
