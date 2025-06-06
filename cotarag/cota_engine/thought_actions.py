@@ -38,9 +38,9 @@ class LLMThoughtAction(ThoughtAction):
         assert query_engine is not None 
         self.query_engine = query_engine
     
-    @abstractmethod
+    
     def thought(self, input_data):
-        pass
+        return {'thought': self.query_engine.generate_response} 
     
     @abstractmethod
     def action(self, thought_output):

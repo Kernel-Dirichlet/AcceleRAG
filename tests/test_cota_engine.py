@@ -63,7 +63,7 @@ class TestCoTAEngine(unittest.TestCase):
 
         # Reasoning: Run the first step to get the summary
         eval_action = EvaluateCodebaseAction(api_key=self.api_key)
-        summary = eval_action.thought(code_prompt)
+        summary = eval_action.thought(code_prompt['action'])
         eval_action.action(summary)
 
         # Reasoning: Read the summary from the file for the next step
