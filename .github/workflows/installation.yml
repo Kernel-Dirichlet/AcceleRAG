@@ -254,6 +254,6 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.PYPI_KEY }}
         run: |
           # Delete existing version
-          python -m twine delete --yes cotarag==0.10.0 || true
+          python -m twine delete --yes cotarag==0.11.0 || true
           # upload new version
           python -m twine upload --verbose dist/*

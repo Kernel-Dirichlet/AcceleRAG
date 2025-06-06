@@ -3,11 +3,12 @@ import os
 import logging
 import sqlite3
 import numpy as np
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, Optional, List, Tuple, Any
 from ..base_classes import Retriever
 from ..embedders.text_embedders import TextEmbedder
 from ..scorers import DefaultScorer
 from ..query_utils import route_query
+from sklearn.metrics.pairwise import cosine_similarity
 
 class TextRetriever(Retriever):
     """Default retriever for semantic search using embeddings."""
@@ -351,5 +352,216 @@ class TextRetriever(Retriever):
             if debug:
                 print(f"Error fetching chunks: {str(e)}")
             return [] 
+
+class CentroidRetriever(Retriever):
+    """Retriever that uses centroid-based table selection and cross-table search."""
+    def __init__(
+        self,
+        model_name='huawei-noah/TinyBERT_General_4L_312D',
+        device='cpu',
+        embedder=None,
+        top_c=3,  # Number of top centroids to consider
+        top_k=5,  # Number of top chunks to return
+        db_params=None  # Database parameters
+    ):
+        # Initialize embedder if not provided
+        if embedder is None:
+            embedder = TextEmbedder(
+                model_name=model_name,
+                device=device
+            )
+            
+        # Set default db_params if not provided
+        if db_params is None:
+            db_params = {'dbname': 'embeddings.db.sqlite'}
+            
+        super().__init__(db_params=db_params, embedder=embedder)
+        self.device = device
+        self.top_c = top_c
+        self.top_k = top_k
+        
+    def _get_centroid_distances(self, conn, query_embedding):
+        """Compute distances between query and all centroids."""
+        try:
+            cur = conn.cursor()
+            
+            # Get all tables
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%_centroid'")
+            centroid_tables = cur.fetchall()
+            
+            if not centroid_tables:
+                logging.warning("No centroid tables found in database")
+                return []
+                
+            # Get centroids and compute distances
+            distances = []
+            for table, in centroid_tables:
+                try:
+                    # Get centroid
+                    cur.execute(f"SELECT centroid FROM {table}")
+                    result = cur.fetchone()
+                    if not result:
+                        continue
+                        
+                    # Convert centroid bytes to numpy array
+                    centroid_bytes = result[0]
+                    centroid = np.frombuffer(centroid_bytes, dtype=np.float32)
+                    
+                    # Compute cosine similarity
+                    similarity = cosine_similarity(
+                        query_embedding.reshape(1, -1),
+                        centroid.reshape(1, -1)
+                    )[0][0]
+                    
+                    # Store table name and similarity
+                    base_table = table.replace('_centroid', '')
+                    distances.append((base_table, similarity))
+                    
+                except Exception as e:
+                    logging.error(f"Error processing centroid table {table}: {e}")
+                    continue
+                    
+            # Sort by similarity (descending)
+            distances.sort(key=lambda x: x[1], reverse=True)
+            return distances
+            
+        except Exception as e:
+            logging.error(f"Error computing centroid distances: {e}")
+            return []
+        finally:
+            cur.close()
+            
+    def _search_table(self, conn, table_name, query_embedding, limit=None):
+        """Search a single table for similar chunks."""
+        try:
+            cur = conn.cursor()
+            
+            # Get all embeddings from table
+            cur.execute(f"SELECT id, embedding, content, filepath FROM {table_name}")
+            results = cur.fetchall()
+            
+            if not results:
+                return []
+                
+            # Convert embeddings to numpy arrays and compute similarities
+            similarities = []
+            for id_, embedding_bytes, content, filepath in results:
+                try:
+                    embedding = np.frombuffer(embedding_bytes, dtype=np.float32)
+                    similarity = cosine_similarity(
+                        query_embedding.reshape(1, -1),
+                        embedding.reshape(1, -1)
+                    )[0][0]
+                    
+                    similarities.append({
+                        'id': id_,
+                        'similarity': similarity,
+                        'content': content,
+                        'filepath': filepath,
+                        'table': table_name
+                    })
+                except Exception as e:
+                    logging.error(f"Error processing embedding in table {table_name}: {e}")
+                    continue
+                    
+            # Sort by similarity and limit results
+            similarities.sort(key=lambda x: x['similarity'], reverse=True)
+            if limit:
+                similarities = similarities[:limit]
+                
+            return similarities
+            
+        except Exception as e:
+            logging.error(f"Error searching table {table_name}: {e}")
+            return []
+        finally:
+            cur.close()
+            
+    def retrieve(
+        self,
+        query,
+        db_path,
+        top_c=None,
+        top_k=None,
+        **kwargs
+    ):
+        """Retrieve similar chunks using centroid-based table selection.
+        
+        Args:
+            query: The query text
+            db_path: Path to the SQLite database
+            top_c: Number of top centroids to consider (overrides instance default)
+            top_k: Number of top chunks to return (overrides instance default)
+            **kwargs: Additional parameters
+            
+        Returns:
+            List of dictionaries containing retrieved chunks with their metadata
+        """
+        try:
+            # Use provided parameters or defaults
+            top_c = top_c if top_c is not None else self.top_c
+            top_k = top_k if top_k is not None else self.top_k
+            
+            # Generate query embedding
+            query_embedding = self.embedder.embed(query)
+            if query_embedding is None:
+                logging.error("Failed to generate query embedding")
+                return []
+                
+            # Connect to database
+            conn = sqlite3.connect(db_path)
+            logging.info(f"Connected to database: {db_path}")
+            
+            # Get top-C closest centroids
+            centroid_distances = self._get_centroid_distances(conn, query_embedding)
+            if not centroid_distances:
+                logging.error("No centroid distances computed")
+                return []
+                
+            # Select top-C tables
+            top_tables = [table for table, _ in centroid_distances[:top_c]]
+            logging.info(f"Selected top-{top_c} tables: {top_tables}")
+            
+            # Create dictionary of centroid distances for top-C tables
+            centroid_distances_dict = {
+                table: float(dist) for table, dist in centroid_distances[:top_c]
+            }
+            
+            # Search each selected table
+            all_results = []
+            for table in top_tables:
+                # Search with higher limit to ensure good coverage
+                table_results = self._search_table(
+                    conn,
+                    table,
+                    query_embedding,
+                    limit=top_k * 2  # Get more results for better selection
+                )
+                all_results.extend(table_results)
+                
+            # Sort all results by similarity
+            all_results.sort(key=lambda x: x['similarity'], reverse=True)
+            
+            # Take top-k results
+            final_results = all_results[:top_k]
+            
+            # Add metadata
+            for result in final_results:
+                result['query'] = query
+                result['retrieval_method'] = 'centroid_based'
+                # Add centroid distances for all top-C tables
+                result['centroid_distances'] = centroid_distances_dict
+                
+            logging.info(f"Retrieved {len(final_results)} chunks from {len(top_tables)} tables")
+            return final_results
+            
+        except Exception as e:
+            logging.error(f"Error in retrieval: {e}")
+            return []
+        finally:
+            if 'conn' in locals():
+                conn.close()
+                logging.info("Database connection closed")
+
 
 

@@ -1,4 +1,4 @@
-# CoTARAG v0.10.0 📊💭➡️⚙️
+# CoTARAG v0.11.0 📊💭➡️⚙️
 
 CoTARAG (Cognitive Thought and Retrieval Augmented Generation) is an advanced AI agent framework that combines two powerful engines:
 
@@ -15,15 +15,14 @@ CoTARAG's unique power comes from the seamless integration of CoTAEngine and Acc
 
 ### CoTAEngine: Transparent Reasoning
 - **Thought-Action Pairs**: Clear separation of reasoning and execution
-- **Chain-of-Thought**: Step-by-step reasoning with full visibility
-- **ReAct Integration**: Dynamic action selection based on reasoning
-- **Meta-CoT Support**: Self-improving reasoning chains
+- **Chain-of-Thought-Actions**: Ability to chain together reasoning and execution units of arbitrary length.
+- **Easy debugging**: CoTAEngine class contains tracks pipeline stages for easy debugging and transparent control flow
 
 ### AcceleRAG: Efficient Knowledge Access
-- **4-Mode Caching**: Dramatically reduces API costs
-- **Intelligent Routing**: Smart document selection
-- **Hallucination Control**: Built-in quality scoring
-- **Cross-modal Support**: Unified text and image search
+- **Caching**: Dramatically reduce API costs w/ prompt caching (additional caching coming soon) 
+- **Intelligent Routing**: Reduce search space by "routing" query to a small subset of most relevant data
+- **Hallucination Control**: Built-in quality scoring + "grounding" to guard against undesirable outputs
+- **Multi-modal Support**: Index and retrieve images as well as text, w/more modalities and cross-modal search coming soon!  
 
 ### Together: Powerful & Cost-Effective Agents
 - **Cost Optimization**: 
@@ -62,11 +61,8 @@ This agent demonstrates how CoTARAG enables:
 1. **Efficient Knowledge Access**: AcceleRAG finds relevant research
 2. **Clear Reasoning**: CoTAEngine analyzes and synthesizes findings
 3. **Cost Control**: Caching and smart routing minimize API usage
-4. **Quality Assurance**: Built-in scoring ensures reliable outputs
+4. **Quality Control**: Built-in scoring + grounding ensures reliable outputs 
 
-## CoTAEngine: Chain-of-Thought-Action
-
-CoTAEngine combines Chain-of-Thought (CoT) reasoning with ReAct prompting to create a transparent, debuggable AI agent framework. It provides clear visibility into each step of the agent's decision-making process, making it easier for developers to understand, debug, and improve their AI agents.
 
 ### Advanced Prompting Strategies
 
@@ -122,6 +118,8 @@ class MetaCoTAction(LLMThoughtAction):
 
 Each strategy is implemented as a specialized ThoughtAction pair, demonstrating CoTAEngine's flexibility in handling various advanced prompting techniques while maintaining a consistent interface and clear separation between reasoning and action steps.
 
+Please refer to the Jupyter notebooks for additional discussion & interactive tutorials!  
+
 ### Beyond Meta-Prompting: CoTA's Prompt Engineering Taxonomy
 
 While Meta-Prompting is a powerful technique, it has inherent limitations:
@@ -176,14 +174,6 @@ This structured approach to prompt engineering makes it easier to:
 - Reuse successful prompt patterns
 - Measure and compare different strategies
 - Build more complex prompt engineering pipelines
-
-### Key Features
-
-- **Transparent Reasoning**: Each step in the chain is clearly documented and accessible
-- **Debuggable Actions**: Actions are separated from thoughts, making it easy to identify issues
-- **Flexible Chain Building**: Create complex chains of thought and action with simple Python code
-- **Built-in Logging**: Automatic tracking of the reasoning chain for debugging and analysis
-
 
 
 ### CoT vs CoTA: Understanding the Difference
@@ -608,7 +598,7 @@ rag = RAGManager(
 ```
 
 Each component can be swapped independently, allowing you to:
-- Use different embedding models
+- Use different embedding models (ex. encoder-only transformers) 
 - Implement custom retrieval strategies
 - Add specialized indexing logic
 - Integrate different LLM providers
@@ -702,86 +692,6 @@ This project is licensed under the GNU Affero General Public License v3.0 - see 
 | | FFI Integration | Seamless Python-Rust interop | v1.4.0 |
 | | SIMD Acceleration | Vectorized operations for embeddings | v1.4.0 |
 
-### New Feature Examples
-
-#### Example 1: Multi-Agent Workflow
-```python
-from cotarag.concurrent import AgentWorkflow
-from cotarag.agents import ResearchAgent, AnalysisAgent, SynthesisAgent
-
-# Define workflow with concurrent agents
-workflow = AgentWorkflow([
-    ResearchAgent(num_instances=3),  # Parallel research
-    AnalysisAgent(num_instances=2),  # Parallel analysis
-    SynthesisAgent()                 # Final synthesis
-])
-
-# Execute workflow with automatic resource management
-results = workflow.execute(
-    query="Analyze quantum computing trends",
-    max_parallel=4,
-    resource_limit="8GB"
-)
-```
-
-#### Example 2: Agent Tasking DSL
-```python
-from cotarag.dsl import AgentTask, TaskPlanner
-
-# Define task using DSL
-task = AgentTask("""
-    Research quantum computing trends
-    Then analyze impact on cryptography
-    Finally synthesize recommendations
-""")
-
-# Create and execute task plan
-planner = TaskPlanner()
-plan = planner.create_plan(task)
-results = plan.execute()
-```
-
-#### Example 3: Meta-Agent Creation
-```python
-from cotarag.meta import MetaAgent, AgentComposer
-
-# Compose meta-agent from specialized agents
-meta_agent = AgentComposer.create_agent([
-    ResearchAgent(),
-    AnalysisAgent(),
-    SynthesisAgent()
-])
-
-# Configure meta-agent behavior
-meta_agent.configure(
-    specialization_strategy="dynamic",
-    evolution_enabled=True,
-    communication_protocol="structured"
-)
-
-# Use meta-agent
-results = meta_agent.execute("Complex research task")
-```
-
-#### Example 4: Rust-Python Integration
-```python
-from cotarag.core import RustEmbedder, RustIndexer
-
-# Use Rust-accelerated components
-embedder = RustEmbedder(
-    model="all-MiniLM-L6-v2",
-    use_simd=True
-)
-
-indexer = RustIndexer(
-    algorithm="hnsw",
-    parallel=True
-)
-
-# Components automatically handle Python-Rust interop
-embeddings = embedder.embed_batch(texts)
-index = indexer.build_index(embeddings)
-```
 
 These new features will enable:
 1. **Scalable Multi-Agent Systems**
@@ -807,7 +717,3 @@ These new features will enable:
 ## Continuous Integration (CI) Note
 
 - OpenAI-based tests may fail due to connection timeouts. Focus on Anthropic and image RAG builds for CI reliability in the current version
-
-
-
-

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cotarag"
-version = "0.10.1"
+version = "0.11.0"
 description = "Cognitive Thought and Retrieval Augmented Generation - An advanced AI agent framework combining CoTAEngine and AcceleRAG"
 authors = [
     { name = "Kernel-Dirichlet", email = "elliottdev93@gmail.com" }
@@ -33,7 +33,7 @@ dependencies = [
     "PyPDF2>=3.0.1",
     "numpy>=1.24.0",
     "typing-extensions>=4.5.0",
-    "tqdm>=4.65.0"
+    "tqdm>=4.65.0",
 ]
 
 [project.optional-dependencies]

@@ -13,6 +13,7 @@ class AnthropicEngine(QueryEngine):
     def _set_api_key(self):
         """Set Anthropic API key in environment."""
         os.environ['ANTHROPIC_API_KEY'] = self.api_key
+        self.client = Anthropic(api_key = self.api_key)
         
     def generate_response(self, prompt, grounding='soft'):
         """Generate response using Claude."""
@@ -36,6 +37,7 @@ class OpenAIEngine(QueryEngine):
     def _set_api_key(self):
         """Set OpenAI API key in environment."""
         os.environ['OPENAI_API_KEY'] = self.api_key
+        self.client  = OpenAI(api_key = self.api_key)
         
     def generate_response(self, prompt, grounding='soft'):
         """Generate response using OpenAI.
