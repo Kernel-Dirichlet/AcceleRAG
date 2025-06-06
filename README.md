@@ -1,4 +1,4 @@
-# CoTARAG v0.11.0 📊💭➡️⚙️
+# CoTARAG v0.11.1 📊💭➡️⚙️
 
 CoTARAG (Cognitive Thought and Retrieval Augmented Generation) is an advanced AI agent framework that combines two powerful engines:
 
@@ -716,4 +716,4 @@ These new features will enable:
 
 ## Continuous Integration (CI) Note
 
-- OpenAI-based tests may fail due to connection timeouts. Focus on Anthropic and image RAG builds for CI reliability in the current version
+- CI tests are not yet stable. Take failures with a grain of salt. 

@@ -40,7 +40,7 @@ class LLMThoughtAction(ThoughtAction):
     
     
     def thought(self, input_data):
-        return {'thought': self.query_engine.generate_response} 
+        return {'thought': self.query_engine.generate_response(input_data)} 
     
     @abstractmethod
     def action(self, thought_output):
