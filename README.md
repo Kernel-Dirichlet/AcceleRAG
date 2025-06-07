@@ -1,4 +1,4 @@
-# CoTARAG v0.11.1 📊💭➡️⚙️
+# CoTARAG v0.12.0 📊💭➡️⚙️
 
 CoTARAG (Cognitive Thought and Retrieval Augmented Generation) is an advanced AI agent framework that combines two powerful engines:
 
@@ -650,19 +650,12 @@ Every donation goes towards improving CoTARAG, from better tests, more features,
 
 ## Roadmap
 
-- v0.11.0: PyPi publication
-- v0.12.0: Docker image  
-- v0.13.0: Flask Front-end playground
-- v0.14.0: Cross-modal search
-- v0.15.0: Agentic Indexers & Retrievers
-- v0.16.0: Synthetic Dataset creation 
-- v0.17.0: Benchmarks & Performance Testing
-- v1.0.0: DSL for RAG pipelines + updated testing suite
-- v1.1.0: Concurrency Framework for Multi-Agent Workflows
-- v1.2.0: Agent Tasking DSL
-- v1.3.0: Meta-Agent Framework
-- v1.4.0: Rust Core Components
-
+- v0.12.0: PyPi publication
+- v0.13.0: Docker image 
+- v0.14.0: LLMRouter + cross-modal RAG
+- v0.15.0: Agentic Indexer
+- v0.16.0: Agentic Retriever
+...  
 
 ## DISCLAIMER 
 
