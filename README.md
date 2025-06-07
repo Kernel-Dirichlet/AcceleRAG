@@ -659,6 +659,15 @@ This project is licensed under the GNU Affero General Public License v3.0 - see 
 - v1.3.0: Meta-Agent Framework
 - v1.4.0: Rust Core Components
 
+
+## DISCLAIMER 
+
+This software is provided "as is", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement. In no event shall the authors or copyright holders be liable for any claim, damages, or other liability, whether in an action of contract, tort, or otherwise, arising from, out of, or in connection with the software or the use or other dealings in the software.
+
+Use of this framework in production, research, or derivative works is at your own risk. This project may interact with third-party systems, APIs, or services, which are governed by their own licenses and policies. The maintainers of this repository are not responsible for how this tool is used or for any legal or ethical consequences arising from its use.
+
+You are solely responsible for ensuring that your usage complies with all applicable laws, regulations, and terms of service.
+
 ## Coming Features (subject to change)
 
 ### Upcoming Improvements
