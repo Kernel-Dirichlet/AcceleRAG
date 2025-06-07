@@ -643,6 +643,10 @@ pip install cotarag==0.10.0
 
 This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
 
+## Project Support
+
+Every donation goes towards improving CoTARAG, from better tests, more features, educational content etc.  
+[Support CoTARAG on Patreon](https://www.patreon.com/Kernel-Dirichlet)
 
 ## Roadmap
 
