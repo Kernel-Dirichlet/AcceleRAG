@@ -646,7 +646,7 @@ This project is licensed under the GNU Affero General Public License v3.0 - see 
 ## Project Support
 
 Every donation goes towards improving CoTARAG, from better tests, more features, educational content etc.  
-[Support CoTARAG on Patreon](https://www.patreon.com/Kernel-Dirichlet)
+[Support CoTARAG on Patreon](patreon.com/KernelDirichlet)
 
 ## Roadmap
 
