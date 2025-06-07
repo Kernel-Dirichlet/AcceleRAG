@@ -636,7 +636,7 @@ The framework handles all the component coordination, so you can focus on implem
 ## Installation
 
 ```bash
-pip install cotarag==0.10.0
+pip install cotarag==0.12.0
 ```
 
 ## License
