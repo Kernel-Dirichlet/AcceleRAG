@@ -1,3 +1,5 @@
-from .query_engines import AnthropicEngine, OpenAIEngine
+from .query_engines import AnthropicEngine, OpenAIEngine, DefaultEngine
 
-__all__ = ['AnthropicEngine','OpenAIEngine']
+__all__ = ['AnthropicEngine',
+           'OpenAIEngine',
+           'DefaultEngine']

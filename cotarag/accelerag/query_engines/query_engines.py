@@ -63,3 +63,28 @@ class OpenAIEngine(QueryEngine):
         except Exception as e:
             raise RuntimeError(f"OpenAI API error: {str(e)}") 
 
+class DefaultEngine(QueryEngine):
+    """Default query engine that instantiates the correct model based on the model string and provider."""
+    def __init__(self, model_name="claude-3-7-sonnet-20250219"):
+        super().__init__()
+        self.model_name = model_name
+        self.engine = self._instantiate_engine()
+
+    def _instantiate_engine(self):
+        # Reasoning: Determine the provider and instantiate the appropriate engine
+        if 'claude' in self.model_name.lower():
+            api_key = os.getenv('ANTHROPIC_API_KEY')
+            if not api_key:
+                raise ValueError("ANTHROPIC_API_KEY environment variable not set.")
+            return AnthropicEngine(api_key=api_key, model_name=self.model_name)
+        elif 'gpt' in self.model_name.lower():
+            api_key = os.getenv('OPENAI_API_KEY')
+            if not api_key:
+                raise ValueError("OPENAI_API_KEY environment variable not set.")
+            return OpenAIEngine(api_key=api_key, model_name=self.model_name)
+        else:
+            raise ValueError("Unsupported model or provider.")
+
+    def generate_response(self, prompt, grounding='soft'):
+        # Reasoning: Generate a response using the instantiated engine
+        return self.engine.generate_response(prompt, grounding)
